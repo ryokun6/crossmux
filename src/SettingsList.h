@@ -93,48 +93,58 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
 // Shared settings list used by both the device settings UI and the web settings API.
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
-// Pass registry to include SD card fonts in the font family setting.
+//
+// The static list is constructed exactly once (master's optimization, #1086 +
+// #1636) so the per-entry SettingInfo cost is paid once. When an
+// SdCardFontRegistry is supplied AND has SD card fonts installed, the
+// font-family entry is replaced in a per-call copy with a registry-aware
+// version. Callers without SD fonts pay only a vector copy.
 inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr) {
-  std::vector<SettingInfo> v = {
-      // --- Display ---
-      SettingInfo::Enum(StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
-                        {StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER, StrId::STR_NONE_OPT,
-                         StrId::STR_COVER_CUSTOM},
-                        "sleepScreen", StrId::STR_CAT_DISPLAY),
-      SettingInfo::Enum(StrId::STR_SLEEP_COVER_MODE, &CrossPointSettings::sleepScreenCoverMode,
-                        {StrId::STR_FIT, StrId::STR_CROP}, "sleepScreenCoverMode", StrId::STR_CAT_DISPLAY),
-      SettingInfo::Enum(StrId::STR_SLEEP_COVER_FILTER, &CrossPointSettings::sleepScreenCoverFilter,
-                        {StrId::STR_NONE_OPT, StrId::STR_FILTER_CONTRAST, StrId::STR_INVERTED},
-                        "sleepScreenCoverFilter", StrId::STR_CAT_DISPLAY),
-      SettingInfo::Enum(StrId::STR_HIDE_BATTERY, &CrossPointSettings::hideBatteryPercentage,
-                        {StrId::STR_NEVER, StrId::STR_IN_READER, StrId::STR_ALWAYS}, "hideBatteryPercentage",
-                        StrId::STR_CAT_DISPLAY),
-      SettingInfo::Enum(
-          StrId::STR_REFRESH_FREQ, &CrossPointSettings::refreshFrequency,
-          {StrId::STR_PAGES_1, StrId::STR_PAGES_5, StrId::STR_PAGES_10, StrId::STR_PAGES_15, StrId::STR_PAGES_30},
-          "refreshFrequency", StrId::STR_CAT_DISPLAY),
-      SettingInfo::Enum(StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
-                        {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_LYRA, StrId::STR_THEME_LYRA_EXTENDED,
-                         StrId::STR_THEME_ROUNDEDRAFF},
-                        "uiTheme", StrId::STR_CAT_DISPLAY),
-      SettingInfo::Toggle(StrId::STR_SUNLIGHT_FADING_FIX, &CrossPointSettings::fadingFix, "fadingFix",
+  static const std::vector<SettingInfo> baseList = [] {
+    std::vector<SettingInfo> v = {
+        // --- Display ---
+        SettingInfo::Enum(StrId::STR_SLEEP_SCREEN, &CrossPointSettings::sleepScreen,
+                          {StrId::STR_DARK, StrId::STR_LIGHT, StrId::STR_CUSTOM, StrId::STR_COVER, StrId::STR_NONE_OPT,
+                           StrId::STR_COVER_CUSTOM},
+                          "sleepScreen", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_SLEEP_COVER_MODE, &CrossPointSettings::sleepScreenCoverMode,
+                          {StrId::STR_FIT, StrId::STR_CROP}, "sleepScreenCoverMode", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_SLEEP_COVER_FILTER, &CrossPointSettings::sleepScreenCoverFilter,
+                          {StrId::STR_NONE_OPT, StrId::STR_FILTER_CONTRAST, StrId::STR_INVERTED},
+                          "sleepScreenCoverFilter", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_HIDE_BATTERY, &CrossPointSettings::hideBatteryPercentage,
+                          {StrId::STR_NEVER, StrId::STR_IN_READER, StrId::STR_ALWAYS}, "hideBatteryPercentage",
                           StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(
+            StrId::STR_REFRESH_FREQ, &CrossPointSettings::refreshFrequency,
+            {StrId::STR_PAGES_1, StrId::STR_PAGES_5, StrId::STR_PAGES_10, StrId::STR_PAGES_15, StrId::STR_PAGES_30},
+            "refreshFrequency", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Enum(StrId::STR_UI_THEME, &CrossPointSettings::uiTheme,
+                          {StrId::STR_THEME_CLASSIC, StrId::STR_THEME_LYRA, StrId::STR_THEME_LYRA_EXTENDED,
+                           StrId::STR_THEME_ROUNDEDRAFF},
+                          "uiTheme", StrId::STR_CAT_DISPLAY),
+        SettingInfo::Toggle(StrId::STR_SUNLIGHT_FADING_FIX, &CrossPointSettings::fadingFix, "fadingFix",
+                            StrId::STR_CAT_DISPLAY),
 
-      // --- Reader ---
-      buildFontFamilySetting(registry),
-      SettingInfo::Enum(StrId::STR_FONT_SIZE, &CrossPointSettings::fontSize,
-                        {StrId::STR_SMALL, StrId::STR_MEDIUM, StrId::STR_LARGE, StrId::STR_X_LARGE}, "fontSize",
-                        StrId::STR_CAT_READER),
-      SettingInfo::Enum(StrId::STR_LINE_SPACING, &CrossPointSettings::lineSpacing,
-                        {StrId::STR_TIGHT, StrId::STR_NORMAL, StrId::STR_WIDE}, "lineSpacing", StrId::STR_CAT_READER),
-      SettingInfo::Value(StrId::STR_SCREEN_MARGIN, &CrossPointSettings::screenMargin, {5, 40, 5}, "screenMargin",
-                         StrId::STR_CAT_READER),
-      SettingInfo::Enum(StrId::STR_PARA_ALIGNMENT, &CrossPointSettings::paragraphAlignment,
-                        {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER, StrId::STR_ALIGN_RIGHT,
-                         StrId::STR_BOOK_S_STYLE},
-                        "paragraphAlignment", StrId::STR_CAT_READER),
-      SettingInfo::Toggle(StrId::STR_EMBEDDED_STYLE, &CrossPointSettings::embeddedStyle, "embeddedStyle",
+        // --- Reader ---
+        // Built-in font-family entry. Replaced per-call with a registry-aware
+        // version when SD fonts are installed.
+        SettingInfo::Enum(StrId::STR_FONT_FAMILY, &CrossPointSettings::fontFamily,
+                          {StrId::STR_NOTO_SERIF, StrId::STR_NOTO_SANS, StrId::STR_OPEN_DYSLEXIC}, "fontFamily",
                           StrId::STR_CAT_READER),
+        SettingInfo::Enum(StrId::STR_FONT_SIZE, &CrossPointSettings::fontSize,
+                          {StrId::STR_SMALL, StrId::STR_MEDIUM, StrId::STR_LARGE, StrId::STR_X_LARGE}, "fontSize",
+                          StrId::STR_CAT_READER),
+        SettingInfo::Enum(StrId::STR_LINE_SPACING, &CrossPointSettings::lineSpacing,
+                          {StrId::STR_TIGHT, StrId::STR_NORMAL, StrId::STR_WIDE}, "lineSpacing", StrId::STR_CAT_READER),
+        SettingInfo::Value(StrId::STR_SCREEN_MARGIN, &CrossPointSettings::screenMargin, {5, 40, 5}, "screenMargin",
+                           StrId::STR_CAT_READER),
+        SettingInfo::Enum(StrId::STR_PARA_ALIGNMENT, &CrossPointSettings::paragraphAlignment,
+                          {StrId::STR_JUSTIFY, StrId::STR_ALIGN_LEFT, StrId::STR_CENTER, StrId::STR_ALIGN_RIGHT,
+                           StrId::STR_BOOK_S_STYLE},
+                          "paragraphAlignment", StrId::STR_CAT_READER),
+        SettingInfo::Toggle(StrId::STR_EMBEDDED_STYLE, &CrossPointSettings::embeddedStyle, "embeddedStyle",
+                            StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_HYPHENATION, &CrossPointSettings::hyphenationEnabled, "hyphenationEnabled",
                             StrId::STR_CAT_READER),
         SettingInfo::Enum(StrId::STR_ORIENTATION, &CrossPointSettings::orientation,
@@ -209,15 +219,27 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                           StrId::STR_CUSTOMISE_STATUS_BAR),
         SettingInfo::Toggle(StrId::STR_BATTERY, &CrossPointSettings::statusBarBattery, "statusBarBattery",
                             StrId::STR_CUSTOMISE_STATUS_BAR),
-  };
-  // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
-  if (halTiltSensor.isAvailable()) {
-    // Insert after the short power button setting (end of Controls section)
-    for (auto it = v.begin(); it != v.end(); ++it) {
-      if (it->nameId == StrId::STR_SHORT_PWR_BTN) {
-        v.insert(it + 1, SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
-                                           {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED},
-                                           "tiltPageTurn", StrId::STR_CAT_CONTROLS));
+    };
+    // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
+    if (halTiltSensor.isAvailable()) {
+      // Insert after the short power button setting (end of Controls section)
+      for (auto it = v.begin(); it != v.end(); ++it) {
+        if (it->nameId == StrId::STR_SHORT_PWR_BTN) {
+          v.insert(it + 1, SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
+                                             {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED},
+                                             "tiltPageTurn", StrId::STR_CAT_CONTROLS));
+          break;
+        }
+      }
+    }
+    return v;
+  }();
+
+  std::vector<SettingInfo> v = baseList;
+  if (registry && registry->getFamilyCount() > 0) {
+    for (auto& s : v) {
+      if (s.nameId == StrId::STR_FONT_FAMILY) {
+        s = buildFontFamilySetting(registry);
         break;
       }
     }
