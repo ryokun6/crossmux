@@ -12,6 +12,12 @@ class SdCardFont {
 
   SdCardFont() = default;
   ~SdCardFont();
+  // Owns raw buffers freed in dtor — no shallow-copy semantics. Make any
+  // accidental pass-by-value or move a compile-time error.
+  SdCardFont(const SdCardFont&) = delete;
+  SdCardFont& operator=(const SdCardFont&) = delete;
+  SdCardFont(SdCardFont&&) = delete;
+  SdCardFont& operator=(SdCardFont&&) = delete;
 
   // Load .cpfont file: reads header + intervals into RAM, records file layout offsets.
   // Supports v4 (multi-style) format.
@@ -25,8 +31,27 @@ class SdCardFont {
   // Returns number of glyphs that couldn't be loaded (0 on full success).
   int prewarm(const char* utf8Text, uint8_t styleMask = 0x0F, bool metadataOnly = false);
 
+  // Build a compact advance-only table for layout measurement.
+  // Extracts ALL unique codepoints from utf8Text (no MAX_PAGE_GLYPHS cap),
+  // batch-reads advanceX from SD, stores in a sorted per-style table.
+  // Returns number of codepoints not found in font coverage.
+  int buildAdvanceTable(const char* utf8Text, uint8_t styleMask = 0x0F);
+
+  // Look up advanceX for a codepoint from the advance table.
+  // Returns the 12.4 fixed-point advance, or 0 if not found.
+  uint16_t getAdvance(uint32_t codepoint, uint8_t style) const;
+
+  // Returns true if advance table is populated for at least one style.
+  bool hasAdvanceTable() const;
+
   // Free mini data for all styles, restore stub EpdFontData.
+  // Also clears the temporary advance table (built per layout pass) but
+  // preserves the persistent advance cache (reused across passes).
   void clearCache();
+
+  // Drop the persistent advance cache. Call when unloading the SD font or
+  // when font/size/family/glyph-table state changes.
+  void clearPersistentCache();
 
   // Returns pointer to the managed EpdFont for a given style.
   // Returns nullptr if the style is not present.
@@ -160,6 +185,24 @@ class SdCardFont {
   OverflowEntry overflow_[OVERFLOW_CAPACITY] = {};
   uint32_t overflowCount_ = 0;
   uint32_t overflowNext_ = 0;
+
+  // Compact advance-only table for layout measurement (per-style).
+  // Built by buildAdvanceTable(), queried by getAdvance().
+  struct AdvanceEntry {
+    uint32_t codepoint;
+    uint16_t advanceX;  // 12.4 fixed-point
+  };
+  // Per-style advance table. Sorted by codepoint for binary lookup.
+  // Bounded to ADVANCE_CACHE_LIMIT entries; persists across layout passes
+  // (across calls to clearCache()) so repeated indexing of the same font
+  // amortizes SD reads. Cleared only on font unload or clearPersistentCache().
+  static constexpr uint32_t ADVANCE_CACHE_LIMIT = 768;
+  AdvanceEntry* advanceTable_[MAX_STYLES] = {};
+  uint32_t advanceTableSize_[MAX_STYLES] = {};
+  bool advanceTableLookup(uint8_t styleIdx, uint32_t codepoint, uint16_t* outAdvance) const;
+  // Merge sortedNew (sorted by codepoint, no overlap with existing) into the
+  // advance table for styleIdx, preserving sort order; cap-truncates the tail.
+  void mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sortedNew, uint32_t newCount);
 
   Stats stats_;
   uint32_t contentHash_ = 0;

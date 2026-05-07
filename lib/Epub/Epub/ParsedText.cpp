@@ -119,7 +119,16 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
       allText += words[i];
     }
     if (hyphenationEnabled) allText += '-';
-    renderer.ensureSdCardFontReady(fontId, allText.c_str());
+
+    // Style mask: only ask the SD font to load advances for styles actually
+    // used in this paragraph. Style index is the low two bits (regular/bold/
+    // italic/bold-italic); the underline bit is irrelevant to advance metrics.
+    uint8_t styleMask = 0;
+    for (auto s : wordStyles) {
+      styleMask |= static_cast<uint8_t>(1u << (static_cast<uint8_t>(s) & 0x03));
+    }
+    if (styleMask == 0) styleMask = 0x01;  // defensive: regular only
+    renderer.ensureSdCardFontReady(fontId, allText.c_str(), styleMask);
   }
 
   const int pageWidth = viewportWidth;
