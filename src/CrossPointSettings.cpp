@@ -353,7 +353,11 @@ int CrossPointSettings::getReaderFontId() const {
         case LARGE:
           return NOTOSERIF_16_FONT_ID;
         case EXTRA_LARGE:
+#ifdef OMIT_LARGE_READER_FONTS
+          return NOTOSERIF_16_FONT_ID;  // 18pt unavailable in this build, fall back to 16pt
+#else
           return NOTOSERIF_18_FONT_ID;
+#endif
       }
     case NOTOSANS:
       switch (fontSize) {
@@ -365,7 +369,11 @@ int CrossPointSettings::getReaderFontId() const {
         case LARGE:
           return NOTOSANS_16_FONT_ID;
         case EXTRA_LARGE:
+#ifdef OMIT_LARGE_READER_FONTS
+          return NOTOSANS_16_FONT_ID;
+#else
           return NOTOSANS_18_FONT_ID;
+#endif
       }
     case OPENDYSLEXIC:
       switch (fontSize) {

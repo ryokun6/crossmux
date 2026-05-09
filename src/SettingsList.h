@@ -40,7 +40,9 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   if (sdFontCount > 0) {
     allStringValues.push_back(I18N.get(StrId::STR_NOTO_SERIF));
     allStringValues.push_back(I18N.get(StrId::STR_NOTO_SANS));
+#ifndef OMIT_OPENDYSLEXIC
     allStringValues.push_back(I18N.get(StrId::STR_OPEN_DYSLEXIC));
+#endif
     allStringValues.insert(allStringValues.end(), enumStringValues.begin(), enumStringValues.end());
   }
 

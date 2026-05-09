@@ -92,3 +92,16 @@ To convert your own TrueType/OpenType fonts:
 Combine presets with commas: `--intervals latin-ext,greek,cyrillic`
 
 Install custom fonts via WiFi upload or manual SD card copy.
+
+---
+
+## UI Fonts vs. Reader (SD) Fonts
+
+Note that this document covers **reader fonts** that render EPUB/TXT body text.
+The **UI** (menus, status bar, button hints) uses a separate set of font IDs
+(`UI_10_FONT_ID` / `UI_12_FONT_ID` / `SMALL_FONT_ID`) compiled into the
+firmware and owned by `src/UiFontSwitcher.cpp`. For non-Latin locales the UI
+font has to ship as a built-in subset so it's available at the very first
+frame after boot — see [docs/i18n.md](./i18n.md#ui-font-for-non-latin-locales).
+Use `scripts/build_zh_ui_font.py` as the reference for generating that subset
+(it scans translation YAMLs for the exact codepoints to include).

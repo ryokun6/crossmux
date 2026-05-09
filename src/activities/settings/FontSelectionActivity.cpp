@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <SdCardFontRegistry.h>
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
@@ -21,7 +22,9 @@ void FontSelectionActivity::onEnter() {
 
   fonts_.push_back({I18N.get(StrId::STR_NOTO_SERIF), true, 0});
   fonts_.push_back({I18N.get(StrId::STR_NOTO_SANS), true, 1});
+#ifndef OMIT_OPENDYSLEXIC
   fonts_.push_back({I18N.get(StrId::STR_OPEN_DYSLEXIC), true, 2});
+#endif
 
   if (registry_) {
     const auto& families = registry_->getFamilies();
@@ -84,6 +87,8 @@ void FontSelectionActivity::handleSelection() {
       SETTINGS.sdFontFamilyName[sizeof(SETTINGS.sdFontFamilyName) - 1] = '\0';
     }
   }
+  // Persistence happens in SettingsActivity's startActivityForResult callback
+  // (it calls SETTINGS.saveToFile() once we finish), so don't save here.
   finish();
 }
 

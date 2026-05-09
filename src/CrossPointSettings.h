@@ -99,7 +99,13 @@ class CrossPointSettings {
 
   // Font family options (built-in fonts only; SD card fonts use sdFontFamilyName)
   enum FONT_FAMILY { NOTOSERIF = 0, NOTOSANS = 1, OPENDYSLEXIC = 2, FONT_FAMILY_COUNT };
+#ifdef OMIT_OPENDYSLEXIC
+  // Drop OpenDyslexic from the selectable set so loaded settings get clamped
+  // back to NOTOSERIF when migrating from a build that had it.
+  static constexpr uint8_t BUILTIN_FONT_COUNT = OPENDYSLEXIC;  // = 2
+#else
   static constexpr uint8_t BUILTIN_FONT_COUNT = FONT_FAMILY_COUNT;
+#endif
   // Font size options
   enum FONT_SIZE { SMALL = 0, MEDIUM = 1, LARGE = 2, EXTRA_LARGE = 3, FONT_SIZE_COUNT };
   enum LINE_COMPRESSION { TIGHT = 0, NORMAL = 1, WIDE = 2, LINE_COMPRESSION_COUNT };
