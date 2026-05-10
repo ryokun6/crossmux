@@ -12,6 +12,7 @@
 
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
+#include "components/icons/avatar.h"
 #include "components/icons/book.h"
 #include "components/icons/book24.h"
 #include "components/icons/cover.h"
@@ -84,6 +85,8 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return SudokuIcon;
       case UIIcon::Gomoku:
         return GomokuIcon;
+      case UIIcon::Avatar:
+        return AvatarIcon;
       default:
         return nullptr;
     }
