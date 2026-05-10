@@ -585,12 +585,12 @@ void SudokuGameActivity::drawFooter() {
     upLabel = tr(STR_DIR_UP);
     downLabel = tr(STR_DIR_DOWN);
   } else if (state == State::GameMenu) {
-    backLabel = tr(STR_SUDOKU_RESUME);
+    backLabel = tr(STR_GAME_RESUME);
     confirmLabel = tr(STR_SELECT);
     upLabel = tr(STR_DIR_UP);
     downLabel = tr(STR_DIR_DOWN);
   } else if (state == State::Won) {
-    backLabel = tr(STR_SUDOKU_HOME);
+    backLabel = tr(STR_GAME_HOME);
     confirmLabel = tr(STR_SUDOKU_PLAY_AGAIN);
   }
 
@@ -635,7 +635,7 @@ void SudokuGameActivity::renderWon() {
   };
 
   // Col 0: time.
-  drawStatCol(0, tr(STR_SUDOKU_TIME), timeBuf);
+  drawStatCol(0, tr(STR_GAME_TIME), timeBuf);
 
   // Col 1: best.
   char bestBuf[16];
@@ -645,7 +645,7 @@ void SudokuGameActivity::renderWon() {
   } else {
     snprintf(bestBuf, sizeof(bestBuf), "--");
   }
-  drawStatCol(1, tr(STR_SUDOKU_BEST_TIME), bestBuf);
+  drawStatCol(1, tr(STR_GAME_BEST_TIME), bestBuf);
 
   // Col 2: completed total.
   char totalBuf[16];
@@ -682,11 +682,11 @@ void SudokuGameActivity::renderGameMenu() {
   // Title bar.
   const int titleTextH = renderer.getTextHeight(kModalItemFont);
   renderer.fillRect(x + 2, y + titleH, w - 4, 1, true);
-  renderer.drawText(kModalItemFont, x + 12, y + gameCenterY(titleH, titleTextH), tr(STR_SUDOKU_GAME_MENU));
+  renderer.drawText(kModalItemFont, x + 12, y + gameCenterY(titleH, titleTextH), tr(STR_GAME_GAME_MENU));
 
   const char* labels[MENU_ITEM_COUNT] = {
-      tr(STR_SUDOKU_RESUME),  tr(STR_SUDOKU_TOGGLE_NOTES), tr(STR_SUDOKU_USE_HINT), tr(STR_SUDOKU_CHECK_ERRORS),
-      tr(STR_SUDOKU_RESTART), tr(STR_SUDOKU_NEW_GAME),     tr(STR_SUDOKU_EXIT),
+      tr(STR_GAME_RESUME),  tr(STR_SUDOKU_TOGGLE_NOTES), tr(STR_SUDOKU_USE_HINT), tr(STR_SUDOKU_CHECK_ERRORS),
+      tr(STR_SUDOKU_RESTART), tr(STR_GAME_NEW_GAME),     tr(STR_GAME_EXIT),
   };
 
   // Right-side hints (i18n-driven; no hardcoded English).
@@ -697,7 +697,7 @@ void SudokuGameActivity::renderGameMenu() {
   } else {
     snprintf(hintHint, sizeof(hintHint), "%s", tr(STR_SUDOKU_NO_HINTS));
   }
-  const char* hints[MENU_ITEM_COUNT] = {"", hintNotes, hintHint, "", "", "", tr(STR_SUDOKU_HOME)};
+  const char* hints[MENU_ITEM_COUNT] = {"", hintNotes, hintHint, "", "", "", tr(STR_GAME_HOME)};
 
   const int itemTextH = renderer.getTextHeight(kModalItemFont);
   const int hintTextH = renderer.getTextHeight(kModalHintFont);

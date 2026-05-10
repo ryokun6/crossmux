@@ -125,13 +125,13 @@ void SudokuMenuActivity::renderList() {
     const Item& it = items[i];
     switch (it.kind) {
       case ItemKind::Continue:
-        return std::string(tr(STR_SUDOKU_CONTINUE));
+        return std::string(tr(STR_GAME_CONTINUE));
       case ItemKind::NewGame:
         if (it.difficulty == SudokuBoard::Difficulty::Medium) return std::string(tr(STR_SUDOKU_NEW_MEDIUM));
         if (it.difficulty == SudokuBoard::Difficulty::Hard) return std::string(tr(STR_SUDOKU_NEW_HARD));
         return std::string(tr(STR_SUDOKU_NEW_EASY));
       case ItemKind::Stats:
-        return std::string(tr(STR_SUDOKU_STATS));
+        return std::string(tr(STR_GAME_STATS));
     }
     return "";
   };
@@ -159,7 +159,7 @@ void SudokuMenuActivity::renderList() {
                    static_cast<unsigned>(cachedStats.completedCount[0]), tr(STR_SUDOKU_COMPLETED));
           return std::string(buf);
         }
-        return std::string(tr(STR_SUDOKU_NO_RECORD));
+        return std::string(tr(STR_GAME_NO_RECORD));
     }
     return "";
   };
@@ -175,7 +175,7 @@ void SudokuMenuActivity::renderStats() {
   const int sw = renderer.getScreenWidth();
   const int sh = renderer.getScreenHeight();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, sw, metrics.headerHeight}, tr(STR_SUDOKU_STATS));
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, sw, metrics.headerHeight}, tr(STR_GAME_STATS));
 
   const int listY = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   const int listH = sh - listY - metrics.buttonHintsHeight - metrics.verticalSpacing;
@@ -192,12 +192,12 @@ void SudokuMenuActivity::renderStats() {
       if (cachedStats.startedCount[i] > 0) {
         rate = (cachedStats.completedCount[i] * 100) / cachedStats.startedCount[i];
       }
-      snprintf(buf, sizeof(buf), "%s %02u:%02u · %u %s · %d%%", tr(STR_SUDOKU_BEST_TIME),
+      snprintf(buf, sizeof(buf), "%s %02u:%02u · %u %s · %d%%", tr(STR_GAME_BEST_TIME),
                static_cast<unsigned>(cachedStats.bestTimeSec[i] / 60),
                static_cast<unsigned>(cachedStats.bestTimeSec[i] % 60),
                static_cast<unsigned>(cachedStats.completedCount[i]), tr(STR_SUDOKU_COMPLETED), rate);
     } else {
-      snprintf(buf, sizeof(buf), "%s", tr(STR_SUDOKU_NO_RECORD));
+      snprintf(buf, sizeof(buf), "%s", tr(STR_GAME_NO_RECORD));
     }
     return std::string(buf);
   };

@@ -175,7 +175,7 @@ void GomokuMenuActivity::renderList() {
     const Item& it = items[i];
     switch (it.kind) {
       case ItemKind::Continue:
-        return std::string(tr(STR_GOMOKU_CONTINUE));
+        return std::string(tr(STR_GAME_CONTINUE));
       case ItemKind::NewGame:
         if (it.mode == GomokuMode::TwoPlayer && it.boardSize == 15) return std::string(tr(STR_GOMOKU_NEW_2P_15));
         if (it.mode == GomokuMode::TwoPlayer && it.boardSize == 9) return std::string(tr(STR_GOMOKU_NEW_2P_9));
@@ -183,7 +183,7 @@ void GomokuMenuActivity::renderList() {
         if (it.mode == GomokuMode::VsAi && it.boardSize == 9) return std::string(tr(STR_GOMOKU_NEW_AI_9));
         return "";
       case ItemKind::Stats:
-        return std::string(tr(STR_GOMOKU_STATS));
+        return std::string(tr(STR_GAME_STATS));
     }
     return "";
   };
@@ -215,7 +215,7 @@ void GomokuMenuActivity::renderList() {
         if (it.boardSize == 9) return std::string(tr(STR_GOMOKU_DESC_2P_9));
         return std::string(tr(STR_GOMOKU_DESC_2P_15));
       case ItemKind::Stats:
-        return std::string(tr(STR_GOMOKU_STATS_DESC));
+        return std::string(tr(STR_GAME_STATS_DESC));
     }
     return "";
   };
@@ -237,7 +237,7 @@ void GomokuMenuActivity::renderStats() {
   const int sw = renderer.getScreenWidth();
   const int sh = renderer.getScreenHeight();
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, sw, metrics.headerHeight}, tr(STR_GOMOKU_STATS));
+  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, sw, metrics.headerHeight}, tr(STR_GAME_STATS));
 
   const int listY = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
   const int listH = sh - listY - metrics.buttonHintsHeight - metrics.verticalSpacing;
@@ -250,14 +250,14 @@ void GomokuMenuActivity::renderStats() {
     char buf[96];
     const uint8_t s = (i == 0) ? 0 : 1;
     if (cachedStats.bestTimeSec[s] > 0 || cachedStats.startedCount[s] > 0) {
-      snprintf(buf, sizeof(buf), "%s %02u:%02u · %s %u · %s %u · %s %u", tr(STR_GOMOKU_BEST_TIME),
+      snprintf(buf, sizeof(buf), "%s %02u:%02u · %s %u · %s %u · %s %u", tr(STR_GAME_BEST_TIME),
                static_cast<unsigned>(cachedStats.bestTimeSec[s] / 60),
                static_cast<unsigned>(cachedStats.bestTimeSec[s] % 60), tr(STR_GOMOKU_BLACK),
                static_cast<unsigned>(cachedStats.blackWins[s]), tr(STR_GOMOKU_WHITE),
                static_cast<unsigned>(cachedStats.whiteWins[s]), tr(STR_GOMOKU_DRAW),
                static_cast<unsigned>(cachedStats.draws[s]));
     } else {
-      snprintf(buf, sizeof(buf), "%s", tr(STR_GOMOKU_NO_RECORD));
+      snprintf(buf, sizeof(buf), "%s", tr(STR_GAME_NO_RECORD));
     }
     return std::string(buf);
   };

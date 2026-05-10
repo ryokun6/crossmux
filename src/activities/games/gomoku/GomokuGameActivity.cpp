@@ -634,7 +634,7 @@ void GomokuGameActivity::drawFooter() {
     upLabel = tr(STR_DIR_UP);
     downLabel = tr(STR_DIR_DOWN);
   } else if (state == State::GameMenu) {
-    backLabel = tr(STR_GOMOKU_RESUME);
+    backLabel = tr(STR_GAME_RESUME);
     confirmLabel = tr(STR_SELECT);
     upLabel = tr(STR_DIR_UP);
     downLabel = tr(STR_DIR_DOWN);
@@ -663,10 +663,10 @@ void GomokuGameActivity::renderGameMenu() {
 
   const int titleTextH = renderer.getTextHeight(kModalItemFont);
   renderer.fillRect(x + 2, y + titleH, w - 4, 1, true);
-  renderer.drawText(kModalItemFont, x + 12, y + gameCenterY(titleH, titleTextH), tr(STR_GOMOKU_GAME_MENU));
+  renderer.drawText(kModalItemFont, x + 12, y + gameCenterY(titleH, titleTextH), tr(STR_GAME_GAME_MENU));
 
   const char* labels[MENU_ITEM_COUNT] = {
-      tr(STR_GOMOKU_RESUME), tr(STR_GOMOKU_UNDO), tr(STR_GOMOKU_RESIGN), tr(STR_GOMOKU_NEW_GAME), tr(STR_GOMOKU_EXIT),
+      tr(STR_GAME_RESUME), tr(STR_GOMOKU_UNDO), tr(STR_GOMOKU_RESIGN), tr(STR_GAME_NEW_GAME), tr(STR_GAME_EXIT),
   };
 
   // Right-side hints
@@ -674,7 +674,7 @@ void GomokuGameActivity::renderGameMenu() {
   if (board.moveCount > 0) {
     snprintf(undoHint, sizeof(undoHint), tr(STR_GOMOKU_MOVE_FMT), static_cast<unsigned>(board.moveCount));
   }
-  const char* hints[MENU_ITEM_COUNT] = {"", undoHint, "", "", tr(STR_GOMOKU_HOME)};
+  const char* hints[MENU_ITEM_COUNT] = {"", undoHint, "", "", tr(STR_GAME_HOME)};
 
   const int itemTextH = renderer.getTextHeight(kModalItemFont);
   const int hintTextH = renderer.getTextHeight(kModalHintFont);
@@ -751,7 +751,7 @@ void GomokuGameActivity::renderGameOver() {
     renderer.drawText(kStatusFont, cx + (colW - labW) / 2, statsY + 64, label, true);
   };
 
-  drawStatCol(0, tr(STR_GOMOKU_TIME), timeBuf);
+  drawStatCol(0, tr(STR_GAME_TIME), timeBuf);
 
   char bestBuf[16];
   if (s <= 1 && stats.bestTimeSec[s] > 0) {
@@ -760,7 +760,7 @@ void GomokuGameActivity::renderGameOver() {
   } else {
     snprintf(bestBuf, sizeof(bestBuf), "--");
   }
-  drawStatCol(1, tr(STR_GOMOKU_BEST_TIME), bestBuf);
+  drawStatCol(1, tr(STR_GAME_BEST_TIME), bestBuf);
 
   char playedBuf[16];
   uint16_t played = 0;
