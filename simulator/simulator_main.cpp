@@ -4,11 +4,12 @@
 
 #include <HalGPIO.h>
 #include <SDL.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <cstdio>
 #include <cstring>
 #include <string>
-#include <thread>
 
 #include "simulator_config.h"
 #include "simulator_window.h"
@@ -16,6 +17,15 @@
 // Provided by src/main.cpp (renamed via build flags).
 void firmware_setup();
 void firmware_loop();
+
+namespace {
+void firmwareTask(void* /*unused*/) {
+  firmware_setup();
+  while (true) {
+    firmware_loop();
+  }
+}
+}  // namespace
 
 namespace {
 
@@ -84,16 +94,11 @@ int main(int argc, char** argv) {
     return 1;
   }
 
-  // Run the firmware setup once on a worker thread so that any FreeRTOS tasks it starts
-  // (e.g. the ActivityManager render task) survive past the main thread. The main thread
+  // Run the firmware setup + loop on a registered FreeRTOS task so that
+  // xTaskGetCurrentTaskHandle() returns a non-null handle inside firmware code —
+  // ActivityManager's RenderLock-holder assertion relies on that. The main thread
   // owns the SDL window/event loop.
-  std::thread firmwareThread([] {
-    firmware_setup();
-    while (true) {
-      firmware_loop();
-    }
-  });
-  firmwareThread.detach();
+  xTaskCreate(&firmwareTask, "firmware", 8192, nullptr, 1, nullptr);
 
   bool running = true;
   while (running) {

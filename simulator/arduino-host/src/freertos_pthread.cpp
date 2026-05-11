@@ -170,6 +170,8 @@ struct Semaphore_ {
   std::recursive_mutex recursive;
   uint32_t count = 0;
   uint32_t maxCount = 1;
+  // Tracked for Mutex/Binary/Counting; recursive mutex holder is not tracked.
+  TaskHandle_t holder = nullptr;
 };
 
 SemaphoreHandle_t xSemaphoreCreateMutex() {
@@ -218,6 +220,7 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t sem, TickType_t ticksToWait) {
     if (!sem->cv.wait_for(lock, std::chrono::milliseconds(ticksToWait), avail)) return pdFAIL;
   }
   sem->count -= 1;
+  sem->holder = tls_current_task;
   return pdPASS;
 }
 
@@ -228,6 +231,7 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t sem) {
     return pdPASS;
   }
   std::lock_guard<std::mutex> lock(sem->mutex);
+  sem->holder = nullptr;
   if (sem->count < sem->maxCount) sem->count += 1;
   sem->cv.notify_one();
   return pdPASS;
@@ -312,10 +316,14 @@ BaseType_t xQueuePeek(QueueHandle_t q, void* out, TickType_t ticksToWait) {
   return pdPASS;
 }
 
-// xSemaphoreGetMutexHolder: we don't actually track holders in the simulator (would
-// require recording task on take + clearing on give). Return nullptr so callers fall
-// back to "unknown holder" paths — that matches defensive usage patterns.
-TaskState_* xSemaphoreGetMutexHolder(SemaphoreHandle_t /*sem*/) { return nullptr; }
+// xSemaphoreGetMutexHolder: returns the TaskHandle_t recorded on the most recent
+// successful take, or nullptr if the mutex is free. Only Mutex/Binary/Counting
+// kinds track the holder; recursive mutex always reports nullptr.
+TaskState_* xSemaphoreGetMutexHolder(SemaphoreHandle_t sem) {
+  if (!sem) return nullptr;
+  std::lock_guard<std::mutex> lock(sem->mutex);
+  return sem->holder;
+}
 
 // xQueuePeek overload for SemaphoreHandle_t: returns pdTRUE if the mutex is currently
 // available (not held), pdFALSE if held. Best-effort: try_lock and immediately release.

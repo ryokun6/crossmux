@@ -397,7 +397,7 @@ void GomokuGameActivity::renderPlaying() {
 
 void GomokuGameActivity::drawTitleBar() {
   const int w = renderer.getScreenWidth();
-  renderer.drawLine(0, TITLE_BAR_H, w, TITLE_BAR_H, true);
+  renderer.drawLine(0, TITLE_BAR_H, w - 1, TITLE_BAR_H, true);
 
   const int textH = renderer.getTextHeight(kStatusFont);
   const int y = gameCenterY(TITLE_BAR_H, textH);
