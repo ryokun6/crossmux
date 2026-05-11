@@ -84,10 +84,12 @@ enum UIIcon {
   Library,
   Wifi,
   Hotspot,
-  Games,
+  Apps,
   Sudoku,
   Gomoku,
+#ifdef ENABLE_CHINESE_VERSION
   ChineseChess,
+#endif
   Avatar
 };
 

@@ -54,13 +54,14 @@ done
 
 python fontconvert.py notosans_8_regular 8 ../builtinFonts/source/NotoSans/NotoSans-Regular.ttf > ../builtinFonts/notosans_8_regular.h
 
-# Chinese chess piece characters: 仕 俥 傌 兵 卒 士 将 帅 炮 相 砲 象 车 马
-# Source font is provided as a pre-subset TTF containing only those 14 glyphs.
+# Chinese chess piece characters: 仕 俥 馬 兵 卒 士 将 帅 炮 相 砲 象 车 马
+# Source font is provided as a pre-subset TTF containing only those 14 glyphs
+# plus '|' (U+007C), which fontconvert.py uses as a descender heuristic.
 if [ -f ../builtinFonts/source/ChineseChess/ChineseChess.ttf ]; then
-  python fontconvert.py chinese_chess_18 24 ../builtinFonts/source/ChineseChess/ChineseChess.ttf --2bit --compress \
+  python fontconvert.py chinese_chess_16 16 ../builtinFonts/source/ChineseChess/ChineseChess.ttf --2bit --compress \
     --additional-intervals 0x4ED5,0x4ED5 \
     --additional-intervals 0x4FE5,0x4FE5 \
-    --additional-intervals 0x50CC,0x50CC \
+    --additional-intervals 0x99AC,0x99AC \
     --additional-intervals 0x5175,0x5175 \
     --additional-intervals 0x5352,0x5352 \
     --additional-intervals 0x58EB,0x58EB \
@@ -72,10 +73,10 @@ if [ -f ../builtinFonts/source/ChineseChess/ChineseChess.ttf ]; then
     --additional-intervals 0x8C61,0x8C61 \
     --additional-intervals 0x8F66,0x8F66 \
     --additional-intervals 0x9A6C,0x9A6C \
-    > ../builtinFonts/chinese_chess_18.h
-  echo "Generated ../builtinFonts/chinese_chess_18.h"
+    > ../builtinFonts/chinese_chess_16.h
+  echo "Generated ../builtinFonts/chinese_chess_16.h"
 else
-  echo "Skipping chinese_chess_18: ChineseChess.ttf source not present"
+  echo "Skipping chinese_chess_16: ChineseChess.ttf source not present"
 fi
 
 echo ""

@@ -25,7 +25,7 @@ constexpr int kStatValueFont = NOTOSANS_16_FONT_ID;
 // UTF-8 strings for the 14 Chinese chess piece characters.
 // Indexed as [side][kind] where side 0=Red, 1=Black; kind: 0=King ... 6=Pawn.
 constexpr const char* kPieceChar[2][7] = {
-    {"帅", "仕", "相", "傌", "俥", "砲", "兵"},  // Red
+    {"帅", "仕", "相", "馬", "俥", "砲", "兵"},  // Red
     {"将", "士", "象", "马", "车", "炮", "卒"},  // Black
 };
 
@@ -61,7 +61,8 @@ void ChineseChessGameActivity::onEnter() {
   renderer.setOrientation(GfxRenderer::Orientation::Portrait);
 
   state = State::Playing;
-  elapsedMs = 0;
+  redElapsedMs = 0;
+  blackElapsedMs = 0;
   lastTickMs = millis();
   saveDebouncer.clear();
   menuSel = 0;
@@ -79,7 +80,8 @@ void ChineseChessGameActivity::onEnter() {
       aiLevel = slot.aiLevel;
       cursorR = (slot.cursorR < ChineseChessBoard::RANKS) ? slot.cursorR : 9;
       cursorC = (slot.cursorC < ChineseChessBoard::FILES) ? slot.cursorC : 4;
-      elapsedMs = static_cast<uint32_t>(slot.elapsedSec) * 1000u;
+      redElapsedMs = static_cast<uint32_t>(slot.redElapsedSec) * 1000u;
+      blackElapsedMs = static_cast<uint32_t>(slot.blackElapsedSec) * 1000u;
       if (slot.hasSelection && slot.selR < ChineseChessBoard::RANKS && slot.selC < ChineseChessBoard::FILES) {
         selectAt(slot.selR, slot.selC);
       }
@@ -114,7 +116,9 @@ void ChineseChessGameActivity::loop() {
   if (state == State::Playing) {
     const uint32_t now = millis();
     if (now > lastTickMs) {
-      elapsedMs += now - lastTickMs;
+      const uint32_t delta = now - lastTickMs;
+      if (board.nextTurn() == Side::Red) redElapsedMs += delta;
+      else                               blackElapsedMs += delta;
     }
     lastTickMs = now;
 
@@ -304,7 +308,7 @@ void ChineseChessGameActivity::onGameOver() {
   if (state == State::GameOver) return;
   state = State::GameOver;
   if (!statsRecorded) {
-    const uint32_t totalSec = elapsedMs / 1000;
+    const uint32_t totalSec = (redElapsedMs + blackElapsedMs) / 1000;
     const uint16_t cap = static_cast<uint16_t>(totalSec > 0xFFFF ? 0xFFFF : totalSec);
     if (resignedFlag) {
       ChineseChessStore::recordWin(resignWinner, cap);
@@ -387,7 +391,8 @@ void ChineseChessGameActivity::flushSave() {
   slot.hasSelection = hasSelection;
   slot.selR = selR;
   slot.selC = selC;
-  slot.elapsedSec = static_cast<uint16_t>(elapsedMs / 1000);
+  slot.redElapsedSec = static_cast<uint16_t>(redElapsedMs / 1000);
+  slot.blackElapsedSec = static_cast<uint16_t>(blackElapsedMs / 1000);
   if (!ChineseChessStore::save(slot)) {
     LOG_ERR("XQI", "Failed to write save");
   }
@@ -429,7 +434,7 @@ void ChineseChessGameActivity::renderPlaying() {
 
 void ChineseChessGameActivity::drawTitleBar() {
   const int w = renderer.getScreenWidth();
-  renderer.drawLine(0, TITLE_BAR_H, w, TITLE_BAR_H, true);
+  renderer.drawLine(0, TITLE_BAR_H, w - 1, TITLE_BAR_H, true);
 
   const int textH = renderer.getTextHeight(kStatusFont);
   const int y = gameCenterY(TITLE_BAR_H, textH);
@@ -443,15 +448,14 @@ void ChineseChessGameActivity::drawTitleBar() {
   }
   renderer.drawText(kStatusFont, 12, y, left);
 
-  // Right side: side-to-move label + move count + time.
+  // Right side: side-to-move label + move count. Per-side clock lives in the
+  // info panel below; keeping the title bar uncluttered.
   Side marker = board.nextTurn();
   if (board.result == ChineseChessBoard::Result::RedWins) marker = Side::Red;
   if (board.result == ChineseChessBoard::Result::BlackWins) marker = Side::Black;
 
-  char timeStr[8];
-  gameFormatElapsed(elapsedMs, timeStr, sizeof(timeStr));
   char tail[32];
-  snprintf(tail, sizeof(tail), "%s · %u · %s", sideLabel(marker), static_cast<unsigned>(board.moveCount), timeStr);
+  snprintf(tail, sizeof(tail), "%s · %u", sideLabel(marker), static_cast<unsigned>(board.moveCount));
   const int rw = renderer.getTextWidth(kStatusFont, tail);
   renderer.drawText(kStatusFont, w - 12 - rw, y, tail);
 }
@@ -536,7 +540,10 @@ void ChineseChessGameActivity::drawPiece(int cx, int cy, uint8_t piece) const {
   const int side2 = 2 * r + 1;
 
   // Erase background (board lines under the piece) so the glyph reads cleanly.
-  renderer.fillRoundedRect(cx - r, cy - r, side2, side2, r, Color::White);
+  // Black pieces get a light-gray fill so the two sides read distinctly on
+  // monochrome E-ink; Red stays on white.
+  const Color bgFill = (s == Side::Red) ? Color::White : Color::LightGray;
+  renderer.fillRoundedRect(cx - r, cy - r, side2, side2, r, bgFill);
   // Outline.
   renderer.drawRoundedRect(cx - r, cy - r, side2, side2, 2, r, true);
   if (s == Side::Red) {
@@ -623,26 +630,21 @@ void ChineseChessGameActivity::drawInfoPanel() {
 
   auto drawCell = [&](int xLeft, Side s) {
     renderer.drawRect(xLeft, statY, cellW, statH, true);
-    // Count pieces of this side.
-    uint16_t count = 0;
-    for (uint8_t i = 0; i < ChineseChessBoard::CELLS; i++) {
-      const uint8_t v = board.cells[i];
-      if (v == ChineseChessBoard::Empty) continue;
-      if (ChineseChessBoard::sideOf(v) == s) count++;
-    }
-    char numBuf[8];
-    snprintf(numBuf, sizeof(numBuf), "%u", static_cast<unsigned>(count));
+    // Per-side elapsed clock (chess-clock style: only the side to move ticks).
+    char timeBuf[8];
+    gameFormatElapsed((s == Side::Red) ? redElapsedMs : blackElapsedMs, timeBuf, sizeof(timeBuf));
+    // King glyph as label: 帅 for Red, 将 for Black. Both live in CHINESE_CHESS_FONT_ID.
+    const char* labelText = (s == Side::Red) ? "帅" : "将";
+    const int labelH = renderer.getTextHeight(CHINESE_CHESS_FONT_ID);
+    const int labelW = renderer.getTextWidth(CHINESE_CHESS_FONT_ID, labelText);
     const int valH = renderer.getTextHeight(kStatValueFont);
-    const int valW = renderer.getTextWidth(kStatValueFont, numBuf);
-    const char* labelText = sideLabel(s);
-    const int labelH = renderer.getTextHeight(kStatusFont);
-    const int labelW = renderer.getTextWidth(kStatusFont, labelText);
+    const int valW = renderer.getTextWidth(kStatValueFont, timeBuf);
     constexpr int gap = 12;
     const int groupW = labelW + gap + valW;
     const int gx = xLeft + (cellW - groupW) / 2;
     const int cy = statY + statH / 2;
-    renderer.drawText(kStatusFont, gx, cy - labelH / 2, labelText);
-    renderer.drawText(kStatValueFont, gx + labelW + gap, cy - valH / 2 - 2, numBuf);
+    renderer.drawText(CHINESE_CHESS_FONT_ID, gx, cy - labelH / 2, labelText, true);
+    renderer.drawText(kStatValueFont, gx + labelW + gap, cy - valH / 2 - 2, timeBuf);
 
     if (gameLive && s == activeSide) {
       constexpr int triW = 8;
@@ -681,8 +683,8 @@ void ChineseChessGameActivity::drawModeLine() {
 }
 
 void ChineseChessGameActivity::drawFooter() {
-  const auto labels = mappedInput.mapLabels(hasSelection ? tr(STR_CHINESE_CHESS_CANCEL) : tr(STR_GAME_GAME_MENU),
-                                            hasSelection ? tr(STR_CHINESE_CHESS_MOVE) : tr(STR_CHINESE_CHESS_SELECT),
+  const auto labels = mappedInput.mapLabels(hasSelection ? tr(STR_CHINESE_CHESS_CANCEL) : tr(STR_GAME_GAME_MENU_BTN),
+                                            hasSelection ? tr(STR_CHINESE_CHESS_MOVE) : tr(STR_CHINESE_CHESS_SELECT_BTN),
                                             tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
@@ -761,7 +763,7 @@ void ChineseChessGameActivity::renderGameOver() {
 
   // Footer: time + replay/exit hints.
   char timeStr[8];
-  gameFormatElapsed(elapsedMs, timeStr, sizeof(timeStr));
+  gameFormatElapsed(redElapsedMs + blackElapsedMs, timeStr, sizeof(timeStr));
   char tail[48];
   snprintf(tail, sizeof(tail), "%s %s · %u", tr(STR_GAME_TIME), timeStr, static_cast<unsigned>(board.moveCount));
   const int tw = renderer.getTextWidth(kStatusFont, tail);

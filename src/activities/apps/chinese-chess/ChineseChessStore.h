@@ -24,7 +24,8 @@ struct ChineseChessSaveSlot {
   uint8_t selR = ChineseChessBoard::INVALID_IDX;
   uint8_t selC = ChineseChessBoard::INVALID_IDX;
   bool hasSelection = false;
-  uint16_t elapsedSec = 0;
+  uint16_t redElapsedSec = 0;
+  uint16_t blackElapsedSec = 0;
 };
 
 class ChineseChessStore {

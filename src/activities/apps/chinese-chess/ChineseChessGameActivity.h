@@ -30,7 +30,7 @@ class ChineseChessGameActivity final : public Activity {
   static constexpr int BOARD_ORIGIN_X = (480 - BOARD_PITCH * (ChineseChessBoard::FILES - 1)) / 2;  // 40
   static constexpr int BOARD_ORIGIN_Y = BOARD_AREA_Y + 30;
   static constexpr int PIECE_RADIUS = 22;
-  static constexpr int INFO_PANEL_Y = BOARD_ORIGIN_Y + BOARD_PITCH * (ChineseChessBoard::RANKS - 1) + 22;  // 564
+  static constexpr int INFO_PANEL_Y = 602;
   static constexpr int MODE_LINE_Y = 720;
   static constexpr uint8_t MENU_ITEM_COUNT = 5;  // Resume / Undo / Resign / New Game / Exit
 
@@ -50,7 +50,8 @@ class ChineseChessGameActivity final : public Activity {
   ChineseChessBoard::Move legalCache[ChineseChessBoard::MAX_LEGAL_MOVES];
   uint8_t legalCount = 0;
 
-  uint32_t elapsedMs = 0;
+  uint32_t redElapsedMs = 0;
+  uint32_t blackElapsedMs = 0;
   uint32_t lastTickMs = 0;
   GameSaveDebouncer saveDebouncer;
   bool resumeRequested = false;

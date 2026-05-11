@@ -16,7 +16,7 @@
 #define UI_10_FONT_ID (22918846)
 #define UI_12_FONT_ID (1635686837)
 #define SMALL_FONT_ID (674098198)
-#define CHINESE_CHESS_FONT_ID (-1422536070)
+#define CHINESE_CHESS_FONT_ID (1005290636)
 
 // Font ID 0 is reserved as the "not found" sentinel.
 // Guard against any hash accidentally producing 0.

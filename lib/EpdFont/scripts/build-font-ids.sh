@@ -138,6 +138,20 @@ ruby -rdigest -e 'puts [
 
 echo "#define CHINESE_CHESS_FONT_ID ($(
 ruby -rdigest -e 'puts [
-  "./chinese_chess_18.h",
+  "./chinese_chess_16.h",
 ].map{|f| Digest::SHA256.hexdigest(File.read(f)).to_i(16) }.sum % (2 ** 32) - (2 ** 31)'
 ))"
+
+# Font ID 0 is reserved as the "not found" sentinel; emit a compile-time
+# guard for each ID so a hash collision with 0 is caught at build time.
+echo ""
+echo "// Font ID 0 is reserved as the \"not found\" sentinel."
+echo "// Guard against any hash accidentally producing 0."
+for id in \
+  NOTOSERIF_12_FONT_ID NOTOSERIF_14_FONT_ID NOTOSERIF_16_FONT_ID NOTOSERIF_18_FONT_ID \
+  NOTOSANS_12_FONT_ID NOTOSANS_14_FONT_ID NOTOSANS_16_FONT_ID NOTOSANS_18_FONT_ID \
+  OPENDYSLEXIC_8_FONT_ID OPENDYSLEXIC_10_FONT_ID OPENDYSLEXIC_12_FONT_ID OPENDYSLEXIC_14_FONT_ID \
+  UI_10_FONT_ID UI_12_FONT_ID SMALL_FONT_ID CHINESE_CHESS_FONT_ID
+do
+  echo "static_assert($id != 0, \"Font ID collision with sentinel\");"
+done

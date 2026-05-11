@@ -36,7 +36,7 @@ void ChineseChessMenuActivity::buildItems() {
       resumeMode = slot.mode;
       resumeAiLevel = slot.aiLevel;
       resumeMoveCount = slot.board.moveCount;
-      resumeElapsedSec = slot.elapsedSec;
+      resumeElapsedSec = static_cast<uint16_t>(slot.redElapsedSec + slot.blackElapsedSec);
       Item it;
       it.kind = ItemKind::Continue;
       it.mode = slot.mode;
@@ -80,7 +80,7 @@ void ChineseChessMenuActivity::loop() {
   if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
     onSelect();
   } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-    activityManager.goToGames();
+    activityManager.goToApps();
   }
 }
 

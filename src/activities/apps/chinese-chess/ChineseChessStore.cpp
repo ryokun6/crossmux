@@ -9,7 +9,7 @@ constexpr const char* kSavePath = "/.crosspoint/chinese-chess.bin";
 constexpr const char* kStatsPath = "/.crosspoint/chinese-chess_stats.bin";
 constexpr const char* kDir = "/.crosspoint";
 
-constexpr uint8_t SAVE_VERSION = 1;
+constexpr uint8_t SAVE_VERSION = 2;
 constexpr uint8_t STATS_VERSION = 1;
 
 bool ensureDir() {
@@ -46,8 +46,12 @@ bool ChineseChessStore::load(ChineseChessSaveSlot& out) {
   uint8_t hasSelByte = 0;
   if (f.read(&hasSelByte, 1) != 1) return false;
   out.hasSelection = (hasSelByte != 0);
-  if (f.read(reinterpret_cast<uint8_t*>(&out.elapsedSec), sizeof(out.elapsedSec)) !=
-      static_cast<int>(sizeof(out.elapsedSec))) {
+  if (f.read(reinterpret_cast<uint8_t*>(&out.redElapsedSec), sizeof(out.redElapsedSec)) !=
+      static_cast<int>(sizeof(out.redElapsedSec))) {
+    return false;
+  }
+  if (f.read(reinterpret_cast<uint8_t*>(&out.blackElapsedSec), sizeof(out.blackElapsedSec)) !=
+      static_cast<int>(sizeof(out.blackElapsedSec))) {
     return false;
   }
   if (!out.board.readFrom(f)) {
@@ -78,7 +82,12 @@ bool ChineseChessStore::save(const ChineseChessSaveSlot& in) {
   if (f.write(&in.selC, 1) != 1) return false;
   const uint8_t hasSelByte = in.hasSelection ? 1 : 0;
   if (f.write(&hasSelByte, 1) != 1) return false;
-  if (f.write(reinterpret_cast<const uint8_t*>(&in.elapsedSec), sizeof(in.elapsedSec)) != sizeof(in.elapsedSec)) {
+  if (f.write(reinterpret_cast<const uint8_t*>(&in.redElapsedSec), sizeof(in.redElapsedSec)) !=
+      sizeof(in.redElapsedSec)) {
+    return false;
+  }
+  if (f.write(reinterpret_cast<const uint8_t*>(&in.blackElapsedSec), sizeof(in.blackElapsedSec)) !=
+      sizeof(in.blackElapsedSec)) {
     return false;
   }
   if (!in.board.writeTo(f)) {

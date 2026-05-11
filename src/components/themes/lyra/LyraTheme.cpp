@@ -12,15 +12,17 @@
 
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
+#include "components/icons/apps.h"
 #include "components/icons/avatar.h"
 #include "components/icons/book.h"
 #include "components/icons/book24.h"
+#ifdef ENABLE_CHINESE_VERSION
 #include "components/icons/chinese_chess.h"
+#endif
 #include "components/icons/cover.h"
 #include "components/icons/file24.h"
 #include "components/icons/folder.h"
 #include "components/icons/folder24.h"
-#include "components/icons/games.h"
 #include "components/icons/gomoku.h"
 #include "components/icons/hotspot.h"
 #include "components/icons/image24.h"
@@ -80,14 +82,16 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return WifiIcon;
       case UIIcon::Hotspot:
         return HotspotIcon;
-      case UIIcon::Games:
-        return GamesIcon;
+      case UIIcon::Apps:
+        return AppsIcon;
       case UIIcon::Sudoku:
         return SudokuIcon;
       case UIIcon::Gomoku:
         return GomokuIcon;
+#ifdef ENABLE_CHINESE_VERSION
       case UIIcon::ChineseChess:
         return ChineseChessIcon;
+#endif
       case UIIcon::Avatar:
         return AvatarIcon;
       default:
@@ -537,14 +541,16 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     const char* label = labelStr.c_str();
     int textX = tileRect.x + 16;
     const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-    const int textY = tileRect.y + (LyraMetrics::values.menuRowHeight - lineHeight) / 2;
+    int textY = tileRect.y + (LyraMetrics::values.menuRowHeight - lineHeight) / 2;
 
     if (rowIcon != nullptr) {
       UIIcon icon = rowIcon(i);
       const uint8_t* iconBitmap = iconForName(icon, mainMenuIconSize);
       if (iconBitmap != nullptr) {
-        renderer.drawIcon(iconBitmap, textX, textY + 3, mainMenuIconSize, mainMenuIconSize);
+        const int iconTopY = textY + 3;
+        renderer.drawIcon(iconBitmap, textX, iconTopY, mainMenuIconSize, mainMenuIconSize);
         textX += mainMenuIconSize + hPaddingInSelection + 2;
+        textY = iconTopY + mainMenuIconSize / 2 - lineHeight / 2;
       }
     }
 
