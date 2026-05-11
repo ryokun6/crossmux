@@ -87,6 +87,9 @@ enum UIIcon {
   Apps,
   Sudoku,
   Gomoku,
+#ifdef ENABLE_CHINESE_VERSION
+  ChineseChess,
+#endif
   Avatar
 };
 

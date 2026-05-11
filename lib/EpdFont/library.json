@@ -1,0 +1,9 @@
+{
+  "name": "EpdFont",
+  "build": {
+    "srcFilter": [
+      "+<*>",
+      "-<scripts/>"
+    ]
+  }
+}

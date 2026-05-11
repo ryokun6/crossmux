@@ -92,6 +92,9 @@ class ActivityManager {
   void goToApps();
   void goToSudoku();
   void goToGomoku();
+#ifdef ENABLE_CHINESE_VERSION
+  void goToChineseChess();
+#endif
   void goHome();
 
   // This will move current activity to stack instead of deleting it

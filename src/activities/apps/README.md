@@ -15,6 +15,7 @@ apps/
 ├── GameSaveDebouncer.h        # 1.5s save debounce, used by sudoku/gomoku
 ├── sudoku/                    # one subdirectory per app, files keep the app-name prefix
 ├── gomoku/
+├── chinese-chess/             # conditional — gated by ENABLE_CHINESE_VERSION (see "Conditional apps" below)
 └── avatar/
 ```
 
@@ -80,6 +81,32 @@ That's it — no enum, no `switch` cases, no `buildItems()`. The lambdas in `ren
 
 - **i18n**: add `STR_MYAPP_TITLE: "My App"` to `lib/I18n/translations/english.yaml`. Other languages fall back to English; translate selectively. Then run `python scripts/gen_i18n.py lib/I18n/translations lib/I18n/` once locally (regenerated at build time too).
 - **Icon**: add `MyApp` to the `UIIcon` enum in `src/components/themes/BaseTheme.h`, add a 32×32 1-bit bitmap header in `src/components/icons/`, and a `case UIIcon::MyApp:` branch in `src/components/themes/lyra/LyraTheme.cpp`'s `iconForName(size==32)` switch. The Apps menu uses `drawButtonMenu` which only reads the 32px variant — no 24px bitmap needed.
+
+---
+
+### 5. (Optional) Conditional / compile-flag-gated apps
+
+Some apps ship only in a subset of releases — e.g. Chinese Chess (`chinese-chess/`) ships only in the Chinese-only release (`env:gh_release_cn`) and the host simulator. The branch lives behind `#ifdef ENABLE_CHINESE_VERSION`.
+
+A conditional app uses a **two-layer guard**: ifdef at every reference site, plus a `build_src_filter` exclusion in `platformio.ini` so the app's `.cpp` files aren't compiled at all when the flag is off. The ifdef alone is not enough — without the filter, the app's translation units still compile (and fail, since they freely reference each other without inner ifdefs).
+
+When adding such an app, wrap every line in the four standard add-an-app edits with `#ifdef ENABLE_<FLAG>` and add two `platformio.ini` lines. Concretely, using `chinese-chess` as the reference:
+
+| Touchpoint | What to wrap |
+|---|---|
+| `BaseTheme.h` | The new `UIIcon::<App>` enum variant |
+| `themes/lyra/LyraTheme.cpp` | `#include "components/icons/<app>.h"` and the `case UIIcon::<App>:` branch in `iconForName` |
+| `ActivityManager.{h,cpp}` | The `goTo<App>()` declaration, the `#include "apps/<app>/<App>MenuActivity.h"`, and the `goTo<App>()` definition |
+| `AppsMenuActivity.cpp` | The `kAppEntries[]` row (`kAppCount` uses `sizeof/sizeof`, so it auto-adjusts) |
+| `main.cpp` | App-specific font objects + `renderer.insertFont(...)` calls, if the app needs a custom font |
+| `lib/EpdFont/builtinFonts/all.h` | `#include` of the app's font header |
+| `platformio.ini` (base) | Add `-<activities/apps/<app>/>` to the default `build_src_filter` |
+| `platformio.ini` (the gated env) | Add `-D<FLAG>` to `build_flags` and `+<activities/apps/<app>/>` to `build_src_filter` |
+| `simulator/CMakeLists.txt` | Optionally add `-D<FLAG>=1` to `target_compile_definitions` so host debugging always covers the app |
+
+**Do not** add inner `#ifdef <FLAG>` guards inside the app's own `*.cpp` / `*.h` files — `build_src_filter` already excludes the whole directory, and inner guards would just clutter the source. The app source code stays plain.
+
+i18n keys (`STR_<APP>_*` in `english.yaml`) are **not** ifdef-guarded: the i18n generator has no conditional mechanism, and the few hundred bytes of unused string data in non-gated builds is acceptable.
 
 ---
 

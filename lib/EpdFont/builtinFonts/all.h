@@ -1,5 +1,8 @@
 #pragma once
 
+#ifdef ENABLE_CHINESE_VERSION
+#include <builtinFonts/chinese_chess_16.h>
+#endif
 #include <builtinFonts/notoserif_12_bold.h>
 #include <builtinFonts/notoserif_12_bolditalic.h>
 #include <builtinFonts/notoserif_12_italic.h>

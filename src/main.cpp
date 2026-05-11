@@ -127,6 +127,12 @@ EpdFont ui12RegularFont(&ubuntu_12_regular);
 EpdFont ui12BoldFont(&ubuntu_12_bold);
 EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont);
 
+#ifdef ENABLE_CHINESE_VERSION
+// Chinese chess piece glyphs (subset CJK font, 14 characters at 16pt).
+EpdFont chineseChessPieceFont(&chinese_chess_16);
+EpdFontFamily chineseChessPieceFontFamily(&chineseChessPieceFont);
+#endif
+
 // measurement of power button press duration calibration value
 unsigned long t1 = 0;
 unsigned long t2 = 0;
@@ -229,6 +235,9 @@ void setupDisplayAndFonts() {
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
   renderer.insertFont(SMALL_FONT_ID, smallFontFamily);
+#ifdef ENABLE_CHINESE_VERSION
+  renderer.insertFont(CHINESE_CHESS_FONT_ID, chineseChessPieceFontFamily);
+#endif
 
   // Discover and load SD card fonts
   sdFontSystem.begin(renderer);
