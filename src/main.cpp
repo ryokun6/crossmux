@@ -11,6 +11,7 @@
 #include <HalTiltSensor.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Utf8.h>
 #include <SPI.h>
 #include <builtinFonts/all.h>
 
@@ -39,6 +40,46 @@ SdCardFontSystem sdFontSystem;
 FontCacheManager fontCacheManager(renderer.getFontMap(), renderer.getSdCardFonts());
 
 // Fonts
+#ifdef ENABLE_CHINESE_VERSION
+// CN build: Noto Sans SC (Regular) at 5 physical sizes (10/12/14/16/18),
+// aligned with the Latin built-in size lineup so reader font-size picker
+// has real visual steps. EpdFontFamily nullptr-fallback handles bold/italic
+// (italic markup in EPUBs renders upright; bold renders as regular). All
+// the legacy variable names (notoserif14FontFamily, notosans14FontFamily,
+// opendyslexic12FontFamily, etc.) are preserved so callsites elsewhere in
+// the firmware compile unchanged.
+
+EpdFont notosanssc8RegularFont(&notosanssc_8_regular);
+EpdFont notosanssc10RegularFont(&notosanssc_10_regular);
+EpdFont notosanssc12RegularFont(&notosanssc_12_regular);
+EpdFont notosanssc14RegularFont(&notosanssc_14_regular);
+EpdFont notosanssc16RegularFont(&notosanssc_16_regular);
+EpdFont notosanssc18RegularFont(&notosanssc_18_regular);
+
+// Reader font slots — each maps 1:1 to its native CN size now.
+// NotoSerif and NotoSans both point at the same CN data because Chinese
+// typography doesn't use a serif/sans distinction the way Latin does;
+// keeping the legacy slot names avoids touching every callsite.
+EpdFontFamily notoserif12FontFamily(&notosanssc12RegularFont);
+EpdFontFamily notoserif14FontFamily(&notosanssc14RegularFont);
+EpdFontFamily notoserif16FontFamily(&notosanssc16RegularFont);
+EpdFontFamily notoserif18FontFamily(&notosanssc18RegularFont);
+EpdFontFamily notosans12FontFamily(&notosanssc12RegularFont);
+EpdFontFamily notosans14FontFamily(&notosanssc14RegularFont);
+EpdFontFamily notosans16FontFamily(&notosanssc16RegularFont);
+EpdFontFamily notosans18FontFamily(&notosanssc18RegularFont);
+
+// UI / status-bar slots — sizes aligned 1:1 with Latin original
+// (smallFont 8pt, UI_10 10pt, UI_12 12pt). 8pt CJK is small on e-ink
+// but matches the int'l build's status-bar layout exactly.
+EpdFontFamily smallFontFamily(&notosanssc8RegularFont);
+EpdFontFamily ui10FontFamily(&notosanssc10RegularFont);
+EpdFontFamily ui12FontFamily(&notosanssc12RegularFont);
+
+// Chinese chess piece glyphs (subset CJK font, 14 characters at 16pt).
+EpdFont chineseChessPieceFont(&chinese_chess_16);
+EpdFontFamily chineseChessPieceFontFamily(&chineseChessPieceFont);
+#else
 EpdFont notoserif14RegularFont(&notoserif_14_regular);
 EpdFont notoserif14BoldFont(&notoserif_14_bold);
 EpdFont notoserif14ItalicFont(&notoserif_14_italic);
@@ -126,12 +167,7 @@ EpdFontFamily ui10FontFamily(&ui10RegularFont, &ui10BoldFont);
 EpdFont ui12RegularFont(&ubuntu_12_regular);
 EpdFont ui12BoldFont(&ubuntu_12_bold);
 EpdFontFamily ui12FontFamily(&ui12RegularFont, &ui12BoldFont);
-
-#ifdef ENABLE_CHINESE_VERSION
-// Chinese chess piece glyphs (subset CJK font, 14 characters at 16pt).
-EpdFont chineseChessPieceFont(&chinese_chess_16);
-EpdFontFamily chineseChessPieceFontFamily(&chineseChessPieceFont);
-#endif
+#endif  // ENABLE_CHINESE_VERSION
 
 // measurement of power button press duration calibration value
 unsigned long t1 = 0;
@@ -205,6 +241,78 @@ void enterDeepSleep() {
 
 void ensureSdFontLoaded() { sdFontSystem.ensureLoaded(renderer); }
 
+// Pre-decompress every non-ASCII hot-UI glyph for the current language into
+// FontDecompressor's page-buffer cache so list/menu rendering hits the fast
+// path (binary search in pageSlots[]) instead of re-decompressing the same
+// group every frame.
+//
+// CN builds only — Latin glyph groups are small (~5-15 KB) and the on-demand
+// hot-group path is already fast for them; CN groups are ~25-32 KB and re-
+// decompressing per frame caused visible stutter in lists.
+//
+// Scope: UI_10 + UI_12, both at REGULAR style only. UI_10 covers LyraTheme
+// list rows / tab labels; UI_12 covers menu titles, list-row main text,
+// and dialog body. SMALL_FONT (button hints, list subtitles) is left out —
+// see docs/chinese-build.md §5. Reader fonts get a separate per-page
+// PrewarmScope (lib/GfxRenderer/FontCacheManager.h), out of scope here.
+//
+// Charset: CORE_CHARACTER_SETS[lang] from gen_i18n.py — the union of CJK
+// chars used by hot UI paths only (Home/Settings/components/etc., see
+// HOT_PREWARM_DIRS in scripts/gen_i18n.py). For ZH_CN that's ~240 non-ASCII
+// chars vs 358 in the full CHARACTER_SETS[], saving ~31 KB pageBuf. Cold UI
+// (OTA progress, KOReader/OPDS dialogs, Calibre instructions) renders via
+// the hot-group fallback — ~10 ms first-render stutter per missing char,
+// then session-cached. ASCII is stripped because those glyphs live in the
+// Latin hot group and decompress once on first render.
+//
+// Memory cost: ~31 KB persistent heap total for UI_10+UI_12 with the ZH_CN
+// CORE subset (~240 chars × {~96 B UI_10 / ~140 B UI_12} bitmap + 2 × 240 ×
+// 12 B entries). Without CORE filtering this was ~93 KB.
+//
+// Called once at boot (after I18n is initialized) and again on language switch.
+void prewarmUIFonts() {
+#ifdef ENABLE_CHINESE_VERSION
+  // Drop the existing pageSlots (4 max, so we'd leak after a few language
+  // switches without this) and invalidate the hot-group slot identity. The
+  // hot-group buffer's 32 KB capacity is preserved (see FontDecompressor::
+  // clearCache), so this is cheap — no realloc.
+  fontCacheManager.clearCache();
+
+  const auto lang = static_cast<uint8_t>(I18N.getLanguage());
+  const char* charset = CORE_CHARACTER_SETS[lang];
+  if (!charset || !*charset) return;
+
+  // Filter to non-ASCII codepoints, packed back into a UTF-8 byte buffer.
+  // CORE subset is ~240 chars × 3 bytes = ~720 B worst case.
+  char nonAscii[1024];
+  size_t outLen = 0;
+  const unsigned char* p = reinterpret_cast<const unsigned char*>(charset);
+  while (*p) {
+    const unsigned char* before = p;
+    uint32_t cp = utf8NextCodepoint(&p);
+    if (cp == 0) break;
+    if (cp < 0x80) continue;  // skip ASCII — already fast via Latin hot group
+    const size_t bytes = p - before;
+    if (outLen + bytes + 1 > sizeof(nonAscii)) {
+      LOG_ERR("MAIN", "Prewarm charset overflow at %zu bytes", outLen);
+      break;
+    }
+    memcpy(nonAscii + outLen, before, bytes);
+    outLen += bytes;
+  }
+  nonAscii[outLen] = '\0';
+  if (outLen == 0) return;
+
+  // UI_10 first, UI_12 second: smaller glyphs first, so its page-slot
+  // allocation is more likely to succeed on a fragmented heap.
+  fontCacheManager.prewarmCache(UI_10_FONT_ID, nonAscii, /*styleMask=*/0x01);
+  fontCacheManager.prewarmCache(UI_12_FONT_ID, nonAscii, /*styleMask=*/0x01);
+  LOG_INF("MAIN", "Prewarmed UI_10 + UI_12 for %s (%zu non-ASCII bytes)",
+          LANGUAGE_CODES[lang], outLen);
+  fontCacheManager.logStats("prewarm-done");
+#endif
+}
+
 void setupDisplayAndFonts() {
   display.begin();
   renderer.begin();
@@ -227,10 +335,14 @@ void setupDisplayAndFonts() {
   renderer.insertFont(NOTOSANS_14_FONT_ID, notosans14FontFamily);
   renderer.insertFont(NOTOSANS_16_FONT_ID, notosans16FontFamily);
   renderer.insertFont(NOTOSANS_18_FONT_ID, notosans18FontFamily);
+#ifndef ENABLE_CHINESE_VERSION
+  // OpenDyslexic is intentionally not shipped in CN build to free flash for
+  // CJK glyph data; the family is also unavailable to the font picker.
   renderer.insertFont(OPENDYSLEXIC_8_FONT_ID, opendyslexic8FontFamily);
   renderer.insertFont(OPENDYSLEXIC_10_FONT_ID, opendyslexic10FontFamily);
   renderer.insertFont(OPENDYSLEXIC_12_FONT_ID, opendyslexic12FontFamily);
   renderer.insertFont(OPENDYSLEXIC_14_FONT_ID, opendyslexic14FontFamily);
+#endif  // !ENABLE_CHINESE_VERSION
 #endif  // OMIT_FONTS
   renderer.insertFont(UI_10_FONT_ID, ui10FontFamily);
   renderer.insertFont(UI_12_FONT_ID, ui12FontFamily);
@@ -325,6 +437,9 @@ void setup() {
   LOG_DBG("MAIN", "Starting CrossPoint version " CROSSPOINT_VERSION);
 
   setupDisplayAndFonts();
+  // Pre-decompress UI glyphs while heap is still contiguous (CN builds only).
+  // No-op for international builds — see prewarmUIFonts() for rationale.
+  prewarmUIFonts();
 
   activityManager.goToBoot();
 

@@ -1,5 +1,6 @@
 #include "SettingsActivity.h"
 
+#include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
 
@@ -94,6 +95,10 @@ void SettingsActivity::onEnter() {
 }
 
 void SettingsActivity::onExit() {
+  if (auto* fcm = renderer.getFontCacheManager()) {
+    fcm->logStats("settings-exit");
+  }
+
   Activity::onExit();
 
   UITheme::getInstance().reload();  // Re-apply theme in case it was changed

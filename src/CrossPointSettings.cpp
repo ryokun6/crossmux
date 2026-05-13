@@ -341,6 +341,22 @@ int CrossPointSettings::getReaderFontId() const {
     // Fall through to built-in if SD font not found
   }
 
+#ifdef ENABLE_CHINESE_VERSION
+  // CN build only ships NotoSansSC. NOTOSERIF / OPENDYSLEXIC choices are
+  // hidden from the font picker, but any value persisted from elsewhere
+  // resolves to the NotoSans slot here so rendering stays valid.
+  switch (fontSize) {
+    case SMALL:
+      return NOTOSANS_12_FONT_ID;
+    case MEDIUM:
+    default:
+      return NOTOSANS_14_FONT_ID;
+    case LARGE:
+      return NOTOSANS_16_FONT_ID;
+    case EXTRA_LARGE:
+      return NOTOSANS_18_FONT_ID;
+  }
+#else
   switch (fontFamily) {
     case NOTOSERIF:
     default:
@@ -380,4 +396,5 @@ int CrossPointSettings::getReaderFontId() const {
           return OPENDYSLEXIC_14_FONT_ID;
       }
   }
+#endif  // ENABLE_CHINESE_VERSION
 }

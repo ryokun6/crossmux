@@ -113,6 +113,7 @@ def parse_yaml_file(filepath: str) -> Dict[str, str]:
 def load_translations(
     translations_dir: str,
     verbose: bool = False,
+    whitelist: Optional[Set[str]] = None,
 ) -> Tuple[List[str], List[str], List[str], Dict[str, List[str]], List[Set[str]]]:
     """
     Read every YAML file in *translations_dir* and return:
@@ -122,6 +123,10 @@ def load_translations(
         translations     {key: [translation_per_language]}
 
     English is always first;
+
+    If *whitelist* is provided, only languages whose YAML basename
+    (without .yaml) or _language_code matches an entry in the whitelist
+    are included. English is always retained regardless of whitelist.
     """
     yaml_dir = Path(translations_dir)
     if not yaml_dir.is_dir():
@@ -131,10 +136,26 @@ def load_translations(
     if not yaml_files:
         raise FileNotFoundError(f"No .yaml files found in {translations_dir}")
 
-    # Parse every file
+    # Optional whitelist filter (English is always retained).
+    # Matches by filename basename (without .yaml) OR by _language_code.
+    # We parse non-whitelisted files only enough to read their code, then
+    # discard the result if the code doesn't match either.
+    normalized_whitelist: Optional[Set[str]] = None
+    if whitelist is not None:
+        normalized_whitelist = {w.lower() for w in whitelist}
+
     parsed: Dict[str, Dict[str, str]] = {}
     for yf in yaml_files:
-        parsed[yf.name] = parse_yaml_file(str(yf))
+        basename = yf.stem.lower()
+        if normalized_whitelist is not None and basename != "english" and basename not in normalized_whitelist:
+            # Still must parse to check _language_code (in case whitelist uses codes).
+            data = parse_yaml_file(str(yf))
+            code = data.get("_language_code", "").lower()
+            if code != "en" and code not in normalized_whitelist:
+                continue
+            parsed[yf.name] = data
+        else:
+            parsed[yf.name] = parse_yaml_file(str(yf))
 
     # Identify the English file (must exist)
     english_file = None
@@ -430,6 +451,89 @@ def compute_character_set(translations: Dict[str, List[str]], lang_index: int) -
     return "".join(chr(cp) for cp in sorted(chars))
 
 
+# Hot UI paths whose STR_* references should be prewarmed at boot in the CN
+# build. Scanned by compute_core_character_set() to derive CORE_CHARACTER_SETS[].
+# Files (.cpp/.h) and directories are both accepted; directories are walked
+# recursively. Paths are resolved relative to the cwd that gen_i18n.py runs
+# from (project root in both CLI and SCons pre-script invocation paths).
+#
+# Cold paths excluded on purpose: reader/, apps/, network/, settings/(KOReader|
+# Opds|OtaUpdate|SdFirmware|FontDownload) — these activities are entered
+# infrequently; their CJK chars fall through to the hot-group fallback on
+# first render (~10 ms stutter, then cached for the session).
+HOT_PREWARM_DIRS: List[str] = [
+    "src/main.cpp",
+    "src/MappedInputManager.cpp",
+    "src/SettingsList.h",
+    "src/CrossPointSettings.cpp",
+    "src/CrossPointState.cpp",
+    "src/activities/Activity.cpp",
+    "src/activities/ActivityManager.cpp",
+    "src/activities/boot_sleep/",
+    "src/activities/home/",
+    "src/activities/util/",
+    "src/activities/settings/SettingsActivity.cpp",
+    "src/activities/settings/LanguageSelectActivity.cpp",
+    "src/activities/settings/FontSelectionActivity.cpp",
+    "src/activities/settings/StatusBarSettingsActivity.cpp",
+    "src/activities/settings/ButtonRemapActivity.cpp",
+    "src/activities/settings/ClearCacheActivity.cpp",
+    "src/components/",
+]
+
+# STR_* prefixes whose strings are still skipped even if they appear in the
+# hot path scan — typically because they're conditional error/progress
+# messages that share a file with frequently-shown labels.
+HOT_PREWARM_SKIP_PREFIXES: Tuple[str, ...] = (
+    "STR_OTA_", "STR_FW_", "STR_FIRMWARE_",
+    "STR_KOREADER_", "STR_OPDS_", "STR_CALIBRE_",
+    "STR_DOWNLOAD_", "STR_HOTSPOT_", "STR_NETWORK_",
+    "STR_AUTH_", "STR_CRASH_",
+    "STR_KB_HINT_",  # keyboard hints rarely shown
+    "STR_REMAP_", "STR_HW_",  # button-remap activity only
+)
+
+
+def compute_core_character_set(
+    translations: Dict[str, List[str]],
+    lang_index: int,
+    hot_paths: List[str],
+    skip_prefixes: Tuple[str, ...],
+) -> str:
+    """Return the character subset used by STR_* keys referenced from `hot_paths`.
+
+    Used to build CORE_CHARACTER_SETS[] for the CN build's boot prewarm. The
+    full CHARACTER_SETS[] union is still emitted alongside for callers that
+    need every glyph (e.g. EPUB Reader's PrewarmScope)."""
+    pattern = re.compile(r"\bSTR_[A-Za-z0-9_]+\b")
+    skip_set = _GENERATED_FILENAMES
+    used: Set[str] = set()
+    for raw in hot_paths:
+        path = Path(raw)
+        if path.is_file():
+            files = [path]
+        elif path.is_dir():
+            files = [f for f in path.rglob("*") if f.suffix in {".cpp", ".h", ".c"} and f.name not in skip_set]
+        else:
+            continue
+        for f in files:
+            try:
+                text = f.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            for m in pattern.finditer(text):
+                key = m.group(0)
+                if not key.startswith(skip_prefixes):
+                    used.add(key)
+
+    chars = {0x20}  # space, safety
+    for key in used:
+        if key in translations:
+            for ch in translations[key][lang_index]:
+                chars.add(ord(ch))
+    return "".join(chr(cp) for cp in sorted(chars))
+
+
 # ---------------------------------------------------------------------------
 # Code generators
 # ---------------------------------------------------------------------------
@@ -480,6 +584,11 @@ def generate_keys_header(
     lines.append("")
     lines.append("// Character sets for each language (defined in I18nStrings.cpp)")
     lines.append("extern const char* const CHARACTER_SETS[];")
+    lines.append("// Hot-UI character subset used for the CN boot prewarm.")
+    lines.append("// CN-only — wrapped to keep the international firmware byte-stable.")
+    lines.append("#ifdef ENABLE_CHINESE_VERSION")
+    lines.append("extern const char* const CORE_CHARACTER_SETS[];")
+    lines.append("#endif")
     lines.append("")
 
     # StrId enum
@@ -557,12 +666,19 @@ def generate_keys_header(
         "EN", "ES", "FR", "DE", "CS", "PT", "RU", "SV", "RO", "CA", "UK",
         "BE", "IT", "PL", "FI", "DA", "NL", "TR", "KK", "HU", "LT", "SI",
     ]
+    # When a whitelist filters out languages from this firmware variant
+    # (e.g. CN build keeps only EN+ZH_CN), remap their V1 slots to EN so
+    # old language.bin files still migrate cleanly (any unknown old code
+    # falls back to English). Without this, Language::ES would be an
+    # undeclared identifier and the firmware wouldn't compile.
+    present = set(languages)
+    v1_codes_safe = [c if c in present else "EN" for c in v1_codes]
     lines.append("// V1 language.bin migration table (frozen enum order from 2f969a9)")
     lines.append("constexpr Language V1_LANGUAGES[] = {")
-    lines.append("    " + ", ".join(f"Language::{c}" for c in v1_codes) + ",")
+    lines.append("    " + ", ".join(f"Language::{c}" for c in v1_codes_safe) + ",")
     lines.append("};")
     lines.append(
-        f"constexpr uint8_t V1_LANGUAGE_COUNT = {len(v1_codes)};"
+        f"constexpr uint8_t V1_LANGUAGE_COUNT = {len(v1_codes_safe)};"
     )
 
     _write_file(output_path, lines, verbose)
@@ -636,6 +752,22 @@ def generate_strings_cpp(
         charset = compute_character_set(translations, lang_idx)
         _append_string_entry(lines, charset, comment=name)
     lines.append("};")
+    lines.append("")
+
+    # CORE_CHARACTER_SETS: hot-UI subset, used by the CN build's boot
+    # prewarm to bound pageBuf size. Full CHARACTER_SETS[] is still emitted
+    # above for callers that need every glyph (EPUB PrewarmScope, etc.).
+    # CN-only via #ifdef so the international firmware stays byte-stable.
+    lines.append("// Hot-UI character subset for boot prewarm (CN build)")
+    lines.append("#ifdef ENABLE_CHINESE_VERSION")
+    lines.append("const char* const CORE_CHARACTER_SETS[] = {")
+    for lang_idx, name in enumerate(language_names):
+        core_charset = compute_core_character_set(
+            translations, lang_idx, HOT_PREWARM_DIRS, HOT_PREWARM_SKIP_PREFIXES
+        )
+        _append_string_entry(lines, core_charset, comment=f"{name} (prewarm)")
+    lines.append("};")
+    lines.append("#endif")
     lines.append("")
 
     # Per-language flat string blobs and offset tables.
@@ -824,6 +956,7 @@ def main(
     src_dirs: Optional[List[str]] = None,
     strip_unused: bool = False,
     verbose: bool = False,
+    whitelist: Optional[Set[str]] = None,
 ) -> None:
     # Default paths (relative to project root)
     default_translations_dir = "lib/I18n/translations"
@@ -857,8 +990,10 @@ def main(
 
     try:
         languages, language_names, string_keys, translations, inherited_sets = (
-            load_translations(translations_dir, verbose)
+            load_translations(translations_dir, verbose, whitelist=whitelist)
         )
+        if whitelist is not None and verbose:
+            print(f"  Whitelist active: kept {len(languages)} language(s) -> {', '.join(languages)}")
 
         # --- Unused-string detection ---
         scan_dirs = [d for d in src_dirs if os.path.isdir(d)]
@@ -987,17 +1122,56 @@ if __name__ == "__main__":
         action="store_true",
         help="Print per-key INFO/WARNING messages and file generation details",
     )
+    parser.add_argument(
+        "--whitelist",
+        default=None,
+        metavar="LANG[,LANG...]",
+        help=(
+            "Comma-separated list of language file basenames or _language_code "
+            "values to include (e.g. 'english,simplified_chinese' or 'EN,ZH_CN'). "
+            "English is always included. When omitted, all languages in the "
+            "translations directory are processed."
+        ),
+    )
     args = parser.parse_args()
+    whitelist_set: Optional[Set[str]] = None
+    if args.whitelist:
+        whitelist_set = {item.strip() for item in args.whitelist.split(",") if item.strip()}
     main(
         args.translations_dir,
         args.output_dir,
         args.src_dirs,
         args.strip_unused,
         args.verbose,
+        whitelist=whitelist_set,
     )
 else:
+    # When invoked as a PlatformIO/SCons pre-script, branch on the
+    # ENABLE_CHINESE_VERSION build flag:
+    #   * CN build: keep only english + simplified_chinese
+    #   * International build: keep every language EXCEPT simplified_chinese
+    #     (Chinese needs the bundled CJK font to render, which only ships
+    #      with the CN build; including ZH_CN text in the int'l build would
+    #      grow flash for ▯-only fallback output)
     try:
         Import("env")
-        main(strip_unused=True)
+        build_flags = env.get("BUILD_FLAGS", []) if "env" in dir() else []
+        cpp_defines = env.get("CPPDEFINES", []) if "env" in dir() else []
+        haystack = " ".join(str(f) for f in build_flags) + " " + " ".join(str(d) for d in cpp_defines)
+        is_cn_build = "ENABLE_CHINESE_VERSION" in haystack
+
+        active_whitelist: Optional[Set[str]] = None
+        if is_cn_build:
+            active_whitelist = {"english", "simplified_chinese"}
+        else:
+            # Build whitelist of every file under translations/ except
+            # simplified_chinese. Done at runtime so any future YAML added
+            # to the directory is automatically picked up.
+            translations_dir = Path("lib/I18n/translations")
+            if translations_dir.is_dir():
+                all_basenames = {f.stem for f in translations_dir.glob("*.yaml")}
+                all_basenames.discard("simplified_chinese")
+                active_whitelist = all_basenames
+        main(strip_unused=True, whitelist=active_whitelist)
     except NameError:
         pass

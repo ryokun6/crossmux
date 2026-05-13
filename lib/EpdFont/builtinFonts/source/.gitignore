@@ -10,3 +10,9 @@
 !OpenDyslexic/**
 !Ubuntu/
 !Ubuntu/**
+# NotoSansSC: keep the helper scripts + license, exclude the heavy OTF
+# (fetched on demand via fetch.sh, ~8 MB).
+!NotoSansSC/
+!NotoSansSC/.gitignore
+!NotoSansSC/fetch.sh
+!NotoSansSC/OFL.txt

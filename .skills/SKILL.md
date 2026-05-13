@@ -91,6 +91,7 @@ find src -name "*.cpp" -o -name "*.h" | xargs clang-format -i
   * `default`: Development (LOG_LEVEL=2, serial enabled)
   * `gh_release`: Production (LOG_LEVEL=0)
   * `gh_release_rc`: Release candidate (LOG_LEVEL=1)
+  * `gh_release_cn`: Production CN variant (`-DENABLE_CHINESE_VERSION`). Drops NotoSerif/OpenDyslexic/Ubuntu, ships NotoSansSC at 6 sizes with ~3,500 common Hanzi baked in. **See [docs/chinese-build.md](docs/chinese-build.md) for the full architecture, memory budget, font regen workflow, and extension guidelines.** Don't touch CN font wiring or i18n filtering without reading that doc first.
   * `slim`: Minimal build (no serial logging)
 
 ### Critical Build Flags

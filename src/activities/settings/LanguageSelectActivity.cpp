@@ -11,6 +11,11 @@
 #include "MappedInputManager.h"
 #include "fontIds.h"
 
+// Defined in src/main.cpp — pre-decompresses UI glyphs for the new language so
+// the next render isn't stuck re-decompressing every group. No-op for non-CN
+// builds.
+extern void prewarmUIFonts();
+
 void LanguageSelectActivity::onEnter() {
   Activity::onEnter();
 
@@ -55,6 +60,10 @@ void LanguageSelectActivity::handleSelection() {
   {
     RenderLock lock(*this);
     I18N.setLanguage(static_cast<Language>(langIndex));
+    // Rebuild the UI glyph cache for the newly-selected language so the next
+    // frame doesn't re-decompress every glyph group on the fly. RenderLock is
+    // still held — safe to modify the decompressor's pageSlots here.
+    prewarmUIFonts();
   }
 
   SETTINGS.language = langIndex;

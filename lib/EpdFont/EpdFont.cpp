@@ -152,6 +152,8 @@ uint32_t EpdFont::applyLigatures(uint32_t cp, const char*& text) const {
 }
 
 const EpdGlyph* EpdFont::getGlyph(const uint32_t cp) const {
+  if (const EpdGlyph* hit = lookupGlyphCache(cp)) return hit;
+
   const int count = data->intervalCount;
   if (count == 0 && !data->glyphMissHandler) return nullptr;
 
@@ -168,19 +170,20 @@ const EpdGlyph* EpdFont::getGlyph(const uint32_t cp) const {
     if (it != intervals) {
       const auto& interval = *(it - 1);
       if (cp <= interval.last) {
-        return &data->glyph[interval.offset + (cp - interval.first)];
+        return storeGlyphCache(cp, &data->glyph[interval.offset + (cp - interval.first)]);
       }
     }
   }
 
   // Codepoint not in interval table — try on-demand loading (SD card fonts).
   if (data->glyphMissHandler) {
-    const EpdGlyph* loaded = data->glyphMissHandler(data->glyphMissCtx, cp);
-    if (loaded) return loaded;
+    if (const EpdGlyph* loaded = data->glyphMissHandler(data->glyphMissCtx, cp)) {
+      return storeGlyphCache(cp, loaded);
+    }
   }
 
-  if (cp != REPLACEMENT_GLYPH) {
-    return getGlyph(REPLACEMENT_GLYPH);
-  }
-  return nullptr;
+  // Missing-glyph fallback. Cache the fallback pointer too so subsequent
+  // lookups of the same missing codepoint short-circuit on the cache hit.
+  const EpdGlyph* fallback = (cp != REPLACEMENT_GLYPH) ? getGlyph(REPLACEMENT_GLYPH) : nullptr;
+  return storeGlyphCache(cp, fallback);
 }

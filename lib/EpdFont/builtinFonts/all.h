@@ -1,8 +1,20 @@
 #pragma once
 
 #ifdef ENABLE_CHINESE_VERSION
+// CN-only build: ship NotoSansSC at 5 sizes (Regular) with CJK glyphs for
+// ~3,500 common chars + 通用规范汉字表 一级 + CJK punctuation. The
+// international Latin/Cyrillic/etc. font headers are not included because
+// they would push the firmware past the 6.25 MB app partition and the
+// NotoSansSC fonts already cover Latin glyphs via the Noto family.
+// 5 sizes match the Latin built-in slot lineup: UI 10/12pt, reader 12/14/16/18pt.
 #include <builtinFonts/chinese_chess_16.h>
-#endif
+#include <builtinFonts/cn/notosanssc_8_regular.h>
+#include <builtinFonts/cn/notosanssc_10_regular.h>
+#include <builtinFonts/cn/notosanssc_12_regular.h>
+#include <builtinFonts/cn/notosanssc_14_regular.h>
+#include <builtinFonts/cn/notosanssc_16_regular.h>
+#include <builtinFonts/cn/notosanssc_18_regular.h>
+#else
 #include <builtinFonts/notoserif_12_bold.h>
 #include <builtinFonts/notoserif_12_bolditalic.h>
 #include <builtinFonts/notoserif_12_italic.h>
@@ -56,3 +68,4 @@
 #include <builtinFonts/ubuntu_10_regular.h>
 #include <builtinFonts/ubuntu_12_bold.h>
 #include <builtinFonts/ubuntu_12_regular.h>
+#endif

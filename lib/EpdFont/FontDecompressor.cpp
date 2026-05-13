@@ -8,19 +8,42 @@
 
 FontDecompressor::~FontDecompressor() { deinit(); }
 
+// init() runs once at boot from setupDisplayAndFonts(). It reserves the hot-
+// group buffer at MAX_GROUP_SIZE (matching fontconvert.py's GROUP_MAX_UNCOMPRESSED_BYTES)
+// while heap is still contiguous so subsequent hotGroup.resize(N) calls in
+// getBitmap() are always satisfied within the existing capacity. Without this,
+// CN font rendering on a fragmented heap can hit std::bad_alloc → terminate()
+// (we build with -fno-exceptions) — observed crashing HomeActivity on cold
+// boot while drawing Chinese book titles in the recent-books shelf.
 bool FontDecompressor::init() {
-  clearCache();
+  freePageBuffer();
+  hotGroup.reserve(MAX_GROUP_SIZE);
+  if (hotGroup.capacity() < MAX_GROUP_SIZE) {
+    LOG_ERR("FDC", "init: failed to reserve %u-byte hot group buffer",
+            static_cast<unsigned>(MAX_GROUP_SIZE));
+    return false;
+  }
+  // Single-glyph scratch buffer: largest CJK glyph at 18pt is ~300 B
+  // (24×24 at 2 bpp). 1 KB reserved covers it with no resize.
+  hotGlyphBuf.reserve(1024);
   return true;
 }
 
 void FontDecompressor::deinit() {
   freePageBuffer();
-  freeHotGroup();
+  freeHotGroup();  // shrink_to_fit — full release on destruction
 }
 
+// clearCache() drops the page-buffer slots and invalidates the hot group's
+// slot identity, but keeps the hot-group buffer's capacity intact. Callers
+// (language switch, font reload) want a fresh prewarm state without paying
+// for the 32 KB reserve again. To fully release memory, use deinit().
 void FontDecompressor::clearCache() {
   freePageBuffer();
-  freeHotGroup();
+  hotGroup.clear();
+  hotGroupFont = nullptr;
+  hotGroupIndex = UINT16_MAX;
+  hotGlyphBuf.clear();
 }
 
 void FontDecompressor::freePageBuffer() {
@@ -454,7 +477,16 @@ int FontDecompressor::prewarmCache(const EpdFontData* fontData, const char* utf8
     }
   }
 
-  // Step 4: For each unique group, decompress to temp buffer and extract needed glyphs
+  // Step 4: For each unique group, decompress and extract needed glyphs.
+  //
+  // We reuse the hotGroup vector as the temp buffer here instead of malloc-ing
+  // a fresh 32 KB block per group. Without this, on a fragmented heap (~19 KB
+  // MaxAlloc observed) every group from ~10 onward fails the 32 KB malloc and
+  // its glyphs never enter the page slot — they then re-decompress per render
+  // via the hot-group fallback, producing >20 ms/getBitmap stutter.
+  //
+  // hotGroup.capacity() was reserved to MAX_GROUP_SIZE in init() while the
+  // heap was still contiguous, so resize(N ≤ MAX_GROUP_SIZE) never allocates.
   uint32_t writeOffset = 0;
   int missed = 0;
 
@@ -462,9 +494,16 @@ int FontDecompressor::prewarmCache(const EpdFontData* fontData, const char* utf8
     uint16_t groupIdx = neededGroups[g];
     const EpdFontGroup& group = fontData->groups[groupIdx];
 
-    auto* tempBuf = static_cast<uint8_t*>(malloc(group.uncompressedSize));
-    if (!tempBuf) {
-      LOG_ERR("FDC", "Failed to allocate temp buffer (%u bytes) for group %u", group.uncompressedSize, groupIdx);
+    if (group.uncompressedSize > MAX_GROUP_SIZE) {
+      LOG_ERR("FDC", "Group %u uncompressedSize %u exceeds MAX_GROUP_SIZE %u", groupIdx, group.uncompressedSize,
+              static_cast<unsigned>(MAX_GROUP_SIZE));
+      missed++;
+      continue;
+    }
+
+    hotGroup.resize(group.uncompressedSize);
+    if (hotGroup.size() != group.uncompressedSize) {
+      LOG_ERR("FDC", "hotGroup resize to %u failed for group %u", group.uncompressedSize, groupIdx);
       missed++;
       continue;
     }
@@ -472,8 +511,7 @@ int FontDecompressor::prewarmCache(const EpdFontData* fontData, const char* utf8
       stats.peakTempBytes = group.uncompressedSize;
     }
 
-    if (!decompressGroup(fontData, groupIdx, tempBuf, group.uncompressedSize)) {
-      free(tempBuf);
+    if (!decompressGroup(fontData, groupIdx, hotGroup.data(), group.uncompressedSize)) {
       missed++;
       continue;
     }
@@ -485,13 +523,19 @@ int FontDecompressor::prewarmCache(const EpdFontData* fontData, const char* utf8
       if (getGroupIndex(fontData, slot.glyphs[i].glyphIndex) != groupIdx) continue;
 
       const EpdGlyph& glyph = fontData->glyph[slot.glyphs[i].glyphIndex];
-      compactSingleGlyph(&tempBuf[slot.glyphs[i].alignedOffset], &slot.buffer[writeOffset], glyph.width, glyph.height);
+      compactSingleGlyph(&hotGroup[slot.glyphs[i].alignedOffset], &slot.buffer[writeOffset], glyph.width, glyph.height);
       slot.glyphs[i].bufferOffset = writeOffset;
       writeOffset += glyph.dataLength;
     }
-
-    free(tempBuf);
   }
+
+  // Invalidate the hot-group identity but keep the buffer's capacity — we
+  // populated hotGroup with the last prewarmed group's bytes, but didn't
+  // update hotGroupFont/hotGroupIndex (and don't want subsequent getBitmap
+  // calls to mistake it for a valid hot-group cache hit).
+  hotGroup.clear();
+  hotGroupFont = nullptr;
+  hotGroupIndex = UINT16_MAX;
 
   LOG_DBG("FDC", "Prewarm: %u glyphs in %u bytes from %u groups (%d missed)", glyphCount, writeOffset, groupCount,
           missed);

@@ -20,6 +20,7 @@ parser.add_argument("size", type=int, help="font size to use.")
 parser.add_argument("fontstack", action="store", nargs='+', help="list of font files, ordered by descending priority.")
 parser.add_argument("--2bit", dest="is2Bit", action="store_true", help="generate 2-bit greyscale bitmap instead of 1-bit black and white.")
 parser.add_argument("--additional-intervals", dest="additional_intervals", action="append", help="Additional code point intervals to export as min,max. This argument can be repeated.")
+parser.add_argument("--additional-charset", dest="additional_charset", action="append", help="Path to a UTF-8 text file. Each character in the file (excluding whitespace and BOM) is rasterized into the font. Adjacent codepoints are coalesced into intervals. Can be repeated. Use this instead of --additional-intervals when adding thousands of individual code points (e.g. CJK glyph subsets).")
 parser.add_argument("--compress", dest="compress", action="store_true", help="Compress glyph bitmaps using DEFLATE with group-based compression.")
 parser.add_argument("--force-autohint", dest="force_autohint", action="store_true", help="Force FreeType auto-hinter instead of native font hinting. Improves stem width consistency for fonts with weak or no native TrueType hints.")
 parser.add_argument("--pnum", dest="pnum", action="store_true", help="Use proportional numerals (pnum OpenType feature) instead of default tabular figures. Reduces visual gaps between digits in running prose.")
@@ -138,6 +139,29 @@ intervals = [
 add_ints = []
 if args.additional_intervals:
     add_ints = [tuple([int(n, base=0) for n in i.split(",")]) for i in args.additional_intervals]
+if args.additional_charset:
+    # Read every charset file, union the codepoints, coalesce into intervals.
+    # We coalesce so the EpdUnicodeInterval table stays compact (~hundreds of
+    # entries) instead of one entry per character (~thousands).
+    charset_cps = set()
+    for path in args.additional_charset:
+        with open(path, "r", encoding="utf-8") as f:
+            blob = f.read().lstrip("﻿")
+        for ch in blob:
+            if not ch.isspace():
+                charset_cps.add(ord(ch))
+    if charset_cps:
+        sorted_cps = sorted(charset_cps)
+        run_start = sorted_cps[0]
+        run_end = sorted_cps[0]
+        for cp in sorted_cps[1:]:
+            if cp == run_end + 1:
+                run_end = cp
+            else:
+                add_ints.append((run_start, run_end))
+                run_start = cp
+                run_end = cp
+        add_ints.append((run_start, run_end))
 
 def norm_floor(val):
     return int(math.floor(val / (1 << 6)))
@@ -825,10 +849,13 @@ if compress:
         (0xFFFD, 0xFFFD),   # Replacement Character
     ]
 
-    # 64 KB cap: large enough to hold any single built-in script group with
-    # headroom, small enough to be a comfortable transient malloc on the
-    # ESP32-C3.
-    GROUP_MAX_UNCOMPRESSED_BYTES = 65536
+    # 32 KB cap: was 64 KB but CN built-in fonts with 3,500 dense CJK glyphs
+    # at 16-18pt would form groups up to ~50 KB, and a transient malloc that
+    # size on the ESP32-C3 (380 KB total heap, ~200 KB free at runtime after
+    # framebuffer + activity) caused std::bad_alloc → terminate when entering
+    # the Language picker. Halving the cap doubles group count (still well
+    # under EpdFontGroup table limits) and shrinks each transient allocation.
+    GROUP_MAX_UNCOMPRESSED_BYTES = 32768
 
     def get_script_group(code_point):
         for i, (start, end) in enumerate(SCRIPT_GROUP_RANGES):

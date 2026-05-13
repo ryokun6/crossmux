@@ -109,22 +109,31 @@ set(VENDOR_C
 )
 
 # Generate I18n headers (mirrors what scripts/gen_i18n.py does pre-build for PlatformIO).
-# All translation YAMLs are listed as inputs so edits to any one of them re-run the
-# generator; otherwise downstream code referencing a freshly-added STR_* key would
-# fail to compile after a merge that only touched the YAMLs.
+# Simulator builds with ENABLE_CHINESE_VERSION=1 so the i18n blob must contain
+# english + simplified_chinese only (matching gh_release_cn), not all 22+
+# languages — otherwise the Language picker shows the wrong list.
+#
+# This is an ALL target (not add_custom_command with OUTPUT) so it runs on every
+# cmake --build invocation. We cannot rely on mtime checks: PlatformIO may have
+# just written a 22-language i18n into the same lib/I18n/ files (because it
+# excludes simplified_chinese from the international build), and that file
+# would falsely appear "up-to-date" relative to the YAML mtimes.
 set(I18N_GENERATED
     ${REPO_ROOT}/lib/I18n/I18nKeys.h
     ${REPO_ROOT}/lib/I18n/I18nStrings.h
     ${REPO_ROOT}/lib/I18n/I18nStrings.cpp
 )
-file(GLOB I18N_TRANSLATIONS "${REPO_ROOT}/lib/I18n/translations/*.yaml")
-add_custom_command(
-    OUTPUT ${I18N_GENERATED}
-    COMMAND python3 ${REPO_ROOT}/scripts/gen_i18n.py ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
+file(GLOB I18N_TRANSLATIONS CONFIGURE_DEPENDS "${REPO_ROOT}/lib/I18n/translations/*.yaml")
+add_custom_target(i18n_generated ALL
+    BYPRODUCTS ${I18N_GENERATED}
+    COMMAND python3 ${REPO_ROOT}/scripts/gen_i18n.py
+            ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
+            --whitelist english,simplified_chinese
     DEPENDS ${REPO_ROOT}/scripts/gen_i18n.py ${I18N_TRANSLATIONS}
-    COMMENT "Generating I18n strings"
+            ${CMAKE_CURRENT_LIST_FILE}
+    COMMENT "Generating I18n strings (simulator, CN whitelist)"
+    VERBATIM
 )
-add_custom_target(i18n_generated DEPENDS ${I18N_GENERATED})
 
 add_executable(crosspoint_simulator
     simulator_main.cpp

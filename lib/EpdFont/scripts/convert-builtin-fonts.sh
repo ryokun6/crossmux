@@ -79,6 +79,34 @@ else
   echo "Skipping chinese_chess_16: ChineseChess.ttf source not present"
 fi
 
+# Simplified-Chinese built-in fonts (only for gh_release_cn). Gated by env var
+# so the international font regen pipeline isn't slowed by the 8 MB source.
+# Run with: BUILD_CN_FONTS=1 bash convert-builtin-fonts.sh
+if [ -n "$BUILD_CN_FONTS" ]; then
+  echo ""
+  echo "Generating CN built-in fonts..."
+  src_cn=../builtinFonts/source/NotoSansSC/NotoSansSC-Regular.otf
+  if [ ! -f "$src_cn" ]; then
+    bash ../builtinFonts/source/NotoSansSC/fetch.sh
+  fi
+  mkdir -p ../builtinFonts/cn
+  CHARSET=charsets/zh_cn_common.txt
+  if [ ! -f "$CHARSET" ]; then
+    echo "Building $CHARSET..."
+    python charsets/build_zh_cn_charset.py
+  fi
+  # 6 sizes match the Latin built-in slot lineup exactly:
+  # smallFont 8pt, UI 10/12pt, reader 12/14/16/18pt.
+  for size in 8 10 12 14 16 18; do
+    name="notosanssc_${size}_regular"
+    out=../builtinFonts/cn/${name}.h
+    python fontconvert.py "$name" "$size" "$src_cn" \
+      --2bit --compress \
+      --additional-charset "$CHARSET" > "$out"
+    echo "Generated $out ($(wc -c < "$out") bytes)"
+  done
+fi
+
 echo ""
 echo "Running compression verification..."
 python verify_compression.py ../builtinFonts/

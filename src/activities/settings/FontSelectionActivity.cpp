@@ -19,9 +19,16 @@ void FontSelectionActivity::onEnter() {
   fonts_.clear();
   fonts_.reserve(CrossPointSettings::BUILTIN_FONT_COUNT + (registry_ ? registry_->getFamilyCount() : 0));
 
+#ifdef ENABLE_CHINESE_VERSION
+  // CN build ships only one Latin/CJK family (Noto Sans SC), keep one entry
+  // but mark it with the NotoSans enum value so the persisted setting maps
+  // to the existing NOTOSANS branch in getReaderFontId().
+  fonts_.push_back({I18N.get(StrId::STR_NOTO_SANS), true, 1});
+#else
   fonts_.push_back({I18N.get(StrId::STR_NOTO_SERIF), true, 0});
   fonts_.push_back({I18N.get(StrId::STR_NOTO_SANS), true, 1});
   fonts_.push_back({I18N.get(StrId::STR_OPEN_DYSLEXIC), true, 2});
+#endif
 
   if (registry_) {
     const auto& families = registry_->getFamilies();
@@ -41,7 +48,15 @@ void FontSelectionActivity::onEnter() {
       }
     }
   } else {
-    selectedIndex_ = SETTINGS.fontFamily < CrossPointSettings::BUILTIN_FONT_COUNT ? SETTINGS.fontFamily : 0;
+    // Match by enum value rather than by index since fonts_ may not include
+    // every built-in family (CN build hides Serif/Dyslexic).
+    selectedIndex_ = 0;
+    for (int i = 0; i < static_cast<int>(fonts_.size()); i++) {
+      if (fonts_[i].isBuiltin && fonts_[i].settingIndex == SETTINGS.fontFamily) {
+        selectedIndex_ = i;
+        break;
+      }
+    }
   }
 
   requestUpdate();

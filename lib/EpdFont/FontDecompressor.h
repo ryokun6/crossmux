@@ -10,6 +10,12 @@ class FontDecompressor {
  public:
   static constexpr uint16_t MAX_PAGE_GLYPHS = 512;
   static constexpr uint8_t MAX_PAGE_SLOTS = 4;  // One per font style (R/B/I/BI)
+  // Must match fontconvert.py's GROUP_MAX_UNCOMPRESSED_BYTES exactly.
+  // The hot-group buffer is reserved to this size at init() so subsequent
+  // runtime resize() calls never trigger a malloc — fixes std::bad_alloc →
+  // terminate() on cold boot when heap fragmentation prevents a 32 KB
+  // contiguous allocation during HomeActivity Chinese text rendering.
+  static constexpr uint32_t MAX_GROUP_SIZE = 32768;
 
   FontDecompressor() = default;
   ~FontDecompressor();
