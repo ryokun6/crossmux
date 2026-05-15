@@ -88,15 +88,19 @@ void HalDisplay::drawImageTransparent(const uint8_t* imageData, uint16_t x, uint
   drawImage(imageData, x, y, w, h, fromProgmem);  // Same as drawImage in simulator (no transparency).
 }
 
-// Grayscale: real device dithers using two buffers. In the simulator we ignore and just
-// display the current 1-bpp framebuffer.
+// Grayscale: real device combines two gray bit-plane buffers on top of the BW frame to
+// drive 4-level e-ink waveforms. The simulator has only a 1-bpp framebuffer, so all of
+// these are no-ops — see displayGrayBuffer() below for the consequence.
 void HalDisplay::copyGrayscaleBuffers(const uint8_t*, const uint8_t*) {}
 void HalDisplay::copyGrayscaleLsbBuffers(const uint8_t*) {}
 void HalDisplay::copyGrayscaleMsbBuffers(const uint8_t*) {}
 void HalDisplay::cleanupGrayscaleBuffers(const uint8_t*) {}
 void HalDisplay::displayGrayBuffer(bool /*turnOffScreen*/) {
-  std::lock_guard<std::mutex> lock(fb_mutex());
-  simulator::SimulatorWindow::instance().pushFramebuffer(getFrameBuffer());
+  // Real hardware overlays the LSB/MSB gray bit-planes on the BW frame already shown
+  // by the previous displayBuffer(). The simulator has only a single 1-bpp framebuffer,
+  // which at this point holds the GRAYSCALE_MSB mask (cleared background + glyph edge
+  // pixels only). Pushing it would replace the BW frame with hollow outlines; stay a
+  // no-op so the SDL window keeps showing the prior BW push.
 }
 
 uint16_t HalDisplay::getDisplayWidth() const { return DISPLAY_WIDTH; }
