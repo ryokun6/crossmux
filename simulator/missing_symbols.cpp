@@ -69,18 +69,84 @@ ImageToFramebufferDecoder* ImageDecoderFactory::getDecoder(const std::string&) {
 bool ImageDecoderFactory::isFormatSupported(const std::string&) { return false; }
 
 // =============================================================================
-// Obfuscation utils (lib/Serialization/ObfuscationUtils excluded)
+// Obfuscation utils (lib/Serialization/ObfuscationUtils excluded — pulls esp_mac.h
+// and mbedtls). Simulator persists secrets to the host SD root, so we round-trip
+// through plain base64. The XOR step is a no-op (no hardware MAC available);
+// secrecy of dev-machine SD card contents is the host user's responsibility.
 // =============================================================================
 
 #include "ObfuscationUtils.h"
 
+namespace {
+constexpr char kB64Alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+std::string base64Encode_(const std::string& in) {
+  std::string out;
+  const size_t n = in.size();
+  out.reserve(((n + 2) / 3) * 4);
+  for (size_t i = 0; i < n; i += 3) {
+    const uint32_t b0 = static_cast<uint8_t>(in[i]);
+    const uint32_t b1 = (i + 1 < n) ? static_cast<uint8_t>(in[i + 1]) : 0;
+    const uint32_t b2 = (i + 2 < n) ? static_cast<uint8_t>(in[i + 2]) : 0;
+    const uint32_t triple = (b0 << 16) | (b1 << 8) | b2;
+    out.push_back(kB64Alphabet[(triple >> 18) & 0x3f]);
+    out.push_back(kB64Alphabet[(triple >> 12) & 0x3f]);
+    out.push_back(i + 1 < n ? kB64Alphabet[(triple >> 6) & 0x3f] : '=');
+    out.push_back(i + 2 < n ? kB64Alphabet[triple & 0x3f] : '=');
+  }
+  return out;
+}
+
+bool base64Decode_(const char* in, std::string& out) {
+  static int8_t table[256];
+  static bool tableInit = false;
+  if (!tableInit) {
+    for (int i = 0; i < 256; ++i) table[i] = -1;
+    for (int i = 0; i < 64; ++i) table[static_cast<uint8_t>(kB64Alphabet[i])] = static_cast<int8_t>(i);
+    tableInit = true;
+  }
+  out.clear();
+  if (!in) return false;
+  uint32_t buf = 0;
+  int bits = 0;
+  for (const char* p = in; *p; ++p) {
+    const unsigned char c = static_cast<unsigned char>(*p);
+    if (c == '=' || c == '\n' || c == '\r' || c == ' ' || c == '\t') {
+      if (c == '=') break;
+      continue;
+    }
+    const int v = table[c];
+    if (v < 0) return false;
+    buf = (buf << 6) | static_cast<uint32_t>(v);
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      out.push_back(static_cast<char>((buf >> bits) & 0xff));
+    }
+  }
+  return true;
+}
+}  // namespace
+
 namespace obfuscation {
 void xorTransform(std::string&) {}
 void xorTransform(std::string&, const uint8_t*, size_t) {}
-String obfuscateToBase64(const std::string&) { return String(); }
-std::string deobfuscateFromBase64(const char*, bool* ok) {
-  if (ok) *ok = false;
-  return std::string();
+String obfuscateToBase64(const std::string& plaintext) {
+  if (plaintext.empty()) return String();
+  return String(base64Encode_(plaintext).c_str());
+}
+std::string deobfuscateFromBase64(const char* encoded, bool* ok) {
+  if (!encoded || encoded[0] == '\0') {
+    if (ok) *ok = false;
+    return std::string();
+  }
+  std::string decoded;
+  if (!base64Decode_(encoded, decoded)) {
+    if (ok) *ok = false;
+    return std::string();
+  }
+  if (ok) *ok = true;
+  return decoded;
 }
 void selfTest() {}
 }  // namespace obfuscation

@@ -594,30 +594,10 @@ void GomokuGameActivity::drawInfoPanel() {
 // ---------- Mode line ----------
 
 void GomokuGameActivity::drawModeLine() {
-  const int y = MODE_LINE_Y;
-
-  // While AI is thinking, replace the coordinate readout with a prominent
-  // status line so the user sees that input has been accepted.
-  if (aiThinkingArmed) {
-    renderer.drawText(kStatusFont, CONTENT_X, y, tr(STR_GOMOKU_AI_THINKING));
+  if (!aiThinkingArmed) {
     return;
   }
-
-  // Left text: "Last <coord> · Cursor <coord>"
-  char lastBuf[8] = "--";
-  if (board.moveCount > 0) {
-    const uint8_t cellIdx = board.moveHistory[board.moveCount - 1];
-    coordToText(board.rowOf(cellIdx), board.colOf(cellIdx), lastBuf, sizeof(lastBuf));
-  }
-  char cursorBuf[8];
-  coordToText(cursorR, cursorC, cursorBuf, sizeof(cursorBuf));
-  char left[64];
-  snprintf(left, sizeof(left), "%s %s · %s %s", tr(STR_GOMOKU_LAST), lastBuf, tr(STR_GOMOKU_CURSOR), cursorBuf);
-  renderer.drawText(kStatusFont, CONTENT_X, y, left);
-
-  // Turn indicator was previously a right-side pill here; in v5 it moved
-  // into the active stat cell as a filled triangle, so the right half of
-  // the mode line is intentionally empty.
+  renderer.drawCenteredText(kStatusFont, MODE_LINE_Y, tr(STR_GOMOKU_AI_THINKING));
 }
 
 // ---------- Footer (button hints) ----------

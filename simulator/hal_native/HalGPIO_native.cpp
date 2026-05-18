@@ -4,7 +4,6 @@
 // events forwarded by simulator_main.cpp (SDL event pump).
 
 #include <HalGPIO.h>
-
 #include <SDL.h>
 
 #include <cstdlib>
@@ -110,6 +109,11 @@ unsigned long HalGPIO::getHeldTime() const {
     }
   }
   return maxHeld;
+}
+
+unsigned long HalGPIO::getPowerButtonHeldTime() const {
+  // No physical power button on the host simulator — treat as never held.
+  return 0;
 }
 
 void HalGPIO::startDeepSleep() { std::exit(0); }

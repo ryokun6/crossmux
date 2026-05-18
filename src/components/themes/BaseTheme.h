@@ -89,9 +89,12 @@ enum UIIcon {
   Gomoku,
 #ifdef ENABLE_CHINESE_VERSION
   ChineseChess,
+  WeRead,
 #endif
+  Minesweeper,
   Avatar,
-  Standby
+  Cellular,
+  Standby,
 };
 
 enum class KeyboardKeyType { Normal, Shift, Mode, Space, Del, Ok, Disabled };

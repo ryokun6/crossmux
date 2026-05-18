@@ -19,3 +19,6 @@ build
 lib/EpdFont/scripts/downloaded_fonts/
 lib/EpdFont/scripts/instanced_fonts/
 lib/EpdFont/scripts/output/
+# WeRead API key files are per-device secrets — never commit, even by accident.
+weread_apikey*.txt
+weread_apikey*.bin

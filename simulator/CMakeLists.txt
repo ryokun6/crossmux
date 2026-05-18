@@ -16,6 +16,10 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(arduinojson)
 
+# libcurl — backs the simulator HTTPClient shim so WeRead (and any other on-device
+# HTTPS code paths that we don't exclude) can hit the real network from host.
+find_package(CURL REQUIRED)
+
 # SDL2 — required for the simulator window.
 find_package(SDL2 QUIET)
 if(NOT SDL2_FOUND)
@@ -143,7 +147,7 @@ add_executable(crosspoint_simulator
 )
 add_dependencies(crosspoint_simulator i18n_generated)
 
-target_link_libraries(crosspoint_simulator PRIVATE arduino_host ArduinoJson)
+target_link_libraries(crosspoint_simulator PRIVATE arduino_host ArduinoJson CURL::libcurl)
 
 if(SDL2_FOUND)
     target_link_libraries(crosspoint_simulator PRIVATE SDL2::SDL2)

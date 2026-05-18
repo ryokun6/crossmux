@@ -145,10 +145,15 @@ Save as `simulator/sd_root/.crosspoint/state.json` before launching.
 - All on-disk caches (book.bin, sections/*.bin, css_rules.cache, progress.bin)
 - Multi-language UI via the `tr()` macro (generated I18nStrings)
 - 1-bpp framebuffer rendering and font system (text-only EPUBs)
+- **WeRead (微信读书) app: real HTTPS to i.weread.qq.com via libcurl.** WiFi
+  shim reports `WL_CONNECTED`; HTTPClient/NetworkClientSecure shims delegate to
+  libcurl on the host. Drop your `wrk-…` API key as plain text into
+  `simulator/sd_root/.crosspoint/weread_apikey_plain.txt` — first boot migrates
+  it to base64-stored `weread_apikey.txt` and deletes the plain seed.
 
 ## What's out of scope (first version)
 
-- WiFi / OPDS / KOReader sync / Calibre / file transfer / OTA / web server
+- WiFi config UI / OPDS / KOReader sync / Calibre / file transfer / OTA / web server
 - Image rendering inside EPUBs (PNG/JPEG decoders are stubbed)
 - QR codes on the wifi-share screen
 - 4-level grayscale (grayscale buffers fall through to 1-bpp)

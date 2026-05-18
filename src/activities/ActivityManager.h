@@ -92,9 +92,17 @@ class ActivityManager {
   void goToApps();
   void goToSudoku();
   void goToGomoku();
+  void goToMinesweeper();
+  void goToCellular();
   void goToStandby();
 #ifdef ENABLE_CHINESE_VERSION
   void goToChineseChess();
+  void goToWeRead();
+  void goToWeReadShelf();
+  void goToWeReadSearch();
+  void goToWeReadRecommend();
+  void goToWeReadStats();
+  void goToWeReadBook(std::string bookId, std::string title);
 #endif
   void goHome();
 

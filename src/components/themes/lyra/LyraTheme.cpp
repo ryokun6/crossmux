@@ -16,8 +16,10 @@
 #include "components/icons/avatar.h"
 #include "components/icons/book.h"
 #include "components/icons/book24.h"
+#include "components/icons/cellular.h"
 #ifdef ENABLE_CHINESE_VERSION
 #include "components/icons/chinese_chess.h"
+#include "components/icons/weread.h"
 #endif
 #include "components/icons/cover.h"
 #include "components/icons/file24.h"
@@ -27,6 +29,7 @@
 #include "components/icons/hotspot.h"
 #include "components/icons/image24.h"
 #include "components/icons/library.h"
+#include "components/icons/minesweeper.h"
 #include "components/icons/recent.h"
 #include "components/icons/settings2.h"
 #include "components/icons/standby.h"
@@ -92,9 +95,15 @@ const uint8_t* iconForName(UIIcon icon, int size) {
 #ifdef ENABLE_CHINESE_VERSION
       case UIIcon::ChineseChess:
         return ChineseChessIcon;
+      case UIIcon::WeRead:
+        return WeReadIcon;
 #endif
+      case UIIcon::Minesweeper:
+        return MinesweeperIcon;
       case UIIcon::Avatar:
         return AvatarIcon;
+      case UIIcon::Cellular:
+        return CellularIcon;
       case UIIcon::Standby:
         return StandbyIcon;
       default:
