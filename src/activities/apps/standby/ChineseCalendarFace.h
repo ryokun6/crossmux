@@ -25,6 +25,7 @@ class ChineseCalendarFace final : public StandbyFace {
   void render(GfxRenderer& renderer, const Rect& viewport) override;
   StrId titleId() const override;
   uint32_t secondsUntilNextWake() const override;
+  bool wantsGrayscale() const override { return true; }
 
   // Up → previous day; Down → next day. Clamped to 1900-01-01 / 2100-12-31.
   void onPagePrev() override;

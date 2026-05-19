@@ -89,8 +89,8 @@ bool g_promptedForWifiThisSession = false;
 // Bottom-center page indicator dots. One dot per face, filled for the current
 // face. Drawn only in Normal mode — hidden once we go Immersive.
 constexpr int kDotDiameter = 6;
-constexpr int kDotSpacing = 14;     // gap between dot centers
-constexpr int kDotBottomInset = 24; // distance from bottom edge to top of dots
+constexpr int kDotSpacing = 14;      // gap between dot centers
+constexpr int kDotBottomInset = 24;  // distance from bottom edge to top of dots
 
 void drawFaceDots(const GfxRenderer& renderer, int sw, int sh, uint8_t total, uint8_t current) {
   if (total == 0) return;
@@ -118,8 +118,7 @@ void StandbyActivity::onEnter() {
   // (currently impossible), fall back to the first available index.
   faceIndex_ = 0;
   if (!kFaces[0].isAvailable(renderer.getScreenWidth(), renderer.getScreenHeight())) {
-    const uint8_t idx = availableFaceIndexFromRank(renderer.getScreenWidth(),
-                                                   renderer.getScreenHeight(), 0);
+    const uint8_t idx = availableFaceIndexFromRank(renderer.getScreenWidth(), renderer.getScreenHeight(), 0);
     if (idx < kFaceCount) faceIndex_ = idx;
   }
   inverseMode_ = false;
@@ -248,9 +247,8 @@ void StandbyActivity::promptForWifi() {
   // we just failed on; let the user pick.
   g_promptedForWifiThisSession = true;
   LOG_DBG("STANDBY", "Prompting WiFi selection UI");
-  startActivityForResult(
-      std::make_unique<WifiSelectionActivity>(renderer, mappedInput, /*autoConnect=*/false),
-      [this](const ActivityResult& result) { onWifiResult(result); });
+  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, /*autoConnect=*/false),
+                         [this](const ActivityResult& result) { onWifiResult(result); });
 }
 
 void StandbyActivity::onWifiResult(const ActivityResult& result) {
@@ -294,8 +292,8 @@ void StandbyActivity::pumpTimeSync() {
       return;
     }
     if (st == WL_CONNECT_FAILED || st == WL_NO_SSID_AVAIL || elapsed >= kWifiTimeoutMs) {
-      LOG_DBG("STANDBY", "Silent WiFi sync failed (status=%d, t=%ums)",
-              static_cast<int>(st), static_cast<unsigned>(elapsed));
+      LOG_DBG("STANDBY", "Silent WiFi sync failed (status=%d, t=%ums)", static_cast<int>(st),
+              static_cast<unsigned>(elapsed));
       // Tear down our own WiFi state cleanly, then push the selection UI
       // (once per session). If we've already prompted, stay in fallback.
       if (esp_sntp_enabled()) esp_sntp_stop();
@@ -446,21 +444,23 @@ void StandbyActivity::render(RenderLock&&) {
   if (mode_ != DisplayMode::Normal) {
     if (inverseMode_) renderer.invertScreen();
     renderer.displayBuffer();
+    // Opt-in faces (老黄历) get a 4-level gray LUT enhancement layered on
+    // the BW image. Only fires in Immersive — Normal-mode navigation needs
+    // the ~300-500ms FAST_REFRESH and can't afford the ~2s gray LUT.
+    applyGrayscaleEnhancement(sw, sh);
     return;
   }
 
   // Top-center face title (or sync state). Small font, no chrome container,
   // no separator line — Apple Standby-style minimal overlay.
-  const char* title = (syncState_ != SyncState::Idle)
-                          ? tr(STR_STANDBY_SYNCING)
-                          : I18n::getInstance().get(currentFace_->titleId());
+  const char* title =
+      (syncState_ != SyncState::Idle) ? tr(STR_STANDBY_SYNCING) : I18n::getInstance().get(currentFace_->titleId());
   renderer.drawCenteredText(SMALL_FONT_ID, metrics.topPadding, title, /*black=*/true);
 
   // Top-right battery icon (no percentage text). Reuses BaseTheme::drawBatteryRight.
   constexpr int kBatW = 16;
   constexpr int kBatH = 12;
-  GUI.drawBatteryRight(renderer,
-                       Rect{sw - kBatW - metrics.contentSidePadding, metrics.topPadding, kBatW, kBatH},
+  GUI.drawBatteryRight(renderer, Rect{sw - kBatW - metrics.contentSidePadding, metrics.topPadding, kBatW, kBatH},
                        /*showPercentage=*/false);
 
   const uint8_t availFaces = countAvailableFaces(sw, sh);
@@ -473,3 +473,28 @@ void StandbyActivity::render(RenderLock&&) {
   renderer.displayBuffer();
 }
 
+// Two extra renders (LSB then MSB) into scratch buffers, composited with the
+// BW backup by the gray LUT waveform. Mirrors EpubReaderActivity.cpp:813-837.
+// inverseMode_ short-circuits because invertScreen is BW-only and would mix
+// poorly with the grayscale composite.
+void StandbyActivity::applyGrayscaleEnhancement(int sw, int sh) {
+  if (!currentFace_->wantsGrayscale() || inverseMode_) return;
+  if (!renderer.storeBwBuffer()) {
+    LOG_ERR("STANDBY", "Grayscale AA skipped: storeBwBuffer failed");
+    return;
+  }
+
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+  currentFace_->render(renderer, Rect{0, 0, sw, sh});
+  renderer.copyGrayscaleLsbBuffers();
+
+  renderer.clearScreen(0x00);
+  renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+  currentFace_->render(renderer, Rect{0, 0, sw, sh});
+  renderer.copyGrayscaleMsbBuffers();
+
+  renderer.displayGrayBuffer();
+  renderer.setRenderMode(GfxRenderer::BW);
+  renderer.restoreBwBuffer();
+}

@@ -56,4 +56,10 @@ class StandbyActivity final : public Activity {
   void beginNtpSync();
   void pumpTimeSync();
   void finishTimeSync();
+
+  // Layer a 4-level grayscale refresh on top of the BW image just committed
+  // by displayBuffer(). No-op unless the current face's wantsGrayscale() is
+  // true and inverseMode_ is off. Called only from the Immersive branch of
+  // render() — Normal-mode renders skip it to keep navigation responsive.
+  void applyGrayscaleEnhancement(int sw, int sh);
 };

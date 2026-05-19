@@ -57,6 +57,17 @@ class StandbyFace {
   // a calendar face would return "seconds to next midnight".
   virtual uint32_t secondsUntilNextWake() const = 0;
 
+  // True if this face wants a 4-level grayscale enhancement layered on top
+  // of its BW image. When eligible, StandbyActivity calls render() two
+  // additional times (LSB then MSB passes) and commits via displayGrayBuffer.
+  // Faces that opt in must keep render() idempotent so the repeated
+  // invocations produce the same picture.
+  //
+  // Policy: the enhancement only fires in Immersive (full-screen) mode and
+  // when inverseMode is off — see StandbyActivity::applyGrayscaleEnhancement.
+  // Normal-mode renders skip it to keep face/page navigation responsive.
+  virtual bool wantsGrayscale() const { return false; }
+
   // Note on per-orientation availability: StandbyActivity decides whether to
   // include a face in the active rotation via the `FaceEntry::isAvailable
   // (sw, sh)` predicate declared in StandbyActivity.cpp's face table. Faces

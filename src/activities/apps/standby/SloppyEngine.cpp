@@ -76,6 +76,51 @@ inline void transformLocal(float lx, float ly, const DigitParams& p, int& outX, 
   outY = static_cast<int>(ry * p.globalScale + p.yBase + 0.5f);
 }
 
+// ── Stroke segment ──────────────────────────────────────────────────────────
+//
+// In BW mode this is just `drawLine` with the requested thickness.  In
+// the LSB/MSB passes of a grayscale-AA standby render (where the same draw
+// sequence is replayed under storeBwBuffer / setRenderMode), we want each
+// stroke to contribute an annular halo to the gray scratch buffer rather
+// than a solid line.  Two-step technique:
+//
+//   1. drawLine(thickness+H, state=false)  → fills the halo+core with
+//      bit=1 in the scratch buffer.  In gray-buffer semantics, bit=1 means
+//      "this pixel contributes a gray level".
+//   2. drawLine(thickness,    state=true)  → clears the core back to bit=0.
+//      The remaining bit=1 region is an H/2-pixel annulus on each side of
+//      the original stroke.
+//
+// LSB halo is 1px on each side (dark gray), MSB halo is 2px on each side
+// (covers both light and dark gray) — composed by displayGrayBuffer with
+// the BW backup into 4 levels:
+//
+//   core         : BW=black, LSB=0, MSB=0 → black
+//   inner ring   : BW=white, LSB=1, MSB=1 → dark gray
+//   outer ring   : BW=white, LSB=0, MSB=1 → light gray
+//   beyond       : BW=white, LSB=0, MSB=0 → white
+//
+// The core MUST be cleared in the gray scratch; if BW=black and LSB/MSB=1
+// coincide at the same pixel, displayGrayBuffer composes it as gray, not
+// black — the font code at GfxRenderer.cpp:191-202 makes the same
+// exclusion (black glyph pixels are skipped in the LSB/MSB passes).
+inline void drawStrokeSegment(GfxRenderer& renderer, int x0, int y0, int x1, int y1, int strokeWidth) {
+  switch (renderer.getRenderMode()) {
+    case GfxRenderer::GRAYSCALE_LSB:
+      renderer.drawLine(x0, y0, x1, y1, strokeWidth + 2, /*state=*/false);
+      renderer.drawLine(x0, y0, x1, y1, strokeWidth, /*state=*/true);
+      break;
+    case GfxRenderer::GRAYSCALE_MSB:
+      renderer.drawLine(x0, y0, x1, y1, strokeWidth + 4, /*state=*/false);
+      renderer.drawLine(x0, y0, x1, y1, strokeWidth, /*state=*/true);
+      break;
+    case GfxRenderer::BW:
+    default:
+      renderer.drawLine(x0, y0, x1, y1, strokeWidth, /*state=*/true);
+      break;
+  }
+}
+
 // ── Glyph drawing ───────────────────────────────────────────────────────────
 void drawGlyph(GfxRenderer& renderer, const Glyph& glyph, const PointSeed* seeds, uint8_t seedCount, float wobble,
                int strokeWidth, const DigitParams& tx) {
@@ -110,7 +155,7 @@ void drawGlyph(GfxRenderer& renderer, const Glyph& glyph, const PointSeed* seeds
         const float by = cubic(t, p0y, p1y, p2y, p3y);
         int sx, sy;
         transformLocal(bx, by, tx, sx, sy);
-        renderer.drawLine(prevSx, prevSy, sx, sy, strokeWidth, true);
+        drawStrokeSegment(renderer, prevSx, prevSy, sx, sy, strokeWidth);
         prevSx = sx;
         prevSy = sy;
       }
