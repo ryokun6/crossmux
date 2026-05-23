@@ -21,7 +21,7 @@ class WeReadHighlightDetailActivity final : public Activity {
   };
 
   WeReadHighlightDetailActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string bookTitle,
-                                ItemSource source, int initialIndex);
+                                const ItemSource& source, int initialIndex);
   ~WeReadHighlightDetailActivity() override = default;
 
   void onEnter() override;

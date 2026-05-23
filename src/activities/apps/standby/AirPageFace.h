@@ -62,10 +62,10 @@ class AirPageFace final : public StandbyFace {
   void exitLiveMode();        // turn live push off: drop MQTT + WiFi
   void applyMenuSelection();  // commit the highlighted menu row
 
-  bool renderImage(GfxRenderer& renderer, const Rect& viewport);
-  void renderQr(GfxRenderer& renderer, const Rect& viewport);
-  void renderStatus(GfxRenderer& renderer, const Rect& viewport, const char* msg);
-  void renderMenu(GfxRenderer& renderer, const Rect& viewport);
+  bool renderImage(const GfxRenderer& renderer, const Rect& viewport);
+  void renderQr(const GfxRenderer& renderer, const Rect& viewport);
+  void renderStatus(const GfxRenderer& renderer, const Rect& viewport, const char* msg);
+  void renderMenu(const GfxRenderer& renderer, const Rect& viewport);
 
   View view_ = View::Qr;
   Phase phase_ = Phase::Idle;

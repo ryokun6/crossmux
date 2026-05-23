@@ -176,9 +176,9 @@ void ChineseChessMenuActivity::renderList() {
   auto rowSubtitle = [this](int i) -> std::string {
     if (i < 0 || i >= static_cast<int>(items.size())) return "";
     const Item& it = items[i];
-    char buf[96];
     switch (it.kind) {
       case ItemKind::Continue: {
+        char buf[96];
         const char* modeLabel =
             (resumeMode == ChineseChessMode::VsAi) ? tr(STR_CHINESE_CHESS_MODE_AI) : tr(STR_CHINESE_CHESS_MODE_2P);
         if (resumeMode == ChineseChessMode::VsAi) {

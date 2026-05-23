@@ -488,7 +488,7 @@ void SudokuGameActivity::drawGrid(int x0, int y0) {
         const int fontId = isFixed ? kBigDigitFont : kUserDigitFont;
         const EpdFontFamily::Style style = isFixed ? EpdFontFamily::BOLD : EpdFontFamily::ITALIC;
         const int digitH = isFixed ? fixedDigitH : userDigitH;
-        char buf[2] = {static_cast<char>('0' + v), 0};
+        const char buf[2] = {static_cast<char>('0' + v), 0};
         const int tw = renderer.getTextWidth(fontId, buf, style);
         const int x = x0 + c * cell + (cell - tw) / 2;
         const int y = y0 + r * cell + gameCenterY(cell, digitH);
@@ -515,7 +515,7 @@ void SudokuGameActivity::drawNotes(int cellX, int cellY, int cellSize, uint16_t 
     const int k = d - 1;
     const int sx = cellX + (k % 3) * sub;
     const int sy = cellY + (k / 3) * sub;
-    char buf[2] = {static_cast<char>('0' + d), 0};
+    const char buf[2] = {static_cast<char>('0' + d), 0};
     const int tw = renderer.getTextWidth(kNotesFont, buf);
     renderer.drawText(kNotesFont, sx + (sub - tw) / 2, sy + gameCenterY(sub, textH), buf, true);
   }

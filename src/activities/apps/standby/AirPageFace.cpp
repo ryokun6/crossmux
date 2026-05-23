@@ -314,7 +314,7 @@ void AirPageFace::render(GfxRenderer& renderer, const Rect& viewport) {
   renderQr(renderer, viewport);
 }
 
-void AirPageFace::renderQr(GfxRenderer& renderer, const Rect& viewport) {
+void AirPageFace::renderQr(const GfxRenderer& renderer, const Rect& viewport) {
   const std::string url = std::string("https://") + kAirPageBase + "/?id=" + airpage::deviceId() + "&type=x4";
   const int qr = std::min(viewport.width, viewport.height) * 3 / 5;
   const Rect box(viewport.x + (viewport.width - qr) / 2, viewport.y + (viewport.height - qr) / 2 - 24, qr, qr);
@@ -332,11 +332,11 @@ void AirPageFace::renderQr(GfxRenderer& renderer, const Rect& viewport) {
   }
 }
 
-void AirPageFace::renderStatus(GfxRenderer& renderer, const Rect& viewport, const char* msg) {
+void AirPageFace::renderStatus(const GfxRenderer& renderer, const Rect& viewport, const char* msg) {
   renderer.drawCenteredText(UI_12_FONT_ID, viewport.y + viewport.height / 2, msg, /*black=*/true);
 }
 
-void AirPageFace::renderMenu(GfxRenderer& renderer, const Rect& viewport) {
+void AirPageFace::renderMenu(const GfxRenderer& renderer, const Rect& viewport) {
   constexpr int kRowH = 44;
   constexpr int kPadX = 26;
   constexpr int kTitleH = 40;
@@ -377,7 +377,7 @@ void AirPageFace::renderMenu(GfxRenderer& renderer, const Rect& viewport) {
   renderer.drawCenteredText(SMALL_FONT_ID, boxY + boxH - kHintH + 4, tr(STR_AIRPAGE_MENU_HINT), /*black=*/true);
 }
 
-bool AirPageFace::renderImage(GfxRenderer& renderer, const Rect& viewport) {
+bool AirPageFace::renderImage(const GfxRenderer& renderer, const Rect& viewport) {
   // Re-open + parse on every call so the BW / GRAYSCALE_LSB / GRAYSCALE_MSB
   // passes each stream the file independently (drawBitmap reads rows
   // sequentially). drawBitmap honors the renderer's current renderMode.

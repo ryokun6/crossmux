@@ -175,7 +175,7 @@ inline bool clipSegmentToRect(int& x0, int& y0, int& x1, int& y1,  //
 // stamp itself paints `strokeWidth` parallel copies of the segment in a
 // width × width centered grid, giving each sample a square-pen footprint
 // (verticals get proper weight, endpoints get symmetric square caps).
-inline void drawStrokeSegment(GfxRenderer& renderer, int x0, int y0, int x1, int y1, int strokeWidth) {
+inline void drawStrokeSegment(const GfxRenderer& renderer, int x0, int y0, int x1, int y1, int strokeWidth) {
   if (renderer.getRenderMode() != GfxRenderer::BW) return;
 
   const int xMax = renderer.getScreenWidth() - 1;

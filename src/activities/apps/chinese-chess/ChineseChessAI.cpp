@@ -44,11 +44,10 @@ constexpr LevelConfig kLevelTable[3] = {
 class Searcher {
  public:
   Searcher(const ChineseChessBoard& src, Side aiSide, ChineseChessAiLevel level)
-      : aiSide(aiSide),
+      : board(src),
+        aiSide(aiSide),
         oppSide(aiSide == Side::Red ? Side::Black : Side::Red),
-        cfg(kLevelTable[static_cast<uint8_t>(level)]) {
-    board = src;  // copy
-  }
+        cfg(kLevelTable[static_cast<uint8_t>(level)]) {}
 
   Move run(uint32_t& outNodes, uint8_t& outDepthReached) {
     startMs = millis();
@@ -115,7 +114,7 @@ class Searcher {
 
     // Easy-level humanisation.
     if (cfg.jitterPercent > 0 || cfg.suboptimalPercent > 0) {
-      int32_t baseScores[ChineseChessBoard::MAX_LEGAL_MOVES];
+      int32_t baseScores[ChineseChessBoard::MAX_LEGAL_MOVES] = {};
       for (uint8_t i = 0; i < rootCount; i++) {
         baseScores[i] = staticMoveScore(rootMoves[i]);
       }

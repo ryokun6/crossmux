@@ -12,8 +12,8 @@ class AvatarGenerator {
   void generate(uint32_t seed, AvatarData& outData);
 
  private:
-  PointF tmpFaceBuf0_[FACE_TMP_BUF_LEN];
-  PointF tmpFaceBuf1_[FACE_TMP_BUF_LEN];
+  PointF tmpFaceBuf0_[FACE_TMP_BUF_LEN]{};
+  PointF tmpFaceBuf1_[FACE_TMP_BUF_LEN]{};
 
   void computeBounds(AvatarData& data);
 };

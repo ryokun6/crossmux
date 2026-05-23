@@ -6,7 +6,8 @@
 
 CellularBoard::CellularBoard() {
   std::memset(cur_, 0, sizeof(cur_));
-  // nxt_ is scratch and fully rewritten by step(); no need to zero it here.
+  // nxt_ is scratch and fully rewritten by step(); zero it too for a defined initial state.
+  std::memset(nxt_, 0, sizeof(nxt_));
 }
 
 int CellularBoard::wrapRow(int r) {

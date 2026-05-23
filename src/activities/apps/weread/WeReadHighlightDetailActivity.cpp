@@ -12,7 +12,8 @@
 #include "WeReadTextWrap.h"
 
 WeReadHighlightDetailActivity::WeReadHighlightDetailActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                                             std::string bookTitle, ItemSource source, int initialIndex)
+                                                             std::string bookTitle, const ItemSource& source,
+                                                             int initialIndex)
     : Activity("WeReadHighlightDetail", renderer, mappedInput),
       bookTitle_(std::move(bookTitle)),
       source_(source),

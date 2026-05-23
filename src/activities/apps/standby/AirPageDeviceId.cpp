@@ -5,6 +5,7 @@
 #include <Logging.h>
 #include <esp_random.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -46,11 +47,9 @@ std::string generateId() {
 // Guard against reading a truncated/corrupt file: exact length and alphanumeric-only.
 bool isValidId(const std::string& s) {
   if (static_cast<int>(s.size()) != kIdLen) return false;
-  for (const char c : s) {
-    const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
-    if (!ok) return false;
-  }
-  return true;
+  return std::all_of(s.begin(), s.end(), [](const char c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+  });
 }
 
 }  // namespace

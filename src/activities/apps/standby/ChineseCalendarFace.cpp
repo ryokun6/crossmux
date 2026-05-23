@@ -80,7 +80,7 @@ void formatYearCjk(uint16_t year, char* buf, size_t sz) {
   // 4-digit Gregorian year as 二〇二六 etc.
   buf[0] = '\0';
   size_t pos = 0;
-  unsigned digits[4] = {
+  const unsigned digits[4] = {
       (year / 1000u) % 10u,
       (year / 100u) % 10u,
       (year / 10u) % 10u,
@@ -138,7 +138,7 @@ void drawCenteredRow(GfxRenderer& renderer, int fontId, const Rect& viewport, in
   }
 }
 
-int verticalCenterY(GfxRenderer& renderer, int fontId, int bandY, int heightPx) {
+int verticalCenterY(const GfxRenderer& renderer, int fontId, int bandY, int heightPx) {
   return bandY + (heightPx - renderer.getFontAscenderSize(fontId)) / 2;
 }
 

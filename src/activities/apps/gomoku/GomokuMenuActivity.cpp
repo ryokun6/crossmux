@@ -191,9 +191,9 @@ void GomokuMenuActivity::renderList() {
   auto rowSubtitle = [this](int i) -> std::string {
     if (i < 0 || i >= static_cast<int>(items.size())) return "";
     const Item& it = items[i];
-    char buf[80];
     switch (it.kind) {
       case ItemKind::Continue: {
+        char buf[80];
         const char* modeLabel = (resumeMode == GomokuMode::VsAi) ? tr(STR_GOMOKU_MODE_AI) : tr(STR_GOMOKU_MODE_2P);
         const char* sizeLabel = (resumeBoardSize == 9) ? tr(STR_GOMOKU_BOARD_9) : tr(STR_GOMOKU_BOARD_15);
         if (resumeMode == GomokuMode::VsAi) {
