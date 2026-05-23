@@ -33,13 +33,9 @@ void SloppyClockFace::onShake(uint32_t seed) {
   regenerate(seed);
 }
 
-void SloppyClockFace::onPagePrev() {
-  onShake(esp_random() ^ static_cast<uint32_t>(millis()));
-}
+void SloppyClockFace::onPagePrev() { onShake(esp_random() ^ static_cast<uint32_t>(millis())); }
 
-void SloppyClockFace::onPageNext() {
-  onShake(esp_random() ^ static_cast<uint32_t>(millis()));
-}
+void SloppyClockFace::onPageNext() { onShake(esp_random() ^ static_cast<uint32_t>(millis())); }
 
 void SloppyClockFace::regenerate(uint32_t seed) {
   sloppy::rollStyle(seed, *style_);

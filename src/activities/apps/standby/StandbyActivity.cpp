@@ -26,9 +26,9 @@
 
 namespace {
 
-constexpr long kTzOffsetSec = 8 * 3600;          // UTC+8 (Beijing)
-constexpr uint32_t kWifiTimeoutMs = 15000u;      // Same as WifiSelectionActivity
-constexpr uint32_t kNtpTimeoutMs = 12000u;       // SNTP poll budget (multi-server DNS + handshake)
+constexpr long kTzOffsetSec = 8 * 3600;      // UTC+8 (Beijing)
+constexpr uint32_t kWifiTimeoutMs = 15000u;  // Same as WifiSelectionActivity
+constexpr uint32_t kNtpTimeoutMs = 12000u;   // SNTP poll budget (multi-server DNS + handshake)
 
 // Face factory table. Add new faces by appending a row here and including the
 // corresponding header above. Each entry also declares an isAvailable()

@@ -586,7 +586,8 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
     // Cap the run at totalWordCount so a pathological all-punctuation tail
     // can't pull arbitrary content in.
     while (nextBreakIndex < totalWordCount && isCJKLeadingPunctuation(words[nextBreakIndex])) {
-      wordWidths[nextBreakIndex] = measureWordWidth(renderer, fontId, words[nextBreakIndex], wordStyles[nextBreakIndex]);
+      wordWidths[nextBreakIndex] =
+          measureWordWidth(renderer, fontId, words[nextBreakIndex], wordStyles[nextBreakIndex]);
       ++nextBreakIndex;
     }
 #endif

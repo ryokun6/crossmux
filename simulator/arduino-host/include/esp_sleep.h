@@ -3,9 +3,9 @@
 // (HalGPIO::isUsbConnected() == true), so StandbyActivity never enters Sleep mode and
 // these symbols are unreachable at runtime; provide inline no-ops just for linkage.
 
-#include <cstdint>
-
 #include <esp_system.h>  // esp_sleep_source_t + ESP_SLEEP_WAKEUP_*
+
+#include <cstdint>
 
 typedef int gpio_num_t;
 

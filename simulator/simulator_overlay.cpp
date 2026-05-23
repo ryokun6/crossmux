@@ -12,8 +12,7 @@ constexpr int PADDING = 18;
 constexpr int FONT_SCALE = 2;       // 5x7 font → 10×14 px per glyph
 constexpr int FONT_SCALE_HINT = 1;  // hint line at the bottom of the panel
 
-void fillRect(SDL_Renderer* r, int x, int y, int w, int h,
-              uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) {
+void fillRect(SDL_Renderer* r, int x, int y, int w, int h, uint8_t cr, uint8_t cg, uint8_t cb, uint8_t ca) {
   SDL_SetRenderDrawColor(r, cr, cg, cb, ca);
   SDL_Rect rect{x, y, w, h};
   SDL_RenderFillRect(r, &rect);
@@ -56,12 +55,11 @@ void SettingsOverlay::draw(SDL_Renderer* r, int winW, int winH) {
   // Title.
   const char* title = "Simulator Settings";
   const int titleW = measureText5x7(title, FONT_SCALE);
-  drawText5x7(r, panelX + (PANEL_W - titleW) / 2, panelY + PADDING, FONT_SCALE,
-              0xF0, 0xF0, 0xF0, title);
+  drawText5x7(r, panelX + (PANEL_W - titleW) / 2, panelY + PADDING, FONT_SCALE, 0xF0, 0xF0, 0xF0, title);
 
   // Divider.
-  fillRect(r, panelX + PADDING, panelY + PADDING + 7 * FONT_SCALE + 10,
-           PANEL_W - PADDING * 2, 1, 0x55, 0x55, 0x55, 0xFF);
+  fillRect(r, panelX + PADDING, panelY + PADDING + 7 * FONT_SCALE + 10, PANEL_W - PADDING * 2, 1, 0x55, 0x55, 0x55,
+           0xFF);
 
   // "Show device shell" row.
   const int rowY = panelY + PADDING + 7 * FONT_SCALE + 24;
@@ -73,17 +71,13 @@ void SettingsOverlay::draw(SDL_Renderer* r, int winW, int winH) {
 
   // Cache hit-test rect: covers the full row width so the user can click
   // anywhere on the line (not just the tiny checkbox square).
-  shellRowRect_ = SDL_Rect{checkboxX,
-                           rowY,
-                           PANEL_W - PADDING * 2,
-                           checkboxSize};
+  shellRowRect_ = SDL_Rect{checkboxX, rowY, PANEL_W - PADDING * 2, checkboxSize};
 
   // Hint at the bottom of the panel.
   const char* hint = "F1 to close   click row to toggle";
   const int hintW = measureText5x7(hint, FONT_SCALE_HINT);
-  drawText5x7(r, panelX + (PANEL_W - hintW) / 2,
-              panelY + PANEL_H - PADDING - 7 * FONT_SCALE_HINT,
-              FONT_SCALE_HINT, 0x90, 0x90, 0x90, hint);
+  drawText5x7(r, panelX + (PANEL_W - hintW) / 2, panelY + PANEL_H - PADDING - 7 * FONT_SCALE_HINT, FONT_SCALE_HINT,
+              0x90, 0x90, 0x90, hint);
 
   SDL_SetRenderDrawBlendMode(r, previousBlend);
 }

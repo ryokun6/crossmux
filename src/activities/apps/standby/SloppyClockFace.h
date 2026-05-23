@@ -25,8 +25,8 @@ class SloppyClockFace final : public StandbyFace {
  private:
   std::unique_ptr<sloppy::Style> style_;
   std::unique_ptr<sloppy::Seeds> seeds_;
-  uint32_t startMs_ = 0;   // millis() anchor for the pre-sync fallback display
-  int32_t lastMin_ = -1;   // last rendered minute tick, for "did the minute change?" gating
+  uint32_t startMs_ = 0;  // millis() anchor for the pre-sync fallback display
+  int32_t lastMin_ = -1;  // last rendered minute tick, for "did the minute change?" gating
 
   void regenerate(uint32_t seed);
 };

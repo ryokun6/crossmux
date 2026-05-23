@@ -38,10 +38,10 @@ struct TileStyle {
 
 TileStyle styleForExponent(uint8_t exponent) {
   if (exponent == 0) return {Color::Clear, true, 1};
-  if (exponent <= 2) return {Color::LightGray, true, 1};   // 2, 4
-  if (exponent <= 5) return {Color::DarkGray, true, 1};    // 8, 16, 32
-  if (exponent <= 10) return {Color::Black, false, 1};     // 64 .. 1024
-  return {Color::Black, false, 3};                          // 2048+
+  if (exponent <= 2) return {Color::LightGray, true, 1};  // 2, 4
+  if (exponent <= 5) return {Color::DarkGray, true, 1};   // 8, 16, 32
+  if (exponent <= 10) return {Color::Black, false, 1};    // 64 .. 1024
+  return {Color::Black, false, 3};                        // 2048+
 }
 
 }  // namespace

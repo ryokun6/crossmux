@@ -51,4 +51,4 @@ HardwareSerial Serial;
 
 namespace arduino_host {
 void set_serial_sink(std::FILE* sink) { Serial.setSink(sink); }
-}
+}  // namespace arduino_host

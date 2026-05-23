@@ -2,8 +2,8 @@
 // Stub for bitbank2/PNGdec. Header shape only — no decoding on host. Consumers can
 // link, but actual PNG paths will return errors at runtime.
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 #define PNG_SUCCESS 0
 #define PNG_INVALID_PARAMETER -1
@@ -42,7 +42,9 @@ class PNGFILE {
 
 class PNG {
  public:
-  int open(const char*, PNG_READ_CALLBACK, PNG_READ_CALLBACK, PNG_SEEK_CALLBACK, PNG_DRAW_CALLBACK) { return PNG_DECODE_ERROR; }
+  int open(const char*, PNG_READ_CALLBACK, PNG_READ_CALLBACK, PNG_SEEK_CALLBACK, PNG_DRAW_CALLBACK) {
+    return PNG_DECODE_ERROR;
+  }
   int open(uint8_t*, int, PNG_DRAW_CALLBACK) { return PNG_DECODE_ERROR; }
   int openRAM(uint8_t*, int, PNG_DRAW_CALLBACK) { return PNG_DECODE_ERROR; }
   int decode(void*, int) { return PNG_DECODE_ERROR; }

@@ -150,7 +150,8 @@ BaseType_t xTaskNotifyWait(uint32_t /*clearEntry*/, uint32_t clearExit, uint32_t
     self->notifyCv.wait(lock, [self]() { return self->notifyPending; });
     got = true;
   } else {
-    got = self->notifyCv.wait_for(lock, std::chrono::milliseconds(ticksToWait), [self]() { return self->notifyPending; });
+    got =
+        self->notifyCv.wait_for(lock, std::chrono::milliseconds(ticksToWait), [self]() { return self->notifyPending; });
   }
   if (outValue) *outValue = self->notifyValue;
   if (got) {
@@ -237,7 +238,9 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t sem) {
   return pdPASS;
 }
 
-BaseType_t xSemaphoreTakeRecursive(SemaphoreHandle_t sem, TickType_t ticksToWait) { return xSemaphoreTake(sem, ticksToWait); }
+BaseType_t xSemaphoreTakeRecursive(SemaphoreHandle_t sem, TickType_t ticksToWait) {
+  return xSemaphoreTake(sem, ticksToWait);
+}
 BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t sem) { return xSemaphoreGive(sem); }
 
 BaseType_t xSemaphoreTakeFromISR(SemaphoreHandle_t sem, BaseType_t* /*woken*/) { return xSemaphoreTake(sem, 0); }

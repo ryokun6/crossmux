@@ -1,8 +1,8 @@
 #pragma once
 // Stub for bitbank2/JPEGDEC. Header shape only — no decoding on host.
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 
 #define JPEG_SUCCESS 1
 #define JPEG_INVALID_PARAMETER 0
@@ -37,7 +37,9 @@ class JPEGFILE {
 
 class JPEGDEC {
  public:
-  int open(const char*, JPEG_READ_CALLBACK, JPEG_READ_CALLBACK, JPEG_SEEK_CALLBACK, JPEG_DRAW_CALLBACK) { return JPEG_INVALID_PARAMETER; }
+  int open(const char*, JPEG_READ_CALLBACK, JPEG_READ_CALLBACK, JPEG_SEEK_CALLBACK, JPEG_DRAW_CALLBACK) {
+    return JPEG_INVALID_PARAMETER;
+  }
   int open(uint8_t*, int, JPEG_DRAW_CALLBACK) { return JPEG_INVALID_PARAMETER; }
   int openRAM(uint8_t*, int, JPEG_DRAW_CALLBACK) { return JPEG_INVALID_PARAMETER; }
   int decode(int, int, int) { return JPEG_DECODE_ERROR; }

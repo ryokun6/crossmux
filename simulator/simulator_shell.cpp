@@ -90,10 +90,10 @@ void fillRoundedRect(SDL_Renderer* r, int x, int y, int w, int h, int rad) {
       }
       SDL_SetRenderDrawColor(r, cr, cg, cb, a);
       SDL_Rect corners[4] = {
-          {x + i,           y + j,           1, 1},  // TL
-          {x + w - 1 - i,   y + j,           1, 1},  // TR
-          {x + i,           y + h - 1 - j,   1, 1},  // BL
-          {x + w - 1 - i,   y + h - 1 - j,   1, 1},  // BR
+          {x + i, y + j, 1, 1},                  // TL
+          {x + w - 1 - i, y + j, 1, 1},          // TR
+          {x + i, y + h - 1 - j, 1, 1},          // BL
+          {x + w - 1 - i, y + h - 1 - j, 1, 1},  // BR
       };
       for (const auto& c : corners) SDL_RenderFillRect(r, &c);
     }
@@ -140,20 +140,11 @@ void drawShell(SDL_Renderer* r, const ShellLayout& layout) {
   // Right-side button bumps — three buttons, drawn flush with the right edge.
   // y ranges are inside the safe band (above bottom rounded corners, below top).
   SDL_SetRenderDrawColor(r, 0x05, 0x05, 0x05, 0xFF);
-  SDL_Rect power{layout.windowW - RIGHT_BUTTON_W * s,
-                 POWER_Y * s,
-                 RIGHT_BUTTON_W * s,
-                 POWER_H * s};
+  SDL_Rect power{layout.windowW - RIGHT_BUTTON_W * s, POWER_Y * s, RIGHT_BUTTON_W * s, POWER_H * s};
   SDL_RenderFillRect(r, &power);
-  SDL_Rect rPrev{layout.windowW - RIGHT_BUTTON_W * s,
-                 RIGHT_PREV_PAGE_Y * s,
-                 RIGHT_BUTTON_W * s,
-                 RIGHT_PREV_PAGE_H * s};
+  SDL_Rect rPrev{layout.windowW - RIGHT_BUTTON_W * s, RIGHT_PREV_PAGE_Y * s, RIGHT_BUTTON_W * s, RIGHT_PREV_PAGE_H * s};
   SDL_RenderFillRect(r, &rPrev);
-  SDL_Rect rNext{layout.windowW - RIGHT_BUTTON_W * s,
-                 RIGHT_NEXT_PAGE_Y * s,
-                 RIGHT_BUTTON_W * s,
-                 RIGHT_NEXT_PAGE_H * s};
+  SDL_Rect rNext{layout.windowW - RIGHT_BUTTON_W * s, RIGHT_NEXT_PAGE_Y * s, RIGHT_BUTTON_W * s, RIGHT_NEXT_PAGE_H * s};
   SDL_RenderFillRect(r, &rNext);
 
   // Front-face bottom buttons — 2+2 layout: Back + OK (flush) | gap |

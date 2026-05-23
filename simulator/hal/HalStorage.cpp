@@ -5,7 +5,6 @@
 #define HAL_STORAGE_IMPL
 #include <HalStorage.h>
 #include <Logging.h>
-
 #include <dirent.h>
 #include <errno.h>
 #include <sys/stat.h>

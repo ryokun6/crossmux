@@ -25,14 +25,12 @@ const char* const kZodiacNames[12] = {
 
 // 24 solar terms, ordered starting from 立春.
 const char* const kSolarTermNames[24] = {
-    "立春", "雨水", "惊蛰", "春分", "清明", "谷雨", "立夏", "小满",
-    "芒种", "夏至", "小暑", "大暑", "立秋", "处暑", "白露", "秋分",
-    "寒露", "霜降", "立冬", "小雪", "大雪", "冬至", "小寒", "大寒",
+    "立春", "雨水", "惊蛰", "春分", "清明", "谷雨", "立夏", "小满", "芒种", "夏至", "小暑", "大暑",
+    "立秋", "处暑", "白露", "秋分", "寒露", "霜降", "立冬", "小雪", "大雪", "冬至", "小寒", "大寒",
 };
 
 const char* const kLunarMonthNames[12] = {
-    "正月", "二月", "三月", "四月", "五月", "六月",
-    "七月", "八月", "九月", "十月", "冬月", "腊月",
+    "正月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "冬月", "腊月",
 };
 
 const char* const kLunarDayNames[30] = {
@@ -97,65 +95,225 @@ const char* const kJiPool[12][4] = {
 
 static constexpr uint32_t kLunarInfo[201] = {
     // 1900 - 1909
-    0x04bd8u, 0x04ae0u, 0x0a570u, 0x054d5u, 0x0d260u, 0x0d950u, 0x16554u,
-    0x056a0u, 0x09ad0u, 0x055d2u,
+    0x04bd8u,
+    0x04ae0u,
+    0x0a570u,
+    0x054d5u,
+    0x0d260u,
+    0x0d950u,
+    0x16554u,
+    0x056a0u,
+    0x09ad0u,
+    0x055d2u,
     // 1910 - 1919
-    0x04ae0u, 0x0a5b6u, 0x0a4d0u, 0x0d250u, 0x1d255u, 0x0b540u, 0x0d6a0u,
-    0x0ada2u, 0x095b0u, 0x14977u,
+    0x04ae0u,
+    0x0a5b6u,
+    0x0a4d0u,
+    0x0d250u,
+    0x1d255u,
+    0x0b540u,
+    0x0d6a0u,
+    0x0ada2u,
+    0x095b0u,
+    0x14977u,
     // 1920 - 1929
-    0x04970u, 0x0a4b0u, 0x0b4b5u, 0x06a50u, 0x06d40u, 0x1ab54u, 0x02b60u,
-    0x09570u, 0x052f2u, 0x04970u,
+    0x04970u,
+    0x0a4b0u,
+    0x0b4b5u,
+    0x06a50u,
+    0x06d40u,
+    0x1ab54u,
+    0x02b60u,
+    0x09570u,
+    0x052f2u,
+    0x04970u,
     // 1930 - 1939
-    0x06566u, 0x0d4a0u, 0x0ea50u, 0x06e95u, 0x05ad0u, 0x02b60u, 0x186e3u,
-    0x092e0u, 0x1c8d7u, 0x0c950u,
+    0x06566u,
+    0x0d4a0u,
+    0x0ea50u,
+    0x06e95u,
+    0x05ad0u,
+    0x02b60u,
+    0x186e3u,
+    0x092e0u,
+    0x1c8d7u,
+    0x0c950u,
     // 1940 - 1949
-    0x0d4a0u, 0x1d8a6u, 0x0b550u, 0x056a0u, 0x1a5b4u, 0x025d0u, 0x092d0u,
-    0x0d2b2u, 0x0a950u, 0x0b557u,
+    0x0d4a0u,
+    0x1d8a6u,
+    0x0b550u,
+    0x056a0u,
+    0x1a5b4u,
+    0x025d0u,
+    0x092d0u,
+    0x0d2b2u,
+    0x0a950u,
+    0x0b557u,
     // 1950 - 1959
-    0x06ca0u, 0x0b550u, 0x15355u, 0x04da0u, 0x0a5b0u, 0x14573u, 0x052b0u,
-    0x0a9a8u, 0x0e950u, 0x06aa0u,
+    0x06ca0u,
+    0x0b550u,
+    0x15355u,
+    0x04da0u,
+    0x0a5b0u,
+    0x14573u,
+    0x052b0u,
+    0x0a9a8u,
+    0x0e950u,
+    0x06aa0u,
     // 1960 - 1969
-    0x0aea6u, 0x0ab50u, 0x04b60u, 0x0aae4u, 0x0a570u, 0x05260u, 0x0f263u,
-    0x0d950u, 0x05b57u, 0x056a0u,
+    0x0aea6u,
+    0x0ab50u,
+    0x04b60u,
+    0x0aae4u,
+    0x0a570u,
+    0x05260u,
+    0x0f263u,
+    0x0d950u,
+    0x05b57u,
+    0x056a0u,
     // 1970 - 1979
-    0x096d0u, 0x04dd5u, 0x04ad0u, 0x0a4d0u, 0x0d4d4u, 0x0d250u, 0x0d558u,
-    0x0b540u, 0x0b6a0u, 0x195a6u,
+    0x096d0u,
+    0x04dd5u,
+    0x04ad0u,
+    0x0a4d0u,
+    0x0d4d4u,
+    0x0d250u,
+    0x0d558u,
+    0x0b540u,
+    0x0b6a0u,
+    0x195a6u,
     // 1980 - 1989
-    0x095b0u, 0x049b0u, 0x0a974u, 0x0a4b0u, 0x0b27au, 0x06a50u, 0x06d40u,
-    0x0af46u, 0x0ab60u, 0x09570u,
+    0x095b0u,
+    0x049b0u,
+    0x0a974u,
+    0x0a4b0u,
+    0x0b27au,
+    0x06a50u,
+    0x06d40u,
+    0x0af46u,
+    0x0ab60u,
+    0x09570u,
     // 1990 - 1999
-    0x04af5u, 0x04970u, 0x064b0u, 0x074a3u, 0x0ea50u, 0x06b58u, 0x055c0u,
-    0x0ab60u, 0x096d5u, 0x092e0u,
+    0x04af5u,
+    0x04970u,
+    0x064b0u,
+    0x074a3u,
+    0x0ea50u,
+    0x06b58u,
+    0x055c0u,
+    0x0ab60u,
+    0x096d5u,
+    0x092e0u,
     // 2000 - 2009
-    0x0c960u, 0x0d954u, 0x0d4a0u, 0x0da50u, 0x07552u, 0x056a0u, 0x0abb7u,
-    0x025d0u, 0x092d0u, 0x0cab5u,
+    0x0c960u,
+    0x0d954u,
+    0x0d4a0u,
+    0x0da50u,
+    0x07552u,
+    0x056a0u,
+    0x0abb7u,
+    0x025d0u,
+    0x092d0u,
+    0x0cab5u,
     // 2010 - 2019
-    0x0a950u, 0x0b4a0u, 0x0baa4u, 0x0ad50u, 0x055d9u, 0x04ba0u, 0x0a5b0u,
-    0x15176u, 0x052b0u, 0x0a930u,
+    0x0a950u,
+    0x0b4a0u,
+    0x0baa4u,
+    0x0ad50u,
+    0x055d9u,
+    0x04ba0u,
+    0x0a5b0u,
+    0x15176u,
+    0x052b0u,
+    0x0a930u,
     // 2020 - 2029
-    0x07954u, 0x06aa0u, 0x0ad50u, 0x05b52u, 0x04b60u, 0x0a6e6u, 0x0a4e0u,
-    0x0d260u, 0x0ea65u, 0x0d530u,
+    0x07954u,
+    0x06aa0u,
+    0x0ad50u,
+    0x05b52u,
+    0x04b60u,
+    0x0a6e6u,
+    0x0a4e0u,
+    0x0d260u,
+    0x0ea65u,
+    0x0d530u,
     // 2030 - 2039
-    0x05aa0u, 0x076a3u, 0x096d0u, 0x04afbu, 0x04ad0u, 0x0a4d0u, 0x1d0b6u,
-    0x0d250u, 0x0d520u, 0x0dd45u,
+    0x05aa0u,
+    0x076a3u,
+    0x096d0u,
+    0x04afbu,
+    0x04ad0u,
+    0x0a4d0u,
+    0x1d0b6u,
+    0x0d250u,
+    0x0d520u,
+    0x0dd45u,
     // 2040 - 2049
-    0x0b5a0u, 0x056d0u, 0x055b2u, 0x049b0u, 0x0a577u, 0x0a4b0u, 0x0aa50u,
-    0x1b255u, 0x06d20u, 0x0ada0u,
+    0x0b5a0u,
+    0x056d0u,
+    0x055b2u,
+    0x049b0u,
+    0x0a577u,
+    0x0a4b0u,
+    0x0aa50u,
+    0x1b255u,
+    0x06d20u,
+    0x0ada0u,
     // 2050 - 2059
-    0x14b63u, 0x09370u, 0x049f8u, 0x04970u, 0x064b0u, 0x168a6u, 0x0ea50u,
-    0x06b20u, 0x1a6c4u, 0x0aae0u,
+    0x14b63u,
+    0x09370u,
+    0x049f8u,
+    0x04970u,
+    0x064b0u,
+    0x168a6u,
+    0x0ea50u,
+    0x06b20u,
+    0x1a6c4u,
+    0x0aae0u,
     // 2060 - 2069
-    0x0a2e0u, 0x0d2e3u, 0x0c960u, 0x0d557u, 0x0d4a0u, 0x0da50u, 0x05d55u,
-    0x056a0u, 0x0a6d0u, 0x055d4u,
+    0x0a2e0u,
+    0x0d2e3u,
+    0x0c960u,
+    0x0d557u,
+    0x0d4a0u,
+    0x0da50u,
+    0x05d55u,
+    0x056a0u,
+    0x0a6d0u,
+    0x055d4u,
     // 2070 - 2079
-    0x052d0u, 0x0a9b8u, 0x0a950u, 0x0b4a0u, 0x0b6a6u, 0x0ad50u, 0x055a0u,
-    0x0aba4u, 0x0a5b0u, 0x052b0u,
+    0x052d0u,
+    0x0a9b8u,
+    0x0a950u,
+    0x0b4a0u,
+    0x0b6a6u,
+    0x0ad50u,
+    0x055a0u,
+    0x0aba4u,
+    0x0a5b0u,
+    0x052b0u,
     // 2080 - 2089
-    0x0b273u, 0x06930u, 0x07337u, 0x06aa0u, 0x0ad50u, 0x14b55u, 0x04b60u,
-    0x0a570u, 0x054e4u, 0x0d160u,
+    0x0b273u,
+    0x06930u,
+    0x07337u,
+    0x06aa0u,
+    0x0ad50u,
+    0x14b55u,
+    0x04b60u,
+    0x0a570u,
+    0x054e4u,
+    0x0d160u,
     // 2090 - 2099
-    0x0e968u, 0x0d520u, 0x0daa0u, 0x16aa6u, 0x056d0u, 0x04ae0u, 0x0a9d4u,
-    0x0a2d0u, 0x0d150u, 0x0f252u,
+    0x0e968u,
+    0x0d520u,
+    0x0daa0u,
+    0x16aa6u,
+    0x056d0u,
+    0x04ae0u,
+    0x0a9d4u,
+    0x0a2d0u,
+    0x0d150u,
+    0x0f252u,
     // 2100
     0x0d520u,
 };
@@ -170,45 +328,39 @@ static constexpr uint32_t kLunarInfo[201] = {
 
 static constexpr double kSolarTermC20[24] = {
     // century 20 (1900-1999) — values from 寿星天文历
-    4.6295,  19.4599,  6.3826,  21.4155, 5.5900,  20.8880,
-    6.3180,  21.8600,  6.5000,  22.2000, 7.9280,  23.6500,
-    8.3500,  23.9500,  8.4400,  23.8220, 9.0980,  24.2180,
-    7.2180,  22.3600,  7.9000,  22.6000, 6.1100,  20.8400,
+    4.6295, 19.4599, 6.3826, 21.4155, 5.5900, 20.8880, 6.3180, 21.8600, 6.5000, 22.2000, 7.9280, 23.6500,
+    8.3500, 23.9500, 8.4400, 23.8220, 9.0980, 24.2180, 7.2180, 22.3600, 7.9000, 22.6000, 6.1100, 20.8400,
 };
 
 static constexpr double kSolarTermC21[24] = {
     // century 21 (2000-2099) — slightly shifted from C20 due to leap-day
     // accumulation.
-    3.8700,  18.7300,  5.6300,  20.6460, 4.8100,  20.1000,
-    5.5200,  21.0400,  5.6780,  21.3700, 7.1080,  22.8300,
-    7.5000,  23.1300,  7.6460,  23.0420, 8.3180,  23.4380,
-    7.4380,  22.3600,  7.1800,  21.9400, 5.4055,  20.1200,
+    3.8700, 18.7300, 5.6300, 20.6460, 4.8100, 20.1000, 5.5200, 21.0400, 5.6780, 21.3700, 7.1080, 22.8300,
+    7.5000, 23.1300, 7.6460, 23.0420, 8.3180, 23.4380, 7.4380, 22.3600, 7.1800, 21.9400, 5.4055, 20.1200,
 };
 
 // kSolarTermMonth[i] = Gregorian month (1-12) in which term i normally falls.
 // Used to anchor the formula to a calendar date.
 static constexpr uint8_t kSolarTermMonth[24] = {
-    2, 2,  // 立春, 雨水
-    3, 3,  // 惊蛰, 春分
-    4, 4,  // 清明, 谷雨
-    5, 5,  // 立夏, 小满
-    6, 6,  // 芒种, 夏至
-    7, 7,  // 小暑, 大暑
-    8, 8,  // 立秋, 处暑
-    9, 9,  // 白露, 秋分
-   10,10,  // 寒露, 霜降
-   11,11,  // 立冬, 小雪
-   12,12,  // 大雪, 冬至
-    1, 1,  // 小寒, 大寒  (in calendar year y+1 relative to 立春-anchored year)
+    2,  2,   // 立春, 雨水
+    3,  3,   // 惊蛰, 春分
+    4,  4,   // 清明, 谷雨
+    5,  5,   // 立夏, 小满
+    6,  6,   // 芒种, 夏至
+    7,  7,   // 小暑, 大暑
+    8,  8,   // 立秋, 处暑
+    9,  9,   // 白露, 秋分
+    10, 10,  // 寒露, 霜降
+    11, 11,  // 立冬, 小雪
+    12, 12,  // 大雪, 冬至
+    1,  1,   // 小寒, 大寒  (in calendar year y+1 relative to 立春-anchored year)
 };
 
 namespace {
 
 // ---- Pure Gregorian helpers --------------------------------------------
 
-constexpr bool isLeapGregorian(int y) {
-  return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
-}
+constexpr bool isLeapGregorian(int y) { return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0); }
 
 constexpr uint8_t kDaysInMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
@@ -312,9 +464,9 @@ int32_t springFestivalAbsDay(int year) {
 
 struct LunarYMD {
   uint16_t year;
-  uint8_t  month;
-  uint8_t  day;
-  bool     leap;
+  uint8_t month;
+  uint8_t day;
+  bool leap;
 };
 
 // Walk lunar months from 春节 of containing lunar year to find month/day.

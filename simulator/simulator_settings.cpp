@@ -30,8 +30,7 @@ bool loadHostSettings(HostSettings& out) {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, body);
   if (err) {
-    std::fprintf(stderr, "simulator: failed to parse %s: %s\n",
-                 hostSettingsPath().c_str(), err.c_str());
+    std::fprintf(stderr, "simulator: failed to parse %s: %s\n", hostSettingsPath().c_str(), err.c_str());
     return false;
   }
   if (doc["showDeviceShell"].is<bool>()) {
@@ -62,8 +61,7 @@ bool saveHostSettings(const HostSettings& s) {
   }
   // rename() is atomic on POSIX when source/target are on the same FS.
   if (std::rename(tmpPath.c_str(), path.c_str()) != 0) {
-    std::fprintf(stderr, "simulator: rename %s -> %s failed\n",
-                 tmpPath.c_str(), path.c_str());
+    std::fprintf(stderr, "simulator: rename %s -> %s failed\n", tmpPath.c_str(), path.c_str());
     return false;
   }
   return true;

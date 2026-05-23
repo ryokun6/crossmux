@@ -116,8 +116,8 @@ inline constexpr uint8_t kFont5x7[95][5] = {
 // columns wide, 7 rows tall; a 1-column gap is added between glyphs.
 // pxScale must be >= 1. Caller is responsible for setting blend mode if
 // needed (this function uses SDL_RenderFillRect with the supplied color).
-inline void drawText5x7(SDL_Renderer* r, int x, int y, int pxScale,
-                        uint8_t cr, uint8_t cg, uint8_t cb, const char* text) {
+inline void drawText5x7(SDL_Renderer* r, int x, int y, int pxScale, uint8_t cr, uint8_t cg, uint8_t cb,
+                        const char* text) {
   if (!r || !text || pxScale < 1) return;
   SDL_SetRenderDrawColor(r, cr, cg, cb, 0xFF);
   int cursorX = x;

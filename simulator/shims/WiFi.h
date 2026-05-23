@@ -21,8 +21,16 @@ enum WiFiMode { WIFI_OFF = 0, WIFI_STA, WIFI_AP, WIFI_AP_STA };
 // radio is off; the simulator has no radio, so getMode() always reports it (the deep-sleep
 // WiFi-teardown path in main.cpp then short-circuits — nothing to tear down on host).
 enum wifi_mode_t { WIFI_MODE_NULL = 0, WIFI_MODE_STA, WIFI_MODE_AP, WIFI_MODE_APSTA };
-enum WiFiStatus { WL_NO_SHIELD = 0, WL_IDLE_STATUS, WL_NO_SSID_AVAIL, WL_SCAN_COMPLETED, WL_CONNECTED,
-                  WL_CONNECT_FAILED, WL_CONNECTION_LOST, WL_DISCONNECTED };
+enum WiFiStatus {
+  WL_NO_SHIELD = 0,
+  WL_IDLE_STATUS,
+  WL_NO_SSID_AVAIL,
+  WL_SCAN_COMPLETED,
+  WL_CONNECTED,
+  WL_CONNECT_FAILED,
+  WL_CONNECTION_LOST,
+  WL_DISCONNECTED
+};
 
 class WiFiClass {
  public:

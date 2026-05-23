@@ -117,8 +117,10 @@ void ChineseChessGameActivity::loop() {
     const uint32_t now = millis();
     if (now > lastTickMs) {
       const uint32_t delta = now - lastTickMs;
-      if (board.nextTurn() == Side::Red) redElapsedMs += delta;
-      else                               blackElapsedMs += delta;
+      if (board.nextTurn() == Side::Red)
+        redElapsedMs += delta;
+      else
+        blackElapsedMs += delta;
     }
     lastTickMs = now;
 
@@ -683,9 +685,9 @@ void ChineseChessGameActivity::drawModeLine() {
 }
 
 void ChineseChessGameActivity::drawFooter() {
-  const auto labels = mappedInput.mapLabels(hasSelection ? tr(STR_CHINESE_CHESS_CANCEL) : tr(STR_GAME_GAME_MENU_BTN),
-                                            hasSelection ? tr(STR_CHINESE_CHESS_MOVE) : tr(STR_CHINESE_CHESS_SELECT_BTN),
-                                            tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+  const auto labels = mappedInput.mapLabels(
+      hasSelection ? tr(STR_CHINESE_CHESS_CANCEL) : tr(STR_GAME_GAME_MENU_BTN),
+      hasSelection ? tr(STR_CHINESE_CHESS_MOVE) : tr(STR_CHINESE_CHESS_SELECT_BTN), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
 

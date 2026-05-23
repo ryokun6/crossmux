@@ -3,7 +3,15 @@
 
 #include <cstdint>
 
-enum WStype_t { WStype_ERROR = 0, WStype_DISCONNECTED, WStype_CONNECTED, WStype_TEXT, WStype_BIN, WStype_PING, WStype_PONG };
+enum WStype_t {
+  WStype_ERROR = 0,
+  WStype_DISCONNECTED,
+  WStype_CONNECTED,
+  WStype_TEXT,
+  WStype_BIN,
+  WStype_PING,
+  WStype_PONG
+};
 
 class WebSocketsServer {
  public:

@@ -92,10 +92,14 @@ inline bool clipSegmentToRect(int& x0, int& y0, int& x1, int& y1,  //
                               int xMin, int yMin, int xMax, int yMax) {
   auto outcode = [&](int x, int y) {
     int c = 0;
-    if (x < xMin) c |= 1;
-    else if (x > xMax) c |= 2;
-    if (y < yMin) c |= 4;
-    else if (y > yMax) c |= 8;
+    if (x < xMin)
+      c |= 1;
+    else if (x > xMax)
+      c |= 2;
+    if (y < yMin)
+      c |= 4;
+    else if (y > yMax)
+      c |= 8;
     return c;
   };
   int c0 = outcode(x0, y0);

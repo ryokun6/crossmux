@@ -9,7 +9,7 @@
 namespace {
 constexpr unsigned long kBlinkPeriodMs = 1000;
 unsigned long g_iterations = 0;
-}
+}  // namespace
 
 void setup() {
   arduino_host::set_serial_sink(stdout);  // Route Serial to stdout for predictable demo output.

@@ -23,8 +23,8 @@ bool SimulatorWindow::open(const char* title, int scale, bool showShell) {
   // The framebuffer is logically 800×480 landscape (matches hardware), but the X4
   // device is held in portrait orientation. The window presents portrait, and the
   // shell (if enabled) adds bezel margins around the eink area.
-  window_ = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             layout_.windowW, layout_.windowH, SDL_WINDOW_SHOWN);
+  window_ = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, layout_.windowW, layout_.windowH,
+                             SDL_WINDOW_SHOWN);
   if (!window_) {
     std::fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
     return false;
@@ -57,13 +57,9 @@ void SimulatorWindow::pushFramebuffer(const uint8_t* bw1bpp) {
   pendingDirty_ = true;
 }
 
-void SimulatorWindow::presentIfDirty() {
-  present(false);
-}
+void SimulatorWindow::presentIfDirty() { present(false); }
 
-void SimulatorWindow::forceRedraw() {
-  present(true);
-}
+void SimulatorWindow::forceRedraw() { present(true); }
 
 void SimulatorWindow::setShellVisible(bool v) {
   if (!window_) return;

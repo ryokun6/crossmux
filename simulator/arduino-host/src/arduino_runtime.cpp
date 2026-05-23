@@ -16,11 +16,13 @@ std::mt19937& random_engine() {
 }  // namespace
 
 unsigned long millis() {
-  return static_cast<unsigned long>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - kEpoch).count());
+  return static_cast<unsigned long>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - kEpoch).count());
 }
 
 unsigned long micros() {
-  return static_cast<unsigned long>(std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - kEpoch).count());
+  return static_cast<unsigned long>(
+      std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - kEpoch).count());
 }
 
 void delay(unsigned long ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }

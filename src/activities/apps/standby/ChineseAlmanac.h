@@ -18,28 +18,28 @@
 // into an empty object.
 
 struct AlmanacDay {
-  uint16_t gregYear;        // 1900..2100
-  uint8_t  gregMonth;       // 1..12
-  uint8_t  gregDay;         // 1..31
-  uint8_t  weekdayIdx;      // 0=Sun .. 6=Sat
-  uint16_t lunarYear;       // 1900..2100
-  uint8_t  lunarMonth;      // 1..12
-  uint8_t  lunarDay;        // 1..30
-  bool     lunarLeap;       // true if `lunarMonth` is the leap month of the year
-  uint8_t  yearStemIdx;     // 0..9   (甲乙丙丁戊己庚辛壬癸)
-  uint8_t  yearBranchIdx;   // 0..11  (子丑寅卯辰巳午未申酉戌亥)
-  uint8_t  monthStemIdx;    // 0..9
-  uint8_t  monthBranchIdx;  // 0..11
-  uint8_t  dayStemIdx;      // 0..9
-  uint8_t  dayBranchIdx;    // 0..11
-  uint8_t  termCurrentIdx;  // 0..23 — index into kSolarTermNames[]
-                            // (0=立春, 1=雨水, ..., 23=大寒)
-                            // The most recent term whose date <= today.
-  uint8_t  termNextIdx;     // 0..23 — next term after `termCurrentIdx`
-  uint8_t  daysToNextTerm;  // 1..30 — days until `termNextIdx` (today excluded)
-  uint8_t  yiIdx;           // 0..11 — index into kYiPool (== dayBranchIdx)
-  uint8_t  jiIdx;           // 0..11 — index into kJiPool (== dayBranchIdx)
-  uint8_t  clashBranchIdx;  // 0..11 — branch that "clashes" with today
+  uint16_t gregYear;       // 1900..2100
+  uint8_t gregMonth;       // 1..12
+  uint8_t gregDay;         // 1..31
+  uint8_t weekdayIdx;      // 0=Sun .. 6=Sat
+  uint16_t lunarYear;      // 1900..2100
+  uint8_t lunarMonth;      // 1..12
+  uint8_t lunarDay;        // 1..30
+  bool lunarLeap;          // true if `lunarMonth` is the leap month of the year
+  uint8_t yearStemIdx;     // 0..9   (甲乙丙丁戊己庚辛壬癸)
+  uint8_t yearBranchIdx;   // 0..11  (子丑寅卯辰巳午未申酉戌亥)
+  uint8_t monthStemIdx;    // 0..9
+  uint8_t monthBranchIdx;  // 0..11
+  uint8_t dayStemIdx;      // 0..9
+  uint8_t dayBranchIdx;    // 0..11
+  uint8_t termCurrentIdx;  // 0..23 — index into kSolarTermNames[]
+                           // (0=立春, 1=雨水, ..., 23=大寒)
+                           // The most recent term whose date <= today.
+  uint8_t termNextIdx;     // 0..23 — next term after `termCurrentIdx`
+  uint8_t daysToNextTerm;  // 1..30 — days until `termNextIdx` (today excluded)
+  uint8_t yiIdx;           // 0..11 — index into kYiPool (== dayBranchIdx)
+  uint8_t jiIdx;           // 0..11 — index into kJiPool (== dayBranchIdx)
+  uint8_t clashBranchIdx;  // 0..11 — branch that "clashes" with today
 };
 
 namespace chinese_almanac {
