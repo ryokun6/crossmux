@@ -1,3 +1,4 @@
 build/
+build_wasm/
 arduino-host/build/
 sd_root/

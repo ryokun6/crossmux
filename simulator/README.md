@@ -12,10 +12,10 @@ filesystem for the "SD card".
 └────────────────────────┬──────────────────────────────────┘
                          │ HAL interface (lib/hal/Hal*.h)
 ┌────────────────────────▼──────────────────────────────────┐
-│ simulator/hal_native/ — CrossPoint-specific HAL backends   │
-│   HalDisplay_native:  48 KB framebuffer → SDL2 texture     │
-│   HalGPIO_native:     SDL keys → BTN_* logical buttons     │
-│   HalStorage_native:  POSIX files under sd_root/           │
+│ simulator/hal/ — CrossPoint-specific HAL backends          │
+│   HalDisplay: framebuffer → SDL texture / canvas flag      │
+│   HalGPIO: SDL keys / JS events → BTN_* buttons            │
+│   HalStorage: POSIX files under sd_root/ (or MEMFS /sd)    │
 │   HalPower/Tilt/System: stubs (battery 87%, no IMU)        │
 │ simulator/missing_symbols.cpp — link glue:                 │
 │   • Activity vtables for excluded screens (WiFi/OTA/...)   │
@@ -71,6 +71,32 @@ cmake --build simulator/build -j
 
 CMake fetches ArduinoJson and `ricmoo/QRCode` via `FetchContent` on first configure
 (shallow clones, a few seconds).
+
+## WebAssembly (browser) build
+
+The same firmware also builds to WASM for the crosspoint-web homepage demo, sharing the
+**same HAL sources** as the native build: `hal/HalDisplay.cpp` and `hal/HalGPIO.cpp` carry a
+small `#ifdef __EMSCRIPTEN__` backend (a framebuffer dirty-flag + browser canvas instead of an
+SDL texture; JavaScript events instead of SDL keys), and `shims/HTTPClient.h` compiles a
+curl-free offline stub under the same guard. The WASM build sets **ENABLE_CHINESE_VERSION**
+(CJK fonts + WeRead/中国象棋/农历/CJK typography — same as native) and preloads a small
+public-domain book from `sd_root_demo/` into MEMFS at `/sd`. The startup UI language follows the
+browser: `index.html` maps `navigator.language` to a `--lang ZH_CN|EN` arg that
+`simulator_main_wasm.cpp` applies before first render. FreeRTOS tasks run on Web Worker threads
+(pthreads), so the page must be cross-origin isolated (COOP/COEP).
+
+Because the browser build has no libcurl, all networked features are offline: WeRead and any
+other HTTPS path return errors through the HTTPClient stub, so those screens render but fetch
+nothing. (Network config / OPDS / KOReader / OTA are out of scope on both builds — see below.)
+
+```sh
+# Prerequisites: emsdk (https://github.com/emscripten-core/emsdk), activated.
+EMSDK=~/emsdk simulator/build_wasm.sh
+# → simulator/build_wasm/crosspoint_simulator_wasm.{js,wasm,data}
+```
+
+The CMake WASM branch is guarded by `if(EMSCRIPTEN)`; the native build above is unchanged.
+See `crosspoint-web/SIMULATOR.md` for how the artifacts are embedded and served.
 
 ## Run
 

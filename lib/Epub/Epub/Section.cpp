@@ -17,9 +17,9 @@ namespace {
 // each can bump independently. Cache invalidation is automatic on mismatch
 // (no migration code needed — version mismatch triggers a clean re-parse).
 #ifdef ENABLE_CHINESE_VERSION
-constexpr uint8_t SECTION_FILE_VERSION = 26;
+constexpr uint8_t SECTION_FILE_VERSION = 27;  // was 26; +hr rendering (#2117)
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 23;
+constexpr uint8_t SECTION_FILE_VERSION = 24;  // was 23; +hr rendering (#2117), matches upstream
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(bool) + sizeof(bool) +

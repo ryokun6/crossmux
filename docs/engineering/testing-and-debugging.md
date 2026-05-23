@@ -1,0 +1,154 @@
+# Testing, Debugging & Verification
+
+> Deep reference for [CLAUDE.md](../../CLAUDE.md). Build/quality commands, the
+> crash playbook, the agent vs human verification split, CI awareness, and live
+> serial debugging. For the contributor-facing quick version see
+> [../contributing/testing-debugging.md](../contributing/testing-debugging.md);
+> for webserver issues see [../troubleshooting.md](../troubleshooting.md).
+
+## Build Commands
+
+**Via CLI**:
+```bash
+# Build firmware (default environment)
+pio run
+
+# Build and upload to device
+pio run -t upload
+
+# Build specific environment
+pio run -e gh_release
+
+# Clean build artifacts
+pio run -t clean
+
+# Upload filesystem data (if using SPIFFS/LittleFS)
+pio run -t uploadfs
+```
+
+**Via VS Code**:
+* Use PlatformIO toolbar: Build (✓), Upload (→), Clean (🗑️)
+* Or Command Palette: `PlatformIO: Build`, `PlatformIO: Upload`, etc.
+
+## Monitoring and Debugging
+
+```bash
+# Enhanced monitor with color/logging (recommended)
+python3 scripts/debugging_monitor.py
+
+# Standard PlatformIO monitor
+pio device monitor
+
+# Combined upload + monitor
+pio run -t upload && pio device monitor
+```
+
+**Via VS Code**: Click Monitor (🔌) button in PlatformIO toolbar
+
+## Code Quality
+
+```bash
+# Static analysis (cppcheck)
+pio check
+
+# Format code (clang-format) - Windows Git Bash
+find src -name "*.cpp" -o -name "*.h" | xargs clang-format -i
+
+# Format code (clang-format) - Linux
+clang-format -i src/**/*.cpp src/**/*.h
+```
+
+## Debugging Crashes
+
+**Common Crash Causes**:
+
+1. **Out of Memory** (Most common):
+   ```cpp
+   LOG_DBG("MEM", "Free heap: %d bytes", ESP.getFreeHeap());
+   ```
+   - Monitor heap usage throughout activity lifecycle
+   - Check if large allocations (>10KB) occur before crash
+   - Verify buffers are freed in `onExit()`
+
+2. **Stack Overflow**:
+   ```cpp
+   LOG_DBG("TASK", "Stack high water: %d", uxTaskGetStackHighWaterMark(taskHandle));
+   ```
+   - Occurs during deep recursion or large local variables
+   - Increase task stack size in `xTaskCreate()` (2048 → 4096)
+   - Move large buffers to heap with malloc
+
+3. **Use-After-Free**:
+   - Activity deleted but task still running
+   - Always `vTaskDelete()` in `onExit()` BEFORE activity destruction
+   - Set pointers to `nullptr` after `free()`
+
+4. **Corrupt Cache Files**:
+   - Delete `.crosspoint/` directory on SD card
+   - Forces clean re-parse of all EPUBs
+   - Check file format versions in [../file-formats.md](../file-formats.md)
+
+5. **Watchdog Timeout**:
+   - Loop/task blocked for >5 seconds
+   - Add `vTaskDelay(1)` in tight loops
+   - Check for blocking I/O operations
+
+**Verification Steps**:
+1. Check serial output for stack traces
+2. Monitor heap with `ESP.getFreeHeap()` before/after operations
+3. Verify task deletion with task list (`vTaskList()`)
+4. Test with `LOG_LEVEL=2` (debug logging enabled)
+
+---
+
+## Testing and Verification Workflow
+
+### Testing Checklist
+
+**AI agent scope** (what you CAN verify):
+1. ✅ **Build**: `pio run -t clean && pio run` (0 errors/warnings)
+2. ✅ **Quality**: `pio check` + `find src -name "*.cpp" -o -name "*.h" | xargs clang-format -i`
+3. ✅ **Format**: Commit messages (`feat:`/`fix:`), no `.gitignore`-excluded files staged (e.g., `*.generated.h`, `.pio/`, `platformio.local.ini`)
+4. ✅ **CI**: Fix GitHub Actions failures before review
+5. ✅ **Code review**: Ensure orientation-aware logic is correct in all 4 modes by inspecting switch/case coverage
+
+**Human tester scope** (flag these for the user):
+6. 🔲 **Device**: Test on hardware
+7. 🔲 **Orientations**: Verify all 4 modes (Portrait/Inverted/Landscape CW/CCW)
+8. 🔲 **Heap**: `ESP.getFreeHeap()` > 50KB, no leaks
+9. 🔲 **Cache**: If EPUB modified, delete `.crosspoint/` and verify re-parse
+
+### CI/CD Pipeline Awareness
+
+**GitHub Actions** run automatically on pull requests:
+
+| Workflow | File | Purpose |
+|----------|------|---------|
+| Build Check | `.github/workflows/ci.yml` | Verifies code compiles |
+| Format Check | `.github/workflows/pr-formatting-check.yml` | Validates clang-format |
+| Release Build | `.github/workflows/release.yml` | Production releases |
+| RC Build | `.github/workflows/release_candidate.yml` | Release candidates |
+
+**Rules**:
+- **Fix CI failures BEFORE** requesting review
+- CI runs on: Push to PR, PR updates
+- Format check fails → Run clang-format locally
+- Build check fails → Fix compile errors
+
+---
+
+## Serial Monitoring and Live Debugging
+
+### Serial Monitor Options
+
+1. **Enhanced**: `python3 scripts/debugging_monitor.py` (color-coded, recommended)
+2. **Standard**: `pio device monitor` (basic, no colors)
+3. **VS Code**: Monitor (🔌) button (IDE-integrated)
+
+### Live Debugging Patterns
+
+**Heap**: `LOG_DBG("MEM", "Free: %d", ESP.getFreeHeap());` (every 5s in loop)
+**Stack**: `uxTaskGetStackHighWaterMark(nullptr)` (< 512 bytes → increase stack)
+**Flush**: `logSerial.flush();` (force output before crash)
+
+**Port Detection**: Windows: `mode` | Linux: `ls /dev/ttyUSB* /dev/ttyACM*` or `dmesg | grep tty`

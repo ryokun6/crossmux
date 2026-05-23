@@ -124,6 +124,10 @@ jobs:
               echo '```'
               echo "$conflicts"
               echo '```'
+              if printf '%s\n' "$conflicts" | grep -qx '.skills/SKILL.md'; then
+                echo ""
+                echo "⚠️ \`.skills/SKILL.md\` (= \`CLAUDE.md\`) conflicted. Resolve it per **\`docs/engineering/upstream-merge-policy.md\`**: keep crosstab's thin map and route the upstream delta into \`docs/engineering/\` — do NOT merge the monolith back into the map."
+              fi
             } | gh pr comment "$pr" --body-file -
             echo "PR #${pr} flagged for resolution."
           fi
