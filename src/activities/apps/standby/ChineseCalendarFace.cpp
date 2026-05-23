@@ -145,7 +145,7 @@ int verticalCenterY(const GfxRenderer& renderer, int fontId, int bandY, int heig
 // 宜 / 忌 card: black header strip with white label + 2×2 grid of body items.
 // Header label uses 12pt because 宜 / 忌 are absent from the 16/18pt
 // i18n CJK subset.
-void drawYiJiBox(GfxRenderer& renderer, int x, int y, int w, int h, const char* headerLabel,
+void drawYiJiBox(const GfxRenderer& renderer, int x, int y, int w, int h, const char* headerLabel,
                  const char* const items[4]) {
   constexpr int kHeaderH = 36;
   constexpr int kBorderW = 1;
