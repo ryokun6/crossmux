@@ -52,16 +52,16 @@ class AirPageFace final : public StandbyFace {
   // Off (manual mode) -> Connecting -> Online. Only used in live-push mode.
   enum class MqttState : uint8_t { Off, Connecting, Online };
 
-  void requestFetch();        // queue a fetch (DOWN / push / live-mode entry all funnel here)
-  void doFetch();             // blocking: connect WiFi (if needed) + download to SD
-  bool ensureWifi();          // blocking: reuse/raise WiFi from saved credentials
+  void requestFetch();          // queue a fetch (DOWN / push / live-mode entry all funnel here)
+  void doFetch();               // blocking: connect WiFi (if needed) + download to SD
+  bool ensureWifi();            // blocking: reuse/raise WiFi from saved credentials
   bool startWifiAssociation();  // non-blocking: kick WiFi.begin() and return immediately
-  void teardownWifi();        // drop only WiFi we ourselves raised (lets CPU downclock)
-  void pumpMqtt();            // live mode: maintain the broker connection + deliver pushes
-  bool connectBroker();       // connect + subscribe (assumes WiFi already up)
-  void enterLiveMode();       // turn live push on: arm reconnect + initial fetch
-  void exitLiveMode();        // turn live push off: drop MQTT + WiFi
-  void applyMenuSelection();  // commit the highlighted menu row
+  void teardownWifi();          // drop only WiFi we ourselves raised (lets CPU downclock)
+  void pumpMqtt();              // live mode: maintain the broker connection + deliver pushes
+  bool connectBroker();         // connect + subscribe (assumes WiFi already up)
+  void enterLiveMode();         // turn live push on: arm reconnect + initial fetch
+  void exitLiveMode();          // turn live push off: drop MQTT + WiFi
+  void applyMenuSelection();    // commit the highlighted menu row
 
   bool renderImage(const GfxRenderer& renderer, const Rect& viewport);
   void renderQr(const GfxRenderer& renderer, const Rect& viewport);
