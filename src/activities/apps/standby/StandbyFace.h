@@ -75,8 +75,10 @@ class StandbyFace {
   //   - routes Confirm to handleConfirm() instead of toggling inverseMode_,
   //   - never enters the 5s-idle Immersive state machine, so Up/Down reach the
   //     face on the first press (no "wake from immersive" swallow), and
-  //   - draws the face full-screen with no header / battery / pager dots when the
-  //     face asks for it via rendersFullScreen() (AirPage's image view).
+  //   - suppresses the header / battery / pager-dot chrome *only* on frames the
+  //     face flags via rendersFullScreen() (AirPage's image view), drawing them
+  //     edge-to-edge. Interactive views that don't (QR, loading, mode menu) still
+  //     get the Normal-mode chrome overlay — see StandbyActivity::render.
   // Default false — passive faces (SloppyClock, ChineseCalendar) are unaffected.
   virtual bool isInteractive() const { return false; }
 
