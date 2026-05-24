@@ -167,7 +167,9 @@ void AirPageFace::enterLiveMode() {
   realtimeMode_ = true;
   mqttState_ = MqttState::Connecting;
   lastConnectAttemptMs_ = millis() - kReconnectMs;  // first reconnect attempt is due immediately
-  requestFetch();                                   // show the current image while the broker connects
+  // Don't auto-download on entry; show the cached image if we have one, else the
+  // QR. Fresh images arrive via MQTT push (pumpMqtt -> requestFetch).
+  view_ = haveCachedImage_ ? View::Image : View::Qr;
   needsRedraw_ = true;
 }
 
