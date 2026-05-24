@@ -1,8 +1,11 @@
 #pragma once
 // Simulator shim for esp_mac.h. The real firmware reads the per-device eFuse
-// MAC; the host has none, so we return a fixed deterministic MAC. This keeps
-// AirPageDeviceId::deviceId() stable across simulator runs (matching the WiFi
-// shim's macAddress() of 02:00:00:00:00:01).
+// MAC; the host has none, so we return a fixed deterministic MAC. Its sole
+// consumer is ObfuscationUtils (lib/Serialization), which XORs stored
+// credentials (WiFi / OPDS / WeRead) with these 6 bytes — a fixed key keeps
+// obfuscated files written by one sim run readable by the next. Note this MAC
+// does NOT influence airpage::deviceId(): that id is a random, SD-persisted
+// nanoid (see AirPageDeviceId), unrelated to the hardware MAC.
 #include <cstdint>
 #include <cstring>
 

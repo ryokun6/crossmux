@@ -184,8 +184,11 @@ Save as `simulator/sd_root/.crosspoint/state.json` before launching.
   by the real `ricmoo/QRCode` lib) encodes the device's upload URL. Pressing ▼
   runs the real `HttpDownloader` over libcurl, saving the latest image to
   `sd_root/.crosspoint/airpage/latest.bmp`, then Confirm toggles QR ⇄ image.
-  The simulated MAC is fixed (`02:00:00:00:00:01`), so the 16-char device id is
-  stable across runs (`NSlZI3rjcCSnrbDQ`) — upload to that id to see your image.
+  The 16-char device id is a random nanoid minted on first run via `esp_random()`
+  and persisted to `sd_root/.crosspoint/airpage_device_id` — it is **not** derived
+  from the MAC. It stays the same across runs only as long as you keep that file
+  (delete it to mint a fresh id). Read the current id off the QR page or serial
+  log, then upload to that id to see your image.
 
 ## What's out of scope (first version)
 
