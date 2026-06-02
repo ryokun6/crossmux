@@ -856,10 +856,16 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
   }
 
   LOG_DBG("ERS", "Silently indexing next chapter: %d", nextSpineIndex);
+  // Pass the same INDEXING popup callback the cross-chapter path uses. The parser only
+  // fires it for chapters >= MIN_SIZE_FOR_POPUP (ChapterHtmlSlimParser::parseAndBuildPages),
+  // so a small next chapter still builds silently, while a large one — which would
+  // otherwise block the render thread for seconds with no feedback right after the
+  // penultimate page appears — now shows "INDEXING" instead of looking like a hang.
+  const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
   if (!nextSection.createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                      SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, viewportWidth,
                                      viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
-                                     SETTINGS.imageRendering, SETTINGS.focusReadingEnabled)) {
+                                     SETTINGS.imageRendering, SETTINGS.focusReadingEnabled, popupFn)) {
     LOG_ERR("ERS", "Failed silent indexing for chapter: %d", nextSpineIndex);
   }
 }
