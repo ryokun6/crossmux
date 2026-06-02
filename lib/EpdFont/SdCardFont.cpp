@@ -1049,6 +1049,39 @@ uint16_t SdCardFont::getAdvance(uint32_t codepoint, uint8_t style) const {
   return 0;
 }
 
+uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
+  uint8_t styleIdx = style & (MAX_STYLES - 1);
+  if (!styles_[styleIdx].present) styleIdx = resolveStyle(styleIdx);
+
+  // Fast path: resident advance cache (no I/O).
+  uint16_t cached = 0;
+  if (advanceTableLookup(styleIdx, codepoint, &cached)) return cached;
+
+  // Miss: read the glyph's advanceX straight from the .cpfont. The advance table
+  // is built only from on-page text (and capped at ADVANCE_CACHE_LIMIT), so off-page
+  // probes (e.g. the Han-column reference ideograph) legitimately miss here.
+  const auto& s = styles_[styleIdx];
+  if (!s.present) return 0;
+  const int32_t gIdx = findGlobalGlyphIndex(s, codepoint);
+  if (gIdx < 0) return 0;  // font genuinely lacks this glyph
+
+  HalFile file;
+  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+    LOG_ERR("SDCF", "getAdvanceOrLoad: failed to open .cpfont for U+%04X", codepoint);
+    return 0;
+  }
+  EpdGlyph glyph;
+  const uint32_t fileOff = s.glyphsFileOffset + static_cast<uint32_t>(gIdx) * sizeof(EpdGlyph);
+  uint16_t advance = 0;
+  if (file.seekSet(fileOff) && file.read(reinterpret_cast<uint8_t*>(&glyph), sizeof(EpdGlyph)) == sizeof(EpdGlyph)) {
+    advance = glyph.advanceX;
+  } else {
+    LOG_ERR("SDCF", "getAdvanceOrLoad: short glyph read for U+%04X (glyph %d)", codepoint, gIdx);
+  }
+  file.close();
+  return advance;
+}
+
 // Given a sorted array of unique codepoints, resolve glyph indices per style,
 // batch-read advanceX from SD, and merge into the persistent advance table.
 // Caller owns the codepoints buffer.

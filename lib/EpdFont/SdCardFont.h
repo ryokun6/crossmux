@@ -55,6 +55,14 @@ class SdCardFont {
   // Returns the 12.4 fixed-point advance, or 0 if not found.
   uint16_t getAdvance(uint32_t codepoint, uint8_t style) const;
 
+  // Like getAdvance(), but resolves a cache miss by reading the glyph's advanceX
+  // directly from the .cpfont on SD. The advance table only holds codepoints seen
+  // in the page text (and is capped), so layout probes for characters that aren't
+  // on the page — notably the CJK reference ideograph used to size Han columns —
+  // would otherwise miss and measure 0. Returns 12.4 fixed-point, or 0 only when
+  // the font genuinely lacks the glyph. Does one SD read on a miss; hits are free.
+  uint16_t getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const;
+
   // Returns true if advance table is populated for at least one style.
   bool hasAdvanceTable() const;
 

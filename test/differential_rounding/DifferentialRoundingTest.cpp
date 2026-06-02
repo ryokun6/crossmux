@@ -101,6 +101,62 @@ int absoluteGap(int32_t startFP, int32_t advanceFP, int32_t kernFP) {
   return fp4::toPixel(nextFP) - fp4::toPixel(startFP);
 }
 
+// --- SD-card-font advance measurement models (ASCII-only test strings) ---
+//
+// These three helpers reproduce, in pure fixed-point, the three ways the
+// codebase turns a run of glyph advances into a pixel width.  They let us
+// guard the SD measure/render rounding-alignment fix without standing up a
+// GfxRenderer / SdCardFont (which need HAL + Storage).
+
+// GfxRenderer::getTextAdvanceX SD fast-path BEFORE the fix: accumulate all
+// advances in 12.4 fixed-point, snap to pixel exactly once, kern-free.
+int oldSdMeasure(const char* s) {
+  int32_t widthFP = 0;
+  for (const char* p = s; *p; ++p) {
+    const EpdGlyph* g = testFont().getGlyph(static_cast<uint8_t>(*p));
+    widthFP += g ? g->advanceX : 0;
+  }
+  return fp4::toPixel(widthFP);
+}
+
+// GfxRenderer::getTextAdvanceX SD fast-path AFTER the fix: snap each glyph's
+// advance to a pixel individually and sum, kern-free (matches drawText's
+// differential rounding while keeping SD layout kern-free by design).
+int newSdMeasure(const char* s) {
+  int widthPx = 0;
+  int32_t prevAdvanceFP = 0;
+  bool havePrev = false;
+  for (const char* p = s; *p; ++p) {
+    const EpdGlyph* g = testFont().getGlyph(static_cast<uint8_t>(*p));
+    if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+    prevAdvanceFP = g ? g->advanceX : 0;
+    havePrev = true;
+  }
+  if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+  return widthPx;
+}
+
+// drawText / built-in path B: per-glyph differential snap WITH kern. This is
+// the geometry SD fonts actually render with (kern is loaded at render time);
+// since the font's kern values are <= 0 it only ever tightens the result.
+int renderAdvanceWithKern(const char* s) {
+  int widthPx = 0;
+  int32_t prevAdvanceFP = 0;
+  uint32_t prevCp = 0;
+  for (const char* p = s; *p; ++p) {
+    const uint32_t cp = static_cast<uint8_t>(*p);
+    const EpdGlyph* g = testFont().getGlyph(cp);
+    if (prevCp != 0) {
+      const int32_t kernFP = testFont().getKerning(prevCp, cp);
+      widthPx += fp4::toPixel(prevAdvanceFP + kernFP);
+    }
+    prevAdvanceFP = g ? g->advanceX : 0;
+    prevCp = cp;
+  }
+  widthPx += fp4::toPixel(prevAdvanceFP);
+  return widthPx;
+}
+
 }  // namespace
 
 // ============================================================================
@@ -270,4 +326,43 @@ TEST(EpdFont, HeightCalculation) {
   EXPECT_EQ(textHeight("T"), 12);
   EXPECT_EQ(textHeight("To"), 12);
   EXPECT_EQ(textHeight("oo"), 8);
+}
+
+// ============================================================================
+// Part 3: SD-card-font measure/render rounding alignment
+//
+// The SD fast-path in GfxRenderer::getTextAdvanceX used to snap the *summed*
+// advances once (oldSdMeasure).  Render (drawText) snaps each glyph step
+// individually.  When per-glyph advances carry a >=0.5px fraction, the single
+// snap under-counts the rendered width, so a word's measured slot is narrower
+// than what it draws -- trailing glyphs spill into the next word (overlap) and
+// the last line overflows the right edge.  The fix makes the SD measurement
+// snap per glyph (newSdMeasure), restoring measure==render geometry.
+// ============================================================================
+
+// For kern-free runs (CJK ideographs, or here 'x'/'o' pairs with no kern
+// class) the fixed per-glyph measurement equals the rendered advance exactly.
+TEST(SdCardMeasure, NewMatchesKernFreeRender) {
+  for (const char* s : {"x", "xx", "xxx", "xxxx", "xo", "xoxo", "oxoxox"}) {
+    EXPECT_EQ(newSdMeasure(s), renderAdvanceWithKern(s)) << "s=" << s;
+  }
+}
+
+// 'x' advance is 136 FP = 8.5px (fraction exactly 0.5, rounds up).  The old
+// single-snap measured "xxxx" as 34px while render lays it out at 36px: a 2px
+// under-count that packed the next word 2px too close.  The fix closes it.
+TEST(SdCardMeasure, OldSingleSnapUnderCountsCausingOverlap) {
+  EXPECT_EQ(oldSdMeasure("xxxx"), 34);
+  EXPECT_EQ(renderAdvanceWithKern("xxxx"), 36);
+  EXPECT_LT(oldSdMeasure("xxxx"), renderAdvanceWithKern("xxxx"));  // the bug
+  EXPECT_EQ(newSdMeasure("xxxx"), renderAdvanceWithKern("xxxx"));  // the fix
+}
+
+// With kern applied only at render (kern <= 0 in this font), the kern-free
+// per-glyph measurement is always >= the rendered width.  Measuring >= render
+// guarantees a word's glyphs never spill past its reserved slot -> no overlap.
+TEST(SdCardMeasure, MeasureNeverNarrowerThanRenderWithKern) {
+  for (const char* s : {"To", "Ta", "oo", "ooo", "Too", "oa", "xo", "Taoo"}) {
+    EXPECT_GE(newSdMeasure(s), renderAdvanceWithKern(s)) << "s=" << s;
+  }
 }

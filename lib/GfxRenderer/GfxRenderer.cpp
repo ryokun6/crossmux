@@ -1322,12 +1322,32 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, EpdFontFami
   // where kern/lig data was not loaded.
   auto sdIt = sdCardFonts_.find(fontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
-    int32_t widthFP = 0;
     const uint8_t styleIdx = resolveSdCardStyle(*sdIt->second, style);
+    int widthPx = 0;
+    int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: previous glyph's advance
+    bool havePrev = false;
     while (uint32_t cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text))) {
-      widthFP += sdIt->second->getAdvance(cp, styleIdx);
+      // Differential rounding: snap each glyph step to a pixel individually, matching
+      // drawText so layout (wordXpos) and render geometry agree exactly. Snapping the
+      // whole sum once (as before) under-counted the rendered width whenever per-glyph
+      // advances carried a >=0.5px fraction, so trailing glyphs of a word spilled into
+      // the next word — visible as overlap / right-edge overflow. SD layout stays
+      // kern-free by design (full kern matrix is non-resident; see
+      // SdCardFont::applyKernLigaturePointers), which only ever tightens render vs
+      // this measurement, never widens it.
+      if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+      // getAdvanceOrLoad (not getAdvance): resolves codepoints missing from the
+      // resident advance cache by reading the glyph's advance from SD on demand,
+      // instead of treating them as 0-width. A 0 here used to silently corrupt
+      // layout — e.g. the CJK reference probe "我" (used to size every Han column)
+      // is rarely present in the page text, so it missed the cache, measured 0,
+      // and fell back to a bogus 2×"M" column width that spread ideographs far
+      // apart. See SdCardFont::getAdvanceOrLoad.
+      prevAdvanceFP = static_cast<int32_t>(sdIt->second->getAdvanceOrLoad(cp, styleIdx));
+      havePrev = true;
     }
-    return fp4::toPixel(widthFP);
+    if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);  // final glyph's advance
+    return widthPx;
   }
 
   const auto fontIt = fontMap.find(fontId);
