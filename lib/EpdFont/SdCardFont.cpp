@@ -1195,9 +1195,10 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
 
   unsigned long startMs = millis();
 
-  // +2 reserved slots for space and hyphen injected after the main scan.
+  // +3 reserved slots for space, hyphen, and the CJK column-reference ideograph,
+  // injected after the main scan.
   static constexpr uint32_t MAX_UNIQUE_CODEPOINTS = 4096;
-  uint32_t* codepoints = new (std::nothrow) uint32_t[MAX_UNIQUE_CODEPOINTS + 2];
+  uint32_t* codepoints = new (std::nothrow) uint32_t[MAX_UNIQUE_CODEPOINTS + 3];
   if (!codepoints) {
     LOG_ERR("SDCF", "buildAdvanceTable: failed to allocate codepoint buffer (%u bytes)", MAX_UNIQUE_CODEPOINTS * 4);
     return -1;
@@ -1213,6 +1214,20 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
     codepoints[cpCount++] = ' ';
   if (includeHyphen && std::none_of(codepoints, codepoints + cpCount, [](uint32_t c) { return c == '-'; }))
     codepoints[cpCount++] = '-';
+
+#ifdef ENABLE_CHINESE_VERSION
+  // Inject the Han column-reference ideograph "我" (U+6211). ParsedText sizes every
+  // CJK column from getTextAdvanceX("我") (see cjkReferenceAdvance), but "我" is often
+  // absent from the page text, so it misses the persistent advance cache and forces an
+  // on-demand SD glyph read (getAdvanceOrLoad) on every paragraph during first-load
+  // pagination. Reading it here piggybacks the file open this function already does, so
+  // it costs one extra 16-byte glyph read once; thereafter it's cached and the per-
+  // paragraph probe hits the table with no SD I/O. Pure speedup — the resolved advance
+  // is identical to what getAdvanceOrLoad would read, so layout geometry is unchanged.
+  static constexpr uint32_t CJK_REFERENCE_CP = 0x6211;  // 我
+  if (std::none_of(codepoints, codepoints + cpCount, [](uint32_t c) { return c == CJK_REFERENCE_CP; }))
+    codepoints[cpCount++] = CJK_REFERENCE_CP;
+#endif
 
   if (hitCap) {
     LOG_ERR("SDCF", "buildAdvanceTable: unique codepoint cap (%u) hit, layout may be approximate",
