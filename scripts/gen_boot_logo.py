@@ -36,6 +36,7 @@ X_SEGS = (((17.0, 17.0), (47.0, 47.0)),
           ((47.0, 17.0), (17.0, 47.0)))
 DIA_CX = DIA_CY = 32.0              # centre diamond centre
 DIA_HALF = 5.0                      # half side of the 10x10 square (pre-rotation)
+DIA_R = 1.5                         # diamond corner radius (rx on the rotated square)
 COS45 = math.cos(math.radians(45.0))
 SIN45 = math.sin(math.radians(45.0))
 
@@ -63,11 +64,17 @@ def on_x(px, py):
 
 
 def in_diamond(px, py):
-    """Inside the 45deg-rotated centre square (the knock-out diamond)."""
+    """Inside the 45deg-rotated centre square (the knock-out diamond).
+
+    Honours the SVG's rx=1.5 corner radius via a rounded-rect inset test in the
+    square's own frame, so the bitmap matches Logo120.svg exactly.
+    """
     u, v = px - DIA_CX, py - DIA_CY
     ur = u * COS45 + v * SIN45       # rotate point by -45deg into the square's frame
     vr = -u * SIN45 + v * COS45
-    return abs(ur) <= DIA_HALF and abs(vr) <= DIA_HALF
+    ax = max(abs(ur) - (DIA_HALF - DIA_R), 0.0)
+    ay = max(abs(vr) - (DIA_HALF - DIA_R), 0.0)
+    return ax * ax + ay * ay <= DIA_R * DIA_R
 
 
 def sample_white(px, py):
@@ -162,7 +169,12 @@ def main():
     if "--ascii" in sys.argv:
         print_ascii(rows)
     if "--png" in sys.argv:
-        png_path = sys.argv[sys.argv.index("--png") + 1]
+        idx = sys.argv.index("--png") + 1
+        if idx >= len(sys.argv):
+            print("error: --png requires an output path, e.g. --png preview.png",
+                  file=sys.stderr)
+            sys.exit(2)
+        png_path = sys.argv[idx]
         write_png(rows, png_path)
         print(f"Wrote {png_path}")
 
