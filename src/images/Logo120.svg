@@ -1,0 +1,10 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- 开机 logo 单色版（实心黑块）。源文件，生成 src/images/Logo120.h。 -->
+  <!-- 取自 crosspoint-web/public/logo.svg 的 "Mono X" 几何，赤陶->黑、奶油->白。 -->
+  <rect width="64" height="64" rx="15" fill="#000000" />
+  <g stroke="#ffffff" stroke-width="9.5" stroke-linecap="butt">
+    <line x1="17" y1="17" x2="47" y2="47" />
+    <line x1="47" y1="17" x2="17" y2="47" />
+  </g>
+  <rect x="27" y="27" width="10" height="10" rx="1.5" fill="#000000" transform="rotate(45 32 32)" />
+</svg>

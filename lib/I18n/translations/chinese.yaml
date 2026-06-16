@@ -2,7 +2,7 @@ _language_name: "简体中文"
 _language_code: "ZH_CN"
 _order: "23"
 
-STR_CROSSPOINT: "CrossPoint"
+STR_CROSSPOINT: "CrossMux"
 STR_BOOTING: "启动中"
 STR_SLEEPING: "休眠中"
 STR_ENTERING_SLEEP: "正在进入休眠"
