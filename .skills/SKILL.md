@@ -10,8 +10,8 @@ Mission: Provide a lightweight, high-performance reading experience focused on E
 > The detailed docs are the system of record; keep them current when behavior
 > changes.
 >
-> (This guide is reachable as both `CLAUDE.md` and `.skills/SKILL.md` — they are
-> the same file. Links below are relative to the repository root.)
+> (This guide is reachable as `CLAUDE.md`, `AGENTS.md`, and `.skills/SKILL.md` —
+> they are the same file. Links below are relative to the repository root.)
 >
 > **Maintainers** — when merging upstream changes to this file, follow
 > [docs/engineering/upstream-merge-policy.md](docs/engineering/upstream-merge-policy.md):
