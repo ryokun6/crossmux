@@ -62,8 +62,8 @@ class ActivityManager {
   // Must only be used via RenderLock
   SemaphoreHandle_t renderingMutex = nullptr;
 
-  // Whether to trigger a render after the current loop()
-  // This variable must only be set by the main loop, to avoid race conditions
+  // Cross-task render request flag. requestUpdate() may set it from any task;
+  // loop() consumes and clears it with exchange(false).
   std::atomic<bool> requestedUpdate{false};
 
  public:
