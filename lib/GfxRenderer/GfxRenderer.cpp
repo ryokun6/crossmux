@@ -1,6 +1,7 @@
 #include "GfxRenderer.h"
 
 #include <BidiUtils.h>
+#include <DirectPixelWriter.h>
 #include <FontDecompressor.h>
 #include <HalGPIO.h>
 #include <Logging.h>
@@ -263,6 +264,35 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
       innerBase = cursorX + left;  // screenX = innerBase + glyphX
     }
 
+    // Fast path: upright 2-bit glyphs without a scissor clip. Same DirectPixelWriter
+    // used by image AA — precomputed orientation transform + band column culling,
+    // no per-pixel drawPixel/rotate. Dense CJK pages with text AA spend most of
+    // their time here (BW + dual gray planes).
+    if constexpr (rotation == TextRotation::None) {
+      if (is2Bit && !renderer.hasClipRect()) {
+        DirectPixelWriter pw;
+        pw.init(renderer);
+        pw.blackInk = pixelState;
+        int pixelPosition = 0;
+        for (int glyphY = 0; glyphY < height; glyphY++) {
+          pw.beginRow(outerBase + glyphY);
+          int colStart = 0;
+          int colEnd = width;
+          pw.bandColRange(innerBase, width, colStart, colEnd);
+          pixelPosition += colStart;
+          for (int glyphX = colStart; glyphX < colEnd; glyphX++, pixelPosition++) {
+            const uint8_t byte = bitmap[pixelPosition >> 2];
+            const uint8_t bit_index = (3 - (pixelPosition & 3)) * 2;
+            // Font raw: 0=white..3=black → screen: 0=black..3=white
+            const uint8_t bmpVal = static_cast<uint8_t>(3 - ((byte >> bit_index) & 0x3));
+            pw.writePixel(innerBase + glyphX, bmpVal);
+          }
+          pixelPosition += (width - colEnd);
+        }
+        return;
+      }
+    }
+
     if (is2Bit) {
       int pixelPosition = 0;
       for (int glyphY = 0; glyphY < height; glyphY++) {
@@ -296,6 +326,7 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
             // Dark gray
             renderer.drawPixel(screenX, screenY, false);
           }
+          // GRAYSCALE_DUAL is handled by the DirectPixelWriter fast path above.
         }
       }
     } else {
@@ -1313,7 +1344,11 @@ void GfxRenderer::clearScreen(const uint8_t color) const {
   start_ms = millis();
   if (_stripActive) {
     // Clear only the active band's scratch, not the shared framebuffer.
-    memset(_stripBuf, color, static_cast<size_t>(panelWidthBytes) * _stripRows);
+    const size_t bytes = static_cast<size_t>(panelWidthBytes) * _stripRows;
+    memset(_stripBuf, color, bytes);
+    if (_stripBufMsb) {
+      memset(_stripBufMsb, color, bytes);
+    }
     return;
   }
   display.clearScreen(color);
@@ -1325,6 +1360,17 @@ void GfxRenderer::beginStripTarget(uint8_t* scratch, int stripY0, int stripRows)
   // the downstream uint16_t cast in writeGrayscalePlaneStrip.
   assert(scratch != nullptr && stripRows > 0 && stripY0 >= 0 && stripY0 <= static_cast<int>(panelHeight) - stripRows);
   _stripBuf = scratch;
+  _stripBufMsb = nullptr;
+  _stripY0 = stripY0;
+  _stripRows = stripRows;
+  _stripActive = true;
+}
+
+void GfxRenderer::beginDualStripTarget(uint8_t* scratchLsb, uint8_t* scratchMsb, int stripY0, int stripRows) const {
+  assert(scratchLsb != nullptr && scratchMsb != nullptr && stripRows > 0 && stripY0 >= 0 &&
+         stripY0 <= static_cast<int>(panelHeight) - stripRows);
+  _stripBuf = scratchLsb;
+  _stripBufMsb = scratchMsb;
   _stripY0 = stripY0;
   _stripRows = stripRows;
   _stripActive = true;
@@ -1333,6 +1379,7 @@ void GfxRenderer::beginStripTarget(uint8_t* scratch, int stripY0, int stripRows)
 void GfxRenderer::endStripTarget() const {
   _stripActive = false;
   _stripBuf = nullptr;
+  _stripBufMsb = nullptr;
   _stripY0 = 0;
   _stripRows = 0;
 }

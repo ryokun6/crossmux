@@ -1,11 +1,11 @@
 #include "ImageBlock.h"
 
+#include <DirectPixelWriter.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
 #include <Serialization.h>
 
-#include "Epub/converters/DirectPixelWriter.h"
 #include "Epub/converters/ImageDecoderFactory.h"
 
 // Cache file format:

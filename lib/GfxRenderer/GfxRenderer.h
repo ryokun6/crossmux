@@ -27,7 +27,9 @@ enum Color : uint8_t { Clear = 0x00, White = 0x01, LightGray = 0x05, DarkGray = 
 
 class GfxRenderer {
  public:
-  enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB };
+  // GRAYSCALE_DUAL: one text/image walk writes LSB+MSB strip buffers together
+  // (see beginDualStripTarget). Used by EPUB AA to cut strip re-renders in half.
+  enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB, GRAYSCALE_DUAL };
 
   // Logical screen orientation from the perspective of callers
   enum Orientation {
@@ -74,7 +76,9 @@ class GfxRenderer {
   // planes render band-by-band straight to the controller without destroying
   // the BW framebuffer (no storeBwBuffer). Mutable because the render path is
   // const. See beginStripTarget()/endStripTarget().
+  // _stripBufMsb is set only by beginDualStripTarget() for GRAYSCALE_DUAL.
   mutable uint8_t* _stripBuf = nullptr;
+  mutable uint8_t* _stripBufMsb = nullptr;
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
@@ -174,6 +178,9 @@ class GfxRenderer {
   // after the orientation rotate, so it is orientation-agnostic. Used to render
   // grayscale planes band-by-band without a full second buffer.
   void beginStripTarget(uint8_t* scratch, int stripY0, int stripRows) const;
+  // Dual-plane strip for GRAYSCALE_DUAL: one page walk fills LSB + MSB. Both
+  // buffers are panelWidthBytes * stripRows; clearScreen() clears both.
+  void beginDualStripTarget(uint8_t* scratchLsb, uint8_t* scratchMsb, int stripY0, int stripRows) const;
   void endStripTarget() const;
 
   // Band culling for tiled grayscale. Takes a glyph bounding box in logical
@@ -189,8 +196,11 @@ class GfxRenderer {
   // framebuffer ([0, panelHeight)). Writers subtract the origin and clip to the
   // extent, so they honor tiled-grayscale banding without per-pixel method calls.
   uint8_t* getWriteTarget() const { return _stripActive ? _stripBuf : frameBuffer; }
+  // MSB plane buffer during beginDualStripTarget(); nullptr otherwise.
+  uint8_t* getWriteTargetMsb() const { return _stripActive ? _stripBufMsb : nullptr; }
   int getWriteOriginY() const { return _stripActive ? _stripY0 : 0; }
   int getWriteRows() const { return _stripActive ? _stripRows : panelHeight; }
+  bool hasClipRect() const { return clipActive; }
 
   // Logical-coordinate clip rectangle (scissor). While set, drawPixel() drops
   // pixels outside [x, x+width) x [y, y+height) without logging. Coordinates are

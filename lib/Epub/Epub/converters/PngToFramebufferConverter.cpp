@@ -1,5 +1,6 @@
 #include "PngToFramebufferConverter.h"
 
+#include <DirectPixelWriter.h>
 #include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -11,7 +12,6 @@
 #include <memory>
 #include <new>
 
-#include "DirectPixelWriter.h"
 #include "DitherUtils.h"
 #include "PixelCache.h"
 
