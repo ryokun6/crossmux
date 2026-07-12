@@ -13,9 +13,7 @@ bool MappedInputManager::isNavDirectionSwapped() const {
          (orientation == GfxRenderer::PortraitInverted || orientation == GfxRenderer::LandscapeCounterClockwise);
 }
 
-bool MappedInputManager::isPageTurnDirectionReversed() const {
-  return pageProgressionRtl || SETTINGS.writingMode == CrossPointSettings::VERTICAL_RL;
-}
+bool MappedInputManager::isPageTurnDirectionReversed() const { return pageProgressionRtl || verticalWritingRtl; }
 
 bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
   const auto sideLayout = SETTINGS.sideButtonLayout;

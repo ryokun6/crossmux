@@ -23,7 +23,8 @@
    - Font family or size (`SETTINGS.fontFamily`, `SETTINGS.fontSize`)
    - Line spacing (`SETTINGS.lineSpacing`)
    - Paragraph spacing (`SETTINGS.extraParagraphSpacing`)
-   - Writing mode (`SETTINGS.writingMode` — horizontal vs vertical-rl)
+   - Effective writing mode (`SETTINGS.writingMode`; vertical-rl applies only to
+     EPUBs whose `dc:language` is Chinese, Japanese, or Korean)
    - Screen margins (`SETTINGS.screenMargin`)
 3. **Viewport dimensions change**:
    - Screen orientation change

@@ -36,6 +36,7 @@ class MappedInputManager {
   // EPUB reader sets this from the OPF spine. Vertical-rl also reverses controls
   // independently, so callers use the combined query below.
   void setPageProgressionRtl(const bool rtl) { pageProgressionRtl = rtl; }
+  void setVerticalWritingRtl(const bool verticalRtl) { verticalWritingRtl = verticalRtl; }
   [[nodiscard]] bool isPageTurnDirectionReversed() const;
 
  private:
@@ -47,6 +48,7 @@ class MappedInputManager {
   // preference and stays "rotated" even while portrait UI like home/settings is on screen.
   const GfxRenderer& renderer;
   bool pageProgressionRtl = false;
+  bool verticalWritingRtl = false;
 
   bool mapButton(Button button, bool (HalGPIO::*fn)(uint8_t) const) const;
 };

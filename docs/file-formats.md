@@ -121,8 +121,9 @@ current reader settings, the section is discarded and rebuilt.
 
 Version 32 includes:
 
-- cache-busting fields for paragraph alignment, writing mode (horizontal /
-  vertical-rl), hyphenation, embedded CSS, image rendering mode, and Focus Reading
+- cache-busting fields for paragraph alignment, effective writing mode
+  (vertical-rl only for `zh`/`ja`/`ko` EPUB metadata), hyphenation, embedded CSS,
+  image rendering mode, and Focus Reading
 - page offset LUT
 - anchor-to-page map for fragment and footnote navigation
 - paragraph and list-item LUTs used by KOReader sync page refinement

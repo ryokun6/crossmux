@@ -57,6 +57,30 @@ int clampPercent(int percent) {
   return percent;
 }
 
+char asciiLower(const char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c; }
+
+bool languageTagMatches(const std::string& language, const char* code, const size_t codeLength) {
+  size_t start = 0;
+  while (start < language.size() &&
+         (language[start] == ' ' || language[start] == '\t' || language[start] == '\r' || language[start] == '\n')) {
+    ++start;
+  }
+  if (language.size() - start < codeLength) return false;
+  for (size_t i = 0; i < codeLength; ++i) {
+    if (asciiLower(language[start + i]) != code[i]) return false;
+  }
+  if (start + codeLength == language.size()) return true;
+  const char separator = language[start + codeLength];
+  return separator == '-' || separator == '_';
+}
+
+bool isCjkBookLanguage(const std::string& language) {
+  return languageTagMatches(language, "zh", 2) || languageTagMatches(language, "ja", 2) ||
+         languageTagMatches(language, "ko", 2) || languageTagMatches(language, "zho", 3) ||
+         languageTagMatches(language, "chi", 3) || languageTagMatches(language, "jpn", 3) ||
+         languageTagMatches(language, "kor", 3);
+}
+
 // SD card folder finished books are moved into. Single source of truth for the path.
 // constexpr ⇒ lives in flash .rodata, no DRAM cost.
 constexpr char READ_FOLDER[] = "/read";
@@ -190,6 +214,7 @@ void EpubReaderActivity::onEnter() {
   }
 
   mappedInput.setPageProgressionRtl(epub->isPageProgressionRtl());
+  mappedInput.setVerticalWritingRtl(effectiveWritingMode() == CrossPointSettings::VERTICAL_RL);
 
   // Configure screen orientation based on settings
   // NOTE: This affects layout math and must be applied before any render calls.
@@ -245,6 +270,7 @@ void EpubReaderActivity::onEnter() {
 
 void EpubReaderActivity::onExit() {
   mappedInput.setPageProgressionRtl(false);
+  mappedInput.setVerticalWritingRtl(false);
   Activity::onExit();
 
   // Reset orientation back to portrait for the rest of the UI
@@ -789,21 +815,37 @@ void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
   }
 }
 
+uint8_t EpubReaderActivity::effectiveWritingMode() const {
+  if (SETTINGS.writingMode != CrossPointSettings::VERTICAL_RL || !epub || !isCjkBookLanguage(epub->getLanguage())) {
+    return CrossPointSettings::HORIZONTAL;
+  }
+  return CrossPointSettings::VERTICAL_RL;
+}
+
 void EpubReaderActivity::applyWritingMode(const uint8_t writingMode) {
   if (SETTINGS.writingMode == writingMode) {
     return;
   }
 
+  const uint8_t previousEffectiveMode = effectiveWritingMode();
   {
     RenderLock lock(*this);
+
+    SETTINGS.writingMode = writingMode;
+    SETTINGS.saveToFile();
+    const uint8_t nextEffectiveMode = effectiveWritingMode();
+    mappedInput.setVerticalWritingRtl(nextEffectiveMode == CrossPointSettings::VERTICAL_RL);
+
+    if (previousEffectiveMode == nextEffectiveMode) {
+      return;
+    }
+
     if (section) {
       cachedSpineIndex = currentSpineIndex;
       cachedChapterTotalPageCount = section->pageCount;
       nextPageNumber = section->currentPage;
     }
 
-    SETTINGS.writingMode = writingMode;
-    SETTINGS.saveToFile();
     section.reset();
   }
 }
@@ -925,7 +967,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     section = std::unique_ptr<Section>(new Section(epub, currentSpineIndex, renderer));
 
     if (!section->loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                  SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, SETTINGS.writingMode,
+                                  SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, effectiveWritingMode(),
                                   viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
                                   SETTINGS.imageRendering, SETTINGS.focusReadingEnabled)) {
       LOG_DBG("ERS", "Cache not found, building...");
@@ -935,10 +977,10 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
 
       if (!section->createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                      SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, SETTINGS.writingMode,
-                                      viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled,
-                                      SETTINGS.embeddedStyle, SETTINGS.imageRendering, SETTINGS.focusReadingEnabled,
-                                      popupFn)) {
+                                      SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment,
+                                      effectiveWritingMode(), viewportWidth, viewportHeight,
+                                      SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle, SETTINGS.imageRendering,
+                                      SETTINGS.focusReadingEnabled, popupFn)) {
         LOG_ERR("ERS", "Failed to persist page data to SD");
         section.reset();
         // INDEXING was already drawn into the framebuffer; without a redraw the
@@ -1078,7 +1120,7 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
 
   Section nextSection(epub, nextSpineIndex, renderer);
   if (nextSection.loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                  SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, SETTINGS.writingMode,
+                                  SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, effectiveWritingMode(),
                                   viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
                                   SETTINGS.imageRendering, SETTINGS.focusReadingEnabled)) {
     return;
@@ -1092,9 +1134,10 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
   // penultimate page appears — now shows "INDEXING" instead of looking like a hang.
   const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
   if (!nextSection.createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                     SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, SETTINGS.writingMode,
-                                     viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
-                                     SETTINGS.imageRendering, SETTINGS.focusReadingEnabled, popupFn)) {
+                                     SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment,
+                                     effectiveWritingMode(), viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled,
+                                     SETTINGS.embeddedStyle, SETTINGS.imageRendering, SETTINGS.focusReadingEnabled,
+                                     popupFn)) {
     LOG_ERR("ERS", "Failed silent indexing for chapter: %d", nextSpineIndex);
   }
 }
