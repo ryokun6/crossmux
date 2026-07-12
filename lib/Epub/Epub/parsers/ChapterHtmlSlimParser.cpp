@@ -213,6 +213,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
         combined.isVerticalRtl = true;
       }
       currentTextBlock->setBlockStyle(combined);
+      verticalBlockStartSpacingApplied = false;
 
       flushPendingAnchor();
       return;
@@ -229,6 +230,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
     style.isVerticalRtl = true;
     currentTextBlock->setBlockStyle(style);
   }
+  verticalBlockStartSpacingApplied = false;
   wordsExtractedInBlock = 0;
 }
 
@@ -1190,7 +1192,7 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
   if (self->currentTextBlock->size() > 750) {
     LOG_DBG("EHP", "Text block too long, splitting into multiple pages");
     if (self->writingMode == 1) {
-      const int topUsed = self->currentPageNextY + self->currentTextBlock->getBlockStyle().topInset();
+      const int topUsed = self->currentPageNextY;
       const uint16_t effectiveHeight = topUsed < static_cast<int>(self->viewportHeight)
                                            ? static_cast<uint16_t>(self->viewportHeight - topUsed)
                                            : self->viewportHeight;
@@ -1463,6 +1465,10 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
   if (verticalRtl) {
     const BlockStyle& bs = line->getBlockStyle();
     const int leftBound = bs.leftInset();
+    if (!verticalBlockStartSpacingApplied) {
+      currentPageNextX = static_cast<int16_t>(currentPageNextX - bs.topInset());
+      verticalBlockStartSpacingApplied = true;
+    }
 
     if (currentPageNextX - columnPitch < leftBound) {
       completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
@@ -1481,7 +1487,7 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
     pendingFootnotes.erase(pendingFootnotes.begin(), footnoteIt);
 
     const int16_t colX = static_cast<int16_t>(currentPageNextX - columnPitch);
-    const int16_t yOffset = static_cast<int16_t>(currentPageNextY + bs.topInset());
+    const int16_t yOffset = currentPageNextY;
     currentPage->elements.push_back(std::make_shared<PageLine>(line, colX, yOffset));
     currentPageNextX = colX;
     return;
@@ -1515,28 +1521,31 @@ void ChapterHtmlSlimParser::makePages() {
     return;
   }
 
+  const BlockStyle& blockStyle = currentTextBlock->getBlockStyle();
   if (!currentPage) {
     currentPage.reset(new Page());
     currentPageNextY = 0;
     if (writingMode == 1) {
-      currentPageNextX = static_cast<int16_t>(viewportWidth);
+      currentPageNextX = static_cast<int16_t>(viewportWidth - blockStyle.rightInset());
     }
   }
 
   const int lineHeight = static_cast<int>(renderer.getLineHeight(fontId) * lineCompression);
   const bool verticalRtl = writingMode == 1;
 
-  // Apply top spacing before the paragraph (stored in pixels)
-  const BlockStyle& blockStyle = currentTextBlock->getBlockStyle();
-  if (blockStyle.marginTop > 0) {
-    currentPageNextY += blockStyle.marginTop;
-  }
-  if (blockStyle.paddingTop > 0) {
-    currentPageNextY += blockStyle.paddingTop;
+  // Horizontal text uses the physical Y axis for block spacing. Vertical-rl
+  // applies the same spacing along the right-to-left column axis in addLineToPage().
+  if (!verticalRtl) {
+    if (blockStyle.marginTop > 0) {
+      currentPageNextY += blockStyle.marginTop;
+    }
+    if (blockStyle.paddingTop > 0) {
+      currentPageNextY += blockStyle.paddingTop;
+    }
   }
 
   if (verticalRtl) {
-    const int topUsed = currentPageNextY + blockStyle.topInset();
+    const int topUsed = currentPageNextY;
     const uint16_t effectiveHeight =
         topUsed < static_cast<int>(viewportHeight) ? static_cast<uint16_t>(viewportHeight - topUsed) : viewportHeight;
     currentTextBlock->layoutAndExtractLines(
@@ -1563,12 +1572,16 @@ void ChapterHtmlSlimParser::makePages() {
     pendingFootnotes.clear();
   }
 
-  // Apply bottom spacing after the paragraph (stored in pixels)
-  if (blockStyle.marginBottom > 0) {
-    currentPageNextY += blockStyle.marginBottom;
-  }
-  if (blockStyle.paddingBottom > 0) {
-    currentPageNextY += blockStyle.paddingBottom;
+  // Apply block-end spacing on the active progression axis.
+  if (verticalRtl) {
+    currentPageNextX = static_cast<int16_t>(currentPageNextX - blockStyle.bottomInset());
+  } else {
+    if (blockStyle.marginBottom > 0) {
+      currentPageNextY += blockStyle.marginBottom;
+    }
+    if (blockStyle.paddingBottom > 0) {
+      currentPageNextY += blockStyle.paddingBottom;
+    }
   }
 
   // Extra paragraph spacing if enabled (default behavior)

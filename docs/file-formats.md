@@ -98,11 +98,11 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry an independent version counter,
-> currently **46**. The byte layout is identical to the Latin version below; only
+> currently **47**. The byte layout is identical to the Latin version below; only
 > the word-stream contents differ (per-character CJK tokenization), so caches are
 > not reusable across flavors.
 >
-> Latin builds use version **45** (was 44). Counters track `writingMode`, em-based
+> Latin builds use version **46** (was 45). Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
 > (﹁﹂︵︒ etc.), horizontal inter-paragraph spacing in vertical-rl, and normal
 > brackets in rotated numeric references such as `[12]`. Vertical column breaks
@@ -112,7 +112,9 @@ if (parsedSize != fileSize) {
 > upright/sideways boundaries. One- and two-character Latin/numeric tokens rotate
 > when they belong to a phrase, while isolated short numbers retain 縦中横.
 > Large-only image mode suppresses inline images and standalone assets whose
-> intrinsic or displayed dimensions are below the large-image threshold.
+> intrinsic or displayed dimensions are below the large-image threshold. In
+> vertical-rl, block start/end and extra paragraph spacing advance the horizontal
+> column axis rather than offsetting text vertically.
 
 
 Each file in `sections/*.bin` stores one laid-out spine section. The header is

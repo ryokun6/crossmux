@@ -41,6 +41,7 @@ class ChapterHtmlSlimParser {
   std::unique_ptr<Page> currentPage = nullptr;
   int16_t currentPageNextY = 0;
   int16_t currentPageNextX = 0;
+  bool verticalBlockStartSpacingApplied = false;
   int fontId;
   float lineCompression;
   bool extraParagraphSpacing;
