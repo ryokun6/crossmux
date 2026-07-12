@@ -7,6 +7,8 @@
 #include "EpdFont.h"
 #include "EpdFontData.h"
 
+class HalFile;
+
 // On-disk binary format version for .cpfont files. Defined as a preprocessor
 // macro (rather than a constexpr) so it can be stringified into the SD-fonts
 // release URL — see FONT_MANIFEST_URL in FontDownloadActivity.h. No integer
@@ -60,8 +62,14 @@ class SdCardFont {
   // in the page text (and is capped), so layout probes for characters that aren't
   // on the page — notably the CJK reference ideograph used to size Han columns —
   // would otherwise miss and measure 0. Returns 12.4 fixed-point, or 0 only when
-  // the font genuinely lacks the glyph. Does one SD read on a miss; hits are free.
+  // the font genuinely lacks the glyph. Prefer measureUtf8AdvancePx() during layout
+  // so one SD open covers a whole string of misses.
   uint16_t getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const;
+
+  // Measure a UTF-8 string's total advance (12.4 summed then snapped per glyph,
+  // matching getTextAdvanceX). Opens the .cpfont at most once for the whole
+  // string when cache misses occur — critical for CJK indexing speed.
+  int measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub) const;
 
   // Returns true if advance table is populated for at least one style.
   bool hasAdvanceTable() const;
@@ -233,17 +241,23 @@ class SdCardFont {
   // Bounded to ADVANCE_CACHE_LIMIT entries; persists across layout passes
   // (across calls to clearCache()) so repeated indexing of the same font
   // amortizes SD reads. Cleared only on font unload or clearPersistentCache().
-  // 768 was enough for Latin literary fonts; CJK chapters routinely exceed
-  // that and then every uncached getAdvanceOrLoad() opens the .cpfont on SPI
-  // SD — indexing appears stuck. Match buildAdvanceTableRange's unique-CP
-  // budget (4096). ~24 KB/style worst case (uint32+uint16 per entry).
+  // Styled faces only cache glyphs they own; CJK on hybrid fonts lives in the
+  // regular table (and via cachedCjkAdvance_ for uniform Han). ~24 KB worst
+  // case for one full regular table — not ×4 styles.
   static constexpr uint32_t ADVANCE_CACHE_LIMIT = 4096;
   AdvanceEntry* advanceTable_[MAX_STYLES] = {};
   uint32_t advanceTableSize_[MAX_STYLES] = {};
+  // Source Han–based CJK faces use one advance for U+4E00–U+9FFF. Cache it after
+  // the first ideograph load so chapter indexing does not open the .cpfont once
+  // per unique Han character when the advance table is cold or full.
+  mutable uint16_t cachedCjkAdvance_ = 0;
   bool advanceTableLookup(uint8_t styleIdx, uint32_t codepoint, uint16_t* outAdvance) const;
   // Merge sortedNew (sorted by codepoint, no overlap with existing) into the
   // advance table for styleIdx, preserving sort order; cap-truncates the tail.
   void mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sortedNew, uint32_t newCount);
+  // Read advanceX for a resolved glyph index from an already-open .cpfont.
+  uint16_t readAdvanceFromOpenFile(HalFile& file, uint8_t styleIdx, int32_t glyphIndex) const;
+  uint16_t getAdvanceOrLoadWithFile(uint32_t codepoint, uint8_t style, HalFile* openFile) const;
 
   Stats stats_;
   uint32_t contentHash_ = 0;

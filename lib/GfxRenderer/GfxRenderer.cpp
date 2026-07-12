@@ -149,10 +149,10 @@ enum class TextRotation { None, Rotated90CW };
 static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMode renderMode,
                              const EpdFontFamily& fontFamily, const uint32_t cp, int cursorX, int cursorY,
                              const bool pixelState, const EpdFontFamily::Style style) {
-  const EpdGlyph* glyph = fontFamily.getGlyph(cp, style);
-  if (!glyph) return;
+  const EpdFontData* fontData = nullptr;
+  const EpdGlyph* glyph = fontFamily.getGlyph(cp, style, &fontData);
+  if (!glyph || !fontData) return;
 
-  const EpdFontData* fontData = fontFamily.getData(style);
   const uint8_t* bitmap = renderer.getGlyphBitmap(fontData, glyph);
   if (!bitmap) return;
 
@@ -217,8 +217,9 @@ template <TextRotation rotation = TextRotation::None>
 static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode renderMode,
                            const EpdFontFamily& fontFamily, const uint32_t cp, int cursorX, int cursorY,
                            const bool pixelState, const EpdFontFamily::Style style) {
-  const EpdGlyph* glyph = fontFamily.getGlyph(cp, style);
-  if (!glyph) {
+  const EpdFontData* fontData = nullptr;
+  const EpdGlyph* glyph = fontFamily.getGlyph(cp, style, &fontData);
+  if (!glyph || !fontData) {
     // Missing glyph is a known limitation (subset fonts, rare characters). The reader
     // renders □ tofu via the absence of an EpdGlyph here. DBG-level so simulator/dev
     // logs aren't flooded; release builds (LOG_LEVEL=0/1) suppress this entirely.
@@ -226,7 +227,6 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
     return;
   }
 
-  const EpdFontData* fontData = fontFamily.getData(style);
   const bool is2Bit = fontData->is2Bit;
   const uint8_t width = glyph->width;
   const uint8_t height = glyph->height;
@@ -1691,34 +1691,8 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, EpdFontFami
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
     const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
     const uint8_t styleIdx = resolveSdCardStyle(*sdIt->second, style);
-    int widthPx = 0;
-    int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: previous glyph's advance
-    bool havePrev = false;
-    while (uint32_t cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text))) {
-      // Differential rounding: snap each glyph step to a pixel individually, matching
-      // drawText so layout (wordXpos) and render geometry agree exactly. Snapping the
-      // whole sum once (as before) under-counted the rendered width whenever per-glyph
-      // advances carried a >=0.5px fraction, so trailing glyphs of a word spilled into
-      // the next word — visible as overlap / right-edge overflow. SD layout stays
-      // kern-free by design (full kern matrix is non-resident; see
-      // SdCardFont::applyKernLigaturePointers), which only ever tightens render vs
-      // this measurement, never widens it.
-      if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
-      // getAdvanceOrLoad (not getAdvance): resolves codepoints missing from the
-      // resident advance cache by reading the glyph's advance from SD on demand,
-      // instead of treating them as 0-width. A 0 here used to silently corrupt
-      // layout — e.g. the CJK reference probe "我" (used to size every Han column)
-      // is rarely present in the page text, so it missed the cache, measured 0,
-      // and fell back to a bogus 2×"M" column width that spread ideographs far
-      // apart. See SdCardFont::getAdvanceOrLoad.
-      prevAdvanceFP = static_cast<int32_t>(sdIt->second->getAdvanceOrLoad(cp, styleIdx));
-      // SUP/SUB glyphs render at 50% scale (renderCharScaled), so halve the advance
-      // to keep measurement consistent with drawText and the builtin-font path below.
-      if (isSupSub) prevAdvanceFP = (prevAdvanceFP + 1) / 2;
-      havePrev = true;
-    }
-    if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);  // final glyph's advance
-    return widthPx;
+    // One SD open per string on misses (not per codepoint) — see measureUtf8AdvancePx.
+    return sdIt->second->measureUtf8AdvancePx(text, styleIdx, isSupSub);
   }
 
   const auto fontIt = fontMap.find(fontId);

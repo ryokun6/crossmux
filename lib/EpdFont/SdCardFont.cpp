@@ -710,6 +710,9 @@ int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) 
 int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly) {
   if (!loaded_) return -1;
   styleMask = resolveStyleMask(styleMask);
+  // Hybrid SD fonts keep CJK on regular only. If the page uses bold/italic,
+  // still prewarm regular so glyph-fallback bitmaps are resident.
+  if (styleMask & ~0x01u) styleMask |= 0x01u;
   if (styleMask == 0) return 0;
 
   unsigned long startMs = millis();
@@ -1056,6 +1059,7 @@ void SdCardFont::clearPersistentCache() {
     advanceTable_[i] = nullptr;
     advanceTableSize_[i] = 0;
   }
+  cachedCjkAdvance_ = 0;
 }
 
 bool SdCardFont::advanceTableLookup(uint8_t styleIdx, uint32_t codepoint, uint16_t* outAdvance) const {
@@ -1091,7 +1095,10 @@ void SdCardFont::mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sor
 
   AdvanceEntry* merged = new (std::nothrow) AdvanceEntry[mergedCap];
   if (!merged) {
-    LOG_ERR("SDCF", "mergeIntoAdvanceTable: alloc failed (%u entries) style %u", mergedCap, styleIdx);
+    LOG_ERR("SDCF", "mergeIntoAdvanceTable: alloc failed (%u entries) style %u — keeping existing %u", mergedCap,
+            styleIdx, oldSize);
+    // Keep the existing table. Deleting it forces every subsequent miss through
+    // per-glyph SD open/close and makes indexing appear hung on CJK chapters.
     return;
   }
 
@@ -1120,32 +1127,42 @@ bool SdCardFont::hasAdvanceTable() const {
 
 uint16_t SdCardFont::getAdvance(uint32_t codepoint, uint8_t style) const {
   style &= (MAX_STYLES - 1);
-  if (!advanceTable_[style]) return 0;
-  const AdvanceEntry* table = advanceTable_[style];
-  const uint32_t size = advanceTableSize_[style];
-  // Binary search sorted by codepoint
-  uint32_t lo = 0, hi = size;
-  while (lo < hi) {
-    uint32_t mid = lo + (hi - lo) / 2;
-    if (table[mid].codepoint < codepoint) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
+  if (cachedCjkAdvance_ != 0 && codepoint >= 0x4E00 && codepoint <= 0x9FFF) {
+    return cachedCjkAdvance_;
   }
-  if (lo < size && table[lo].codepoint == codepoint) {
-    return table[lo].advanceX;
-  }
+  uint16_t cached = 0;
+  if (advanceTableLookup(style, codepoint, &cached)) return cached;
+  // Hybrid fonts: CJK lives on regular only; styled tables intentionally omit it.
+  if (style != 0 && advanceTableLookup(0, codepoint, &cached)) return cached;
   return 0;
 }
 
-uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
+uint16_t SdCardFont::readAdvanceFromOpenFile(HalFile& file, uint8_t styleIdx, int32_t glyphIndex) const {
+  const auto& s = styles_[styleIdx];
+  EpdGlyph glyph;
+  const uint32_t fileOff = s.glyphsFileOffset + static_cast<uint32_t>(glyphIndex) * sizeof(EpdGlyph);
+  if (file.seekSet(fileOff) && file.read(reinterpret_cast<uint8_t*>(&glyph), sizeof(EpdGlyph)) == sizeof(EpdGlyph)) {
+    return glyph.advanceX;
+  }
+  LOG_ERR("SDCF", "getAdvanceOrLoad: short glyph read for glyph %d style %u", glyphIndex, styleIdx);
+  return 0;
+}
+
+uint16_t SdCardFont::getAdvanceOrLoadWithFile(uint32_t codepoint, uint8_t style, HalFile* openFile) const {
   uint8_t styleIdx = style & (MAX_STYLES - 1);
   if (!styles_[styleIdx].present) styleIdx = resolveStyle(styleIdx);
+
+  // Source Han–family CJK faces share one advance across U+4E00–U+9FFF. After the
+  // first ideograph load, skip SD entirely for Han — without this, chapter indexing
+  // opens the .cpfont once per unique character past the advance-table cap.
+  if (cachedCjkAdvance_ != 0 && codepoint >= 0x4E00 && codepoint <= 0x9FFF) {
+    return cachedCjkAdvance_;
+  }
 
   // Fast path: resident advance cache (no I/O).
   uint16_t cached = 0;
   if (advanceTableLookup(styleIdx, codepoint, &cached)) return cached;
+  if (styleIdx != 0 && advanceTableLookup(0, codepoint, &cached)) return cached;
 
   // Miss: read the glyph's advanceX straight from the .cpfont. The advance table
   // is built only from on-page text (and capped at ADVANCE_CACHE_LIMIT), so off-page
@@ -1156,32 +1173,89 @@ uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
   if (gIdx < 0) {
     // CJK may live only on the regular style; retry before giving up.
     if (styleIdx != 0 && styles_[0].present) {
-      return getAdvanceOrLoad(codepoint, 0);
+      return getAdvanceOrLoadWithFile(codepoint, 0, openFile);
     }
     return 0;  // font genuinely lacks this glyph
   }
 
-  HalFile file;
-  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
-    LOG_ERR("SDCF", "getAdvanceOrLoad: failed to open .cpfont for U+%04X", codepoint);
-    return 0;
-  }
-  EpdGlyph glyph;
-  const uint32_t fileOff = s.glyphsFileOffset + static_cast<uint32_t>(gIdx) * sizeof(EpdGlyph);
   uint16_t advance = 0;
-  if (file.seekSet(fileOff) && file.read(reinterpret_cast<uint8_t*>(&glyph), sizeof(EpdGlyph)) == sizeof(EpdGlyph)) {
-    advance = glyph.advanceX;
+  if (openFile) {
+    advance = readAdvanceFromOpenFile(*openFile, styleIdx, gIdx);
   } else {
-    LOG_ERR("SDCF", "getAdvanceOrLoad: short glyph read for U+%04X (glyph %d)", codepoint, gIdx);
+    HalFile file;
+    if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+      LOG_ERR("SDCF", "getAdvanceOrLoad: failed to open .cpfont for U+%04X", codepoint);
+      return 0;
+    }
+    advance = readAdvanceFromOpenFile(file, styleIdx, gIdx);
   }
-  file.close();
+
+  if (advance != 0 && codepoint >= 0x4E00 && codepoint <= 0x9FFF) {
+    cachedCjkAdvance_ = advance;
+  }
   return advance;
+}
+
+uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
+  return getAdvanceOrLoadWithFile(codepoint, style, nullptr);
+}
+
+int SdCardFont::measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub) const {
+  if (!utf8 || !*utf8) return 0;
+
+  // Open the .cpfont at most once for this string. Cache / uniform-CJK hits never
+  // touch the file; misses reuse the same handle instead of open/close per glyph.
+  HalFile file;
+  HalFile* sticky = nullptr;
+  auto fileForMiss = [&]() -> HalFile* {
+    if (sticky) return sticky;
+    if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+      LOG_ERR("SDCF", "measureUtf8AdvancePx: failed to open .cpfont");
+      return nullptr;
+    }
+    sticky = &file;
+    return sticky;
+  };
+
+  int widthPx = 0;
+  int32_t prevAdvanceFP = 0;
+  bool havePrev = false;
+  const unsigned char* p = reinterpret_cast<const unsigned char*>(utf8);
+  while (uint32_t cp = utf8NextCodepoint(&p)) {
+    if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+
+    // Prefer RAM paths (advance table + uniform Han). Only open SD on a real miss.
+    uint16_t adv = getAdvance(cp, style);
+    if (adv == 0) {
+      adv = getAdvanceOrLoadWithFile(cp, style, fileForMiss());
+    }
+    prevAdvanceFP = static_cast<int32_t>(adv);
+    if (halfSupSub) prevAdvanceFP = (prevAdvanceFP + 1) / 2;
+    havePrev = true;
+  }
+  if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+  return widthPx;
 }
 
 // Given a sorted array of unique codepoints, resolve glyph indices per style,
 // batch-read advanceX from SD, and merge into the persistent advance table.
 // Caller owns the codepoints buffer.
 int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCount, uint8_t styleMask) {
+  // Seed uniform Han advance from 我 before scanning the chapter's unique set.
+  // Without this, the first buildAdvanceTable pass sequentially reads every
+  // ideograph's metrics from SD just to fill a table we then skip for Han.
+  if (cachedCjkAdvance_ == 0 && styles_[0].present) {
+    static constexpr uint32_t kCjkReferenceCp = 0x6211;  // 我
+    const int32_t refIdx = findGlobalGlyphIndex(styles_[0], kCjkReferenceCp);
+    if (refIdx >= 0) {
+      HalFile file;
+      if (Storage.openFileForRead("SDCF", filePath_, file)) {
+        const uint16_t adv = readAdvanceFromOpenFile(file, 0, refIdx);
+        if (adv != 0) cachedCjkAdvance_ = adv;
+      }
+    }
+  }
+
   int totalMissed = 0;
   for (uint8_t si = 0; si < MAX_STYLES; si++) {
     if (!(styleMask & (1 << si)) || !styles_[si].present) continue;
@@ -1194,7 +1268,8 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
 
     // For each codepoint in `codepoints`, skip those already cached, then
     // resolve to a glyph index. Build a parallel array sorted by glyph index
-    // for sequential SD reads.
+    // for sequential SD reads. Styled faces only cache glyphs they own;
+    // regular-only CJK is left for the regular table (see getAdvance fallback).
     struct CpIdx {
       uint32_t codepoint;
       int32_t glyphIndex;
@@ -1212,8 +1287,16 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
     for (uint32_t i = 0; i < cpCount; i++) {
       const uint32_t cp = codepoints[i];
       if (advanceTableLookup(si, cp, nullptr)) continue;  // already cached
+      // Once we know the uniform Han advance, skip filling the table with thousands
+      // of ideographs — frees slots for punctuation/Latin and skips sequential SD
+      // reads for every unique CJK character in the chapter.
+      if (si == 0 && cachedCjkAdvance_ != 0 && cp >= 0x4E00 && cp <= 0x9FFF) continue;
       int32_t idx = findGlobalGlyphIndex(s, cp);
       if (idx < 0) {
+        // Present on regular only — do not duplicate into this style's table.
+        if (si != 0 && styles_[0].present && findGlobalGlyphIndex(styles_[0], cp) >= 0) {
+          continue;
+        }
         if (replacementIdx < 0) {
           missedThisStyle++;
           continue;
@@ -1265,6 +1348,10 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
       lastReadIndex = gIdx;
       staged[fetched].codepoint = mappings[i].codepoint;
       staged[fetched].advanceX = tempGlyph.advanceX;
+      if (cachedCjkAdvance_ == 0 && mappings[i].codepoint >= 0x4E00 && mappings[i].codepoint <= 0x9FFF &&
+          tempGlyph.advanceX != 0) {
+        cachedCjkAdvance_ = tempGlyph.advanceX;
+      }
       fetched++;
     }
     file.close();
@@ -1295,11 +1382,14 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
   unsigned long startMs = millis();
 
   // +3 reserved slots for space, hyphen, and the CJK column-reference ideograph,
-  // injected after the main scan.
+  // injected after the main scan. Match ADVANCE_CACHE_LIMIT so one build pass can
+  // fill the table without immediately falling back to per-glyph SD opens.
   static constexpr uint32_t MAX_UNIQUE_CODEPOINTS = 4096;
   uint32_t* codepoints = new (std::nothrow) uint32_t[MAX_UNIQUE_CODEPOINTS + 3];
   if (!codepoints) {
     LOG_ERR("SDCF", "buildAdvanceTable: failed to allocate codepoint buffer (%u bytes)", MAX_UNIQUE_CODEPOINTS * 4);
+    // Do not clearPersistentCache() here — wiping a warm table forces every later
+    // measure through SD open/close and makes indexing look hung.
     return -1;
   }
   uint32_t cpCount = 0;

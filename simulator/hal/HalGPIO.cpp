@@ -123,14 +123,10 @@ unsigned long HalGPIO::getPowerButtonHeldTime() const {
   return 0;
 }
 
-#ifdef __EMSCRIPTEN__
-// No real device to sleep. In the browser we keep the runtime alive; treat deep sleep as a
-// no-op (the page stays on the last rendered frame).
+// No real device to sleep. Keep the runtime alive (same as emscripten): the
+// last sleep frame stays on screen. Native used to std::exit(0), but that still
+// runs static destructors and aborts on ActivityManager's never-destroy assert.
 void HalGPIO::startDeepSleep() {}
-#else
-// Native: exit the process to mimic the device powering down.
-void HalGPIO::startDeepSleep() { std::exit(0); }
-#endif
 
 void HalGPIO::verifyPowerButtonWakeup(uint16_t /*requiredDurationMs*/, bool /*shortPressAllowed*/) {
   // No-op: in the simulator we always proceed past the boot wakeup gate.

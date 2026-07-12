@@ -40,6 +40,49 @@ FetchContent_Declare(
 # and still sets qrcode_SOURCE_DIR. Replaces the deprecated FetchContent_Populate().
 FetchContent_MakeAvailable(qrcode)
 
+# bitbank2/JPEGDEC — same pin as platformio.ini. Needed for home/recent cover
+# thumbnails (JpegToBmpConverter). WASM keeps the stub path (no FetchContent).
+if(NOT EMSCRIPTEN)
+    set(JPEGDEC_FROM_PIO "${REPO_ROOT}/.pio/libdeps/default/JPEGDEC")
+    if(EXISTS "${JPEGDEC_FROM_PIO}/src/JPEGDEC.cpp")
+        set(JPEGDEC_ROOT "${JPEGDEC_FROM_PIO}")
+        message(STATUS "JPEGDEC: using PlatformIO libdep at ${JPEGDEC_ROOT}")
+    else()
+        FetchContent_Declare(
+            jpegdec
+            GIT_REPOSITORY https://github.com/bitbank2/JPEGDEC.git
+            GIT_TAG 86282979224c8a32fd51e091ed5a35b0c699a52b
+        )
+        FetchContent_MakeAvailable(jpegdec)
+        set(JPEGDEC_ROOT "${jpegdec_SOURCE_DIR}")
+        message(STATUS "JPEGDEC: fetched to ${JPEGDEC_ROOT}")
+    endif()
+    # CrossPoint's progressive-JPEG MCU patches (scripts/patch_jpegdec.py equivalent).
+    file(GLOB JPEGDEC_PATCHES "${REPO_ROOT}/scripts/jpegdec_patches/*.patch")
+    list(SORT JPEGDEC_PATCHES)
+    foreach(patch ${JPEGDEC_PATCHES})
+        execute_process(
+            COMMAND git apply --check --reverse "${patch}"
+            WORKING_DIRECTORY "${JPEGDEC_ROOT}"
+            RESULT_VARIABLE JPEGDEC_PATCH_ALREADY
+            OUTPUT_QUIET ERROR_QUIET
+        )
+        if(NOT JPEGDEC_PATCH_ALREADY EQUAL 0)
+            execute_process(
+                COMMAND git apply "${patch}"
+                WORKING_DIRECTORY "${JPEGDEC_ROOT}"
+                RESULT_VARIABLE JPEGDEC_PATCH_OK
+                OUTPUT_QUIET ERROR_QUIET
+            )
+            if(NOT JPEGDEC_PATCH_OK EQUAL 0)
+                message(WARNING "JPEGDEC patch failed to apply: ${patch}")
+            else()
+                message(STATUS "Applied JPEGDEC patch: ${patch}")
+            endif()
+        endif()
+    endforeach()
+endif()
+
 # libcurl — backs the native simulator's esp_http_client shim (shims/esp_http_client.h)
 # so WeRead, AirPage, and any other on-device HTTPS code paths we don't exclude can hit
 # the real network from host. The WASM build is offline-only (the same shim compiles a
@@ -101,10 +144,10 @@ file(GLOB_RECURSE CROSSPOINT_LIB
 # Real HAL .cpp is replaced by simulator/hal/.
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/hal/Hal.*\\.cpp$")
 
-# Network / OTA / image-decoder .cpp files use APIs (real PNGdec / JPEGDEC / ESPmDNS /
-# precise WiFi calls) that are too deep to shim for first-version simulator scope.
-# Exclude them from sources; symbols their public classes expose are stubbed via
-# simulator/missing_symbols.cpp so the linker still resolves vtables and constructors.
+# Network / OTA .cpp files use APIs that are too deep to shim for first-version
+# simulator scope. Image converters (JPEG/PNG → BMP) are enabled on native so
+# home/recent book covers work; WASM keeps stubs. Inline EPUB image decoders
+# stay excluded on both (heavier; covers don't need them).
 
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/network/")
 # ...but keep the real HttpDownloader: the libcurl-backed esp_http_client shim lets it
@@ -119,8 +162,10 @@ list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderAuthActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSettingsActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSyncActivity")
 
-list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/JpegToBmpConverter/")
-list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/PngToBmpConverter/")
+if(EMSCRIPTEN)
+    list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/JpegToBmpConverter/")
+    list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/PngToBmpConverter/")
+endif()
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Epub/Epub/converters/")
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Serialization/ObfuscationUtils")
 
@@ -164,6 +209,11 @@ set(VENDOR_C
     ${REPO_ROOT}/lib/MiniBidi/minibidi.c
     ${qrcode_SOURCE_DIR}/src/qrcode.c
 )
+
+# Host JPEGDEC (C++). ESP32 SIMD .S files are omitted — scalar decode is fine on desktop.
+if(NOT EMSCRIPTEN)
+    list(APPEND CROSSPOINT_LIB ${JPEGDEC_ROOT}/src/JPEGDEC.cpp)
+endif()
 
 # Generate I18n headers (mirrors what scripts/gen_i18n.py does pre-build for PlatformIO).
 # All translation YAMLs are listed as inputs so edits to any one of them re-run the
@@ -221,6 +271,12 @@ endif()
 
 target_include_directories(crosspoint_simulator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
+)
+# Real JPEGDEC before shims/ so native builds don't pick up the stub header.
+if(NOT EMSCRIPTEN)
+    target_include_directories(crosspoint_simulator PRIVATE ${JPEGDEC_ROOT}/src)
+endif()
+target_include_directories(crosspoint_simulator PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/shims
     ${REPO_ROOT}/src
     ${REPO_ROOT}/lib/hal

@@ -656,9 +656,12 @@ std::string Epub::getThumbBmpPath() const { return cachePath + "/thumb_[HEIGHT].
 std::string Epub::getThumbBmpPath(int height) const { return cachePath + "/thumb_" + std::to_string(height) + ".bmp"; }
 
 bool Epub::generateThumbBmp(int height) const {
-  // Already generated, return true
-  if (Storage.exists(getThumbBmpPath(height).c_str())) {
-    return true;
+  // Already generated, return true (ignore empty leftovers from a failed convert).
+  {
+    HalFile existing;
+    if (Storage.openFileForRead("EBP", getThumbBmpPath(height), existing) && existing.size() > 0) {
+      return true;
+    }
   }
 
   if (!bookMetadataCache || !bookMetadataCache->isLoaded()) {

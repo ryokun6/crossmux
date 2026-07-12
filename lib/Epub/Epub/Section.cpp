@@ -38,6 +38,34 @@ struct PageLutEntry {
   uint16_t paragraphIndex;
   uint16_t listItemIndex;
 };
+
+// Active cache path may be the canonical `N.bin` or a `.tmp` sidecar left when
+// FatFS refused to delete/truncate a stubborn stale file.
+std::string sectionCanonicalPath(const std::string& path) {
+  if (path.size() > 4 && path.compare(path.size() - 4, 4, ".tmp") == 0) {
+    return path.substr(0, path.size() - 4);
+  }
+  if (path.size() > 4 && path.compare(path.size() - 4, 4, ".bak") == 0) {
+    return path.substr(0, path.size() - 4);
+  }
+  return path;
+}
+
+// Remove path, or rename it aside when remove fails (seen on some SD cards where
+// O_TRUNC/remove both fail on a stale section cache entry but rename still works).
+bool displaceCacheFile(const std::string& path) {
+  if (!Storage.exists(path.c_str())) return true;
+  if (Storage.remove(path.c_str())) return true;
+  const std::string bak = path + ".bak";
+  if (Storage.exists(bak.c_str())) {
+    Storage.remove(bak.c_str());
+  }
+  if (Storage.rename(path.c_str(), bak.c_str())) {
+    Storage.remove(bak.c_str());  // best-effort cleanup
+    return !Storage.exists(path.c_str());
+  }
+  return false;
+}
 }  // namespace
 
 uint32_t Section::onPageComplete(std::unique_ptr<Page> page) {
@@ -94,20 +122,24 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
                               const uint8_t paragraphAlignment, const uint16_t viewportWidth,
                               const uint16_t viewportHeight, const bool hyphenationEnabled, const bool embeddedStyle,
                               const uint8_t imageRendering, const bool focusReadingEnabled) {
-  if (!Storage.openFileForRead("SCT", filePath, file)) {
-    return false;
-  }
+  file = HalFile();
+  const std::string canonical = sectionCanonicalPath(filePath);
+  const std::string sidecar = canonical + ".tmp";
+  // Prefer a sidecar rebuild if present — it is newer than a stubborn undeletable .bin.
+  const std::string* candidates[] = {&sidecar, &canonical};
 
-  // Match parameters
-  {
-    uint8_t version;
+  for (const std::string* candidate : candidates) {
+    const std::string& path = *candidate;
+    if (!Storage.exists(path.c_str())) continue;
+    if (!Storage.openFileForRead("SCT", path, file)) continue;
+
+    uint8_t version = 0;
     serialization::readPod(file, version);
     if (version != SECTION_FILE_VERSION) {
-      // Explicit close() required: member variable persists beyond function scope
-      file.close();
-      LOG_ERR("SCT", "Deserialization failed: Unknown version %u", version);
-      clearCache();
-      return false;
+      file = HalFile();
+      LOG_ERR("SCT", "Deserialization failed: Unknown version %u (%s)", version, path.c_str());
+      displaceCacheFile(path);
+      continue;
     }
 
     int fileFontId;
@@ -135,28 +167,30 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
         viewportWidth != fileViewportWidth || viewportHeight != fileViewportHeight ||
         hyphenationEnabled != fileHyphenationEnabled || embeddedStyle != fileEmbeddedStyle ||
         imageRendering != fileImageRendering || focusReadingEnabled != fileFocusReadingEnabled) {
-      file.close();
-      LOG_ERR("SCT", "Deserialization failed: Parameters do not match");
-      clearCache();
-      return false;
+      file = HalFile();
+      LOG_ERR("SCT", "Deserialization failed: Parameters do not match (%s)", path.c_str());
+      displaceCacheFile(path);
+      continue;
     }
+
+    serialization::readPod(file, pageCount);
+    file = HalFile();
+    filePath = path;
+    LOG_DBG("SCT", "Deserialization succeeded: %d pages (%s)", pageCount, path.c_str());
+    return true;
   }
 
-  serialization::readPod(file, pageCount);
-  // Explicit close() required: member variable persists beyond function scope
-  file.close();
-  LOG_DBG("SCT", "Deserialization succeeded: %d pages", pageCount);
-  return true;
+  filePath = canonical;
+  return false;
 }
 
 // Your updated class method (assuming you are using the 'SD' object, which is a wrapper for a specific filesystem)
 bool Section::clearCache() const {
-  if (!Storage.exists(filePath.c_str())) {
-    LOG_DBG("SCT", "Cache does not exist, no action needed");
-    return true;
-  }
-
-  if (!Storage.remove(filePath.c_str())) {
+  const std::string canonical = sectionCanonicalPath(filePath);
+  const bool okCanonical = displaceCacheFile(canonical);
+  const bool okSidecar = displaceCacheFile(canonical + ".tmp");
+  Storage.remove((canonical + ".bak").c_str());
+  if (!okCanonical || !okSidecar) {
     LOG_ERR("SCT", "Failed to clear cache");
     return false;
   }
@@ -216,9 +250,17 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
 
   LOG_DBG("SCT", "Streamed temp HTML to %s (%d bytes)", tmpHtmlPath.c_str(), fileSize);
 
-  if (!Storage.openFileForWrite("SCT", filePath, file)) {
+  // Always build into a sidecar `.tmp` first. Opening an existing stubborn `.bin`
+  // with O_TRUNC can fail on some cards after a settings change; a new path works.
+  file = HalFile();
+  const std::string canonical = sectionCanonicalPath(filePath);
+  const std::string writePath = canonical + ".tmp";
+  displaceCacheFile(writePath);
+  if (!Storage.openFileForWrite("SCT", writePath, file)) {
+    LOG_ERR("SCT", "Failed to open section cache for writing: %s", writePath.c_str());
     return false;
   }
+  filePath = writePath;
   writeSectionFileHeader(fontId, lineCompression, extraParagraphSpacing, paragraphAlignment, viewportWidth,
                          viewportHeight, hyphenationEnabled, embeddedStyle, imageRendering, focusReadingEnabled);
   std::vector<PageLutEntry> lut = {};
@@ -265,11 +307,12 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   if (!success) {
     LOG_ERR("SCT", "Failed to parse XML and build pages");
     // Explicitly close() file before calling Storage.remove()
-    file.close();
-    Storage.remove(filePath.c_str());
+    file = HalFile();
+    displaceCacheFile(writePath);
     if (cssParser) {
       cssParser->clear();
     }
+    filePath = canonical;
     return false;
   }
 
@@ -287,8 +330,9 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   if (hasFailedLutRecords) {
     LOG_ERR("SCT", "Failed to write LUT due to invalid page positions");
     // Explicitly close() file before calling Storage.remove()
-    file.close();
-    Storage.remove(filePath.c_str());
+    file = HalFile();
+    displaceCacheFile(writePath);
+    filePath = canonical;
     return false;
   }
 
@@ -320,7 +364,16 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   serialization::writePod(file, paragraphLutOffset);
   serialization::writePod(file, liLutFileOffset);
   // Explicit close() required: member variable persists beyond function scope
-  file.close();
+  file = HalFile();
+
+  // Promote sidecar to canonical `.bin` when possible; otherwise keep serving `.tmp`.
+  if (displaceCacheFile(canonical) && Storage.rename(writePath.c_str(), canonical.c_str())) {
+    filePath = canonical;
+  } else {
+    LOG_ERR("SCT", "Could not promote %s → %s; using sidecar", writePath.c_str(), canonical.c_str());
+    filePath = writePath;
+  }
+
   if (cssParser) {
     cssParser->clear();
   }

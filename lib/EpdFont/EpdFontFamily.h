@@ -24,7 +24,11 @@ class EpdFontFamily {
   ~EpdFontFamily() = default;
   void getTextDimensions(const char* string, int* w, int* h, Style style = REGULAR) const;
   const EpdFontData* getData(Style style = REGULAR) const;
-  const EpdGlyph* getGlyph(uint32_t cp, Style style = REGULAR) const;
+  /// Resolve a glyph for \p style, falling back to regular when the styled face
+  /// lacks the codepoint (hybrid SD fonts: CJK in regular only). When \p outData
+  /// is non-null, it receives the EpdFontData that owns the returned glyph —
+  /// callers must use that for bitmap lookup, not getData(style).
+  const EpdGlyph* getGlyph(uint32_t cp, Style style = REGULAR, const EpdFontData** outData = nullptr) const;
   int8_t getKerning(uint32_t leftCp, uint32_t rightCp, Style style = REGULAR) const;
   uint32_t applyLigatures(uint32_t cp, const char*& text, Style style = REGULAR) const;
 

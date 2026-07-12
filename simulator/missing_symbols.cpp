@@ -51,6 +51,9 @@ unsigned int uzlib_crc32(const void*, unsigned int, unsigned int prev) { return 
 // Excluded image converters / decoder factory
 // =============================================================================
 
+// Native builds compile real JpegToBmpConverter + PngToBmpConverter (covers).
+// WASM keeps these stubs. Inline EPUB image decoders stay stubbed on both.
+#ifdef __EMSCRIPTEN__
 #include "PngToBmpConverter.h"
 
 bool PngToBmpConverter::pngFileToBmpStream(HalFile&, Print&, bool) { return false; }
@@ -62,6 +65,7 @@ bool PngToBmpConverter::pngFileTo1BitBmpStreamWithSize(HalFile&, Print&, int, in
 bool JpegToBmpConverter::jpegFileToBmpStream(HalFile&, Print&, bool) { return false; }
 bool JpegToBmpConverter::jpegFileToBmpStreamWithSize(HalFile&, Print&, int, int) { return false; }
 bool JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(HalFile&, Print&, int, int) { return false; }
+#endif
 
 #include "Epub/converters/ImageDecoderFactory.h"
 

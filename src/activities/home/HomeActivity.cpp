@@ -58,11 +58,32 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
 
   int progress = 0;
   for (RecentBook& book : recentBooks) {
+    // coverBmpPath is cleared when thumb generation fails. Retry on later visits
+    // (e.g. simulator once had stubbed JPEG→BMP; device after OOM) so covers can
+    // recover without forcing the user to re-open every book.
+    const bool isEpub = FsHelpers::hasEpubExtension(book.path);
+    const bool isXtc = FsHelpers::hasXtcExtension(book.path);
+    if (book.coverBmpPath.empty() && (isEpub || isXtc)) {
+      if (isEpub) {
+        Epub epub(book.path, "/.crosspoint");
+        epub.load(false, true);
+        book.coverBmpPath = epub.getThumbBmpPath();
+      } else {
+        Xtc xtc(book.path, "/.crosspoint");
+        if (xtc.load()) {
+          book.coverBmpPath = xtc.getThumbBmpPath();
+        }
+      }
+      if (!book.coverBmpPath.empty()) {
+        RECENT_BOOKS.updateBook(book.path, book.title, book.author, book.coverBmpPath);
+      }
+    }
+
     if (!book.coverBmpPath.empty()) {
       std::string coverPath = UITheme::getCoverThumbPath(book.coverBmpPath, coverHeight);
       if (!Storage.exists(coverPath.c_str())) {
         // If epub, try to load the metadata for title/author and cover
-        if (FsHelpers::hasEpubExtension(book.path)) {
+        if (isEpub) {
           Epub epub(book.path, "/.crosspoint");
           // Skip loading css since we only need metadata here
           epub.load(false, true);
@@ -80,7 +101,7 @@ void HomeActivity::loadRecentCovers(int coverHeight) {
           }
           coverRendered = false;
           requestUpdate();
-        } else if (FsHelpers::hasXtcExtension(book.path)) {
+        } else if (isXtc) {
           // Handle XTC file
           Xtc xtc(book.path, "/.crosspoint");
           if (xtc.load()) {

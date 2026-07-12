@@ -453,7 +453,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
         }
       }
 
-      // imageRendering: 0=display, 1=placeholder (alt text only), 2=suppress entirely
+      // imageRendering: 0=display, 1=placeholder (alt text only), 2=suppress,
+      // 3=large only (skip small icons/dividers after layout size is known).
+      // Values match CrossPointSettings::IMAGE_RENDERING.
       if (self->imageRendering == 2) {
         self->skipUntilDepth = self->depth;
         self->depth += 1;
@@ -473,6 +475,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
         }
       }
 
+      // Display (0) and large-only (3) extract bitmaps; placeholder (1) uses alt text.
       if (!src.empty() && self->imageRendering != 1) {
         LOG_DBG("EHP", "Found image: src=%s", src.c_str());
 
@@ -602,6 +605,19 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                   displayWidth = (int)(dims.width * scale);
                   displayHeight = (int)(dims.height * scale);
                   LOG_DBG("EHP", "Display size: %dx%d (scale %.2f)", displayWidth, displayHeight, scale);
+                }
+
+                // Large-only: keep figures, drop icons and thin dividers. Threshold is
+                // post-CSS layout size so width:100%;height:2px rules still count as small.
+                if (self->imageRendering == 3) {
+                  constexpr int kMinLargeEdgePx = 48;
+                  if (displayWidth < kMinLargeEdgePx || displayHeight < kMinLargeEdgePx) {
+                    LOG_DBG("EHP", "Skipping small image %dx%d (large-only mode)", displayWidth, displayHeight);
+                    Storage.remove(cachedImagePath.c_str());
+                    self->skipUntilDepth = self->depth;
+                    self->depth += 1;
+                    return;
+                  }
                 }
 
                 // Flush any pending text block so it appears before the image

@@ -916,6 +916,11 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                                       SETTINGS.imageRendering, SETTINGS.focusReadingEnabled, popupFn)) {
         LOG_ERR("ERS", "Failed to persist page data to SD");
         section.reset();
+        // INDEXING was already drawn into the framebuffer; without a redraw the
+        // device looks permanently stuck even though indexing has aborted.
+        renderer.clearScreen();
+        GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
+        renderer.displayBuffer();
         showPendingSyncSaveError();
         return;
       }
