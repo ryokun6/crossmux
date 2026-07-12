@@ -25,7 +25,16 @@ void EpdFontFamily::getTextDimensions(const char* string, int* w, int* h, const 
 const EpdFontData* EpdFontFamily::getData(const Style style) const { return getFont(style)->data; }
 
 const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style) const {
-  return getFont(style)->getGlyph(cp);
+  const EpdFont* font = getFont(style);
+  const EpdGlyph* glyph = font->getGlyphNoReplacement(cp);
+  if (glyph) return glyph;
+  // Styled face lacks this codepoint (e.g. CJK only embedded in regular for
+  // SD fonts) — use regular's glyph so bold/italic Latin still works.
+  if (font != regular && regular) {
+    glyph = regular->getGlyphNoReplacement(cp);
+    if (glyph) return glyph;
+  }
+  return font->getGlyph(cp);  // replacement glyph from the styled face
 }
 
 int8_t EpdFontFamily::getKerning(const uint32_t leftCp, const uint32_t rightCp, const Style style) const {

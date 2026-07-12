@@ -5,3 +5,5 @@ pyyaml>=6.0.3
 # jieba is wordfreq's tokenizer dependency for Chinese.
 wordfreq>=3.0
 jieba>=0.42
+# Simplified→Traditional charset + remap table for GenSen Rounded TW CN fonts.
+OpenCC>=1.1.0

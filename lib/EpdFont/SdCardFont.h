@@ -233,7 +233,11 @@ class SdCardFont {
   // Bounded to ADVANCE_CACHE_LIMIT entries; persists across layout passes
   // (across calls to clearCache()) so repeated indexing of the same font
   // amortizes SD reads. Cleared only on font unload or clearPersistentCache().
-  static constexpr uint32_t ADVANCE_CACHE_LIMIT = 768;
+  // 768 was enough for Latin literary fonts; CJK chapters routinely exceed
+  // that and then every uncached getAdvanceOrLoad() opens the .cpfont on SPI
+  // SD — indexing appears stuck. Match buildAdvanceTableRange's unique-CP
+  // budget (4096). ~24 KB/style worst case (uint32+uint16 per entry).
+  static constexpr uint32_t ADVANCE_CACHE_LIMIT = 4096;
   AdvanceEntry* advanceTable_[MAX_STYLES] = {};
   uint32_t advanceTableSize_[MAX_STYLES] = {};
   bool advanceTableLookup(uint8_t styleIdx, uint32_t codepoint, uint16_t* outAdvance) const;

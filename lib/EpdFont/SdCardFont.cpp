@@ -11,6 +11,10 @@
 
 #include "EpdFontFamily.h"
 
+#ifdef ENABLE_CHINESE_VERSION
+#include "ScToTcRemap.h"
+#endif
+
 static_assert(sizeof(EpdGlyph) == 16, "EpdGlyph must be 16 bytes to match .cpfont file layout");
 static_assert(sizeof(EpdUnicodeInterval) == 12, "EpdUnicodeInterval must be 12 bytes to match .cpfont file layout");
 static_assert(sizeof(EpdKernClassEntry) == 3, "EpdKernClassEntry must be 3 bytes to match .cpfont file layout");
@@ -41,6 +45,15 @@ constexpr uint32_t STYLE_TOC_ENTRY_SIZE = 32;
 inline uint16_t readU16(const uint8_t* p) { return p[0] | (p[1] << 8); }
 inline int16_t readI16(const uint8_t* p) { return static_cast<int16_t>(p[0] | (p[1] << 8)); }
 inline uint32_t readU32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
+
+uint32_t resolveCnCodepointForLookup(uint32_t cp) {
+#ifdef ENABLE_CHINESE_VERSION
+  // SD CJK subsets store Traditional glyphs; EPUB/UI may pass Simplified codepoints.
+  return mapSimplifiedToTraditional(cp);
+#else
+  return cp;
+#endif
+}
 
 // Walks a null-terminated UTF-8 string and appends each unique codepoint to
 // codepoints[0..cpCount-1] via O(n²) dedup.  Returns true if the buffer
@@ -500,7 +513,11 @@ bool SdCardFont::load(const char* path) {
     // Sanity-check counts to reject malformed files before allocating.
     // Kern class counts are uint8 (bounded by type). Entry counts are uint16
     // but in practice a sane font has far fewer than 4096 per-side kern entries.
-    static constexpr uint32_t MAX_INTERVALS = 4096;
+    // Interval cap: CJK frequency subsets (~7000 通用汉字) are sparse in BMP and
+    // commonly produce ~4.3k intervals after gap-splitting (builtin CN 14pt is
+    // 4365). 4096 rejected those SD fonts; 8192 leaves headroom while BMP16
+    // packing keeps resident cost ~6 bytes/interval.
+    static constexpr uint32_t MAX_INTERVALS = 8192;
     static constexpr uint32_t MAX_GLYPHS = 65536;
     static constexpr uint32_t MAX_KERN_ENTRIES = 4096;
     if (s.header.intervalCount > MAX_INTERVALS || s.header.glyphCount > MAX_GLYPHS ||
@@ -533,81 +550,113 @@ bool SdCardFont::load(const char* path) {
       return false;
     }
 
-    // Validate interval contents before any later code (findGlobalGlyphIndex,
-    // glyph reads) trusts them. A malformed file could otherwise drive
-    // out-of-range glyph indices into bogus on-disk reads.
-    bool canUseBmp16 = s.header.glyphCount <= UINT16_MAX;
-    uint32_t expectedOffset = 0;
-    uint32_t prevLast = 0;
-    EpdUnicodeInterval iv{};
-    for (uint32_t j = 0; j < s.header.intervalCount; ++j) {
-      if (file.read(reinterpret_cast<uint8_t*>(&iv), sizeof(iv)) != sizeof(iv)) {
-        LOG_ERR("SDCF", "Failed to read interval %u for style %u", j, i);
-        freeAll();
-        return false;
-      }
-      if (iv.first > iv.last) {
-        LOG_ERR("SDCF", "Style %u: invalid interval %u (first 0x%lX > last 0x%lX)", i, j,
-                static_cast<unsigned long>(iv.first), static_cast<unsigned long>(iv.last));
-        file.close();
-        freeAll();
-        return false;
-      }
-      const uint32_t span = iv.last - iv.first + 1;
-      const bool overlapsPrev = (j > 0 && iv.first <= prevLast);
-      const bool spanTooBig = (span > s.header.glyphCount);
-      const bool offsetMismatch = (iv.offset != expectedOffset);
-      const bool offsetOverruns = (iv.offset > s.header.glyphCount - span);
-      if (overlapsPrev || spanTooBig || offsetMismatch || offsetOverruns) {
-        LOG_ERR("SDCF", "Style %u: invalid interval layout at %u (overlap=%d span=%u offMis=%d offOver=%d)", i, j,
-                overlapsPrev, span, offsetMismatch, offsetOverruns);
-        file.close();
-        freeAll();
-        return false;
-      }
-      if (iv.first > UINT16_MAX || iv.last > UINT16_MAX || iv.offset > UINT16_MAX) {
-        canUseBmp16 = false;
-      }
-      expectedOffset += span;
-      prevLast = iv.last;
-    }
-
-    if (!file.seekSet(s.intervalsFileOffset)) {
-      LOG_ERR("SDCF", "Failed to seek back to intervals for style %u", i);
+    const uint32_t intervalCount = s.header.intervalCount;
+    // Batch-read intervals. A sparse CJK subset has ~4k intervals; reading them
+    // 12 bytes at a time on SPI SD stalls for tens of seconds and looks like a
+    // hang on INDEXING. Chunked reads keep peak scratch ~6 KB.
+    static constexpr uint32_t kIntervalChunk = 512;
+    std::unique_ptr<EpdUnicodeInterval[]> chunk(new (std::nothrow)
+                                                    EpdUnicodeInterval[std::min(intervalCount, kIntervalChunk)]);
+    if (!chunk) {
+      LOG_ERR("SDCF", "Failed to allocate interval scratch for style %u", i);
       freeAll();
       return false;
     }
 
-    if (canUseBmp16) {
-      s.bmpIntervals = new (std::nothrow) PerStyle::BmpInterval16[s.header.intervalCount];
+    bool canUseBmp16 = s.header.glyphCount <= UINT16_MAX;
+    // First pass: validate + decide BMP16. Prefer allocating the final table up
+    // front when BMP16 is likely so we avoid a second full-size allocation.
+    std::unique_ptr<EpdUnicodeInterval[]> fullScratch;
+    if (!canUseBmp16) {
+      fullScratch.reset(new (std::nothrow) EpdUnicodeInterval[intervalCount]);
+      if (!fullScratch) {
+        LOG_ERR("SDCF", "Failed to allocate %u intervals for style %u", intervalCount, i);
+        freeAll();
+        return false;
+      }
+    } else {
+      s.bmpIntervals = new (std::nothrow) PerStyle::BmpInterval16[intervalCount];
       if (!s.bmpIntervals) {
         LOG_ERR("SDCF", "Failed to allocate compact intervals for style %u", i);
         freeAll();
         return false;
       }
-      for (uint32_t j = 0; j < s.header.intervalCount; ++j) {
-        if (file.read(reinterpret_cast<uint8_t*>(&iv), sizeof(iv)) != sizeof(iv)) {
-          LOG_ERR("SDCF", "Failed to read compact interval %u for style %u", j, i);
-          freeAll();
-          return false;
-        }
-        s.bmpIntervals[j] = {static_cast<uint16_t>(iv.first), static_cast<uint16_t>(iv.last),
-                             static_cast<uint16_t>(iv.offset)};
-      }
-      s.intervalsAreBmp16 = true;
-    } else {
-      s.fullIntervals = new (std::nothrow) EpdUnicodeInterval[s.header.intervalCount];
-      if (!s.fullIntervals) {
-        LOG_ERR("SDCF", "Failed to allocate %u intervals for style %u", s.header.intervalCount, i);
+    }
+
+    uint32_t expectedOffset = 0;
+    uint32_t prevLast = 0;
+    for (uint32_t base = 0; base < intervalCount;) {
+      const uint32_t n = std::min(kIntervalChunk, intervalCount - base);
+      const size_t bytes = n * sizeof(EpdUnicodeInterval);
+      if (file.read(reinterpret_cast<uint8_t*>(chunk.get()), bytes) != static_cast<int>(bytes)) {
+        LOG_ERR("SDCF", "Failed to read intervals at %u for style %u", base, i);
         freeAll();
         return false;
       }
-      size_t intervalsBytes = s.header.intervalCount * sizeof(EpdUnicodeInterval);
-      if (file.read(reinterpret_cast<uint8_t*>(s.fullIntervals), intervalsBytes) != static_cast<int>(intervalsBytes)) {
+      for (uint32_t j = 0; j < n; ++j) {
+        const EpdUnicodeInterval& iv = chunk[j];
+        if (iv.first > iv.last) {
+          LOG_ERR("SDCF", "Style %u: invalid interval %u (first 0x%lX > last 0x%lX)", i, base + j,
+                  static_cast<unsigned long>(iv.first), static_cast<unsigned long>(iv.last));
+          freeAll();
+          return false;
+        }
+        const uint32_t span = iv.last - iv.first + 1;
+        const bool overlapsPrev = (base + j > 0 && iv.first <= prevLast);
+        const bool spanTooBig = (span > s.header.glyphCount);
+        const bool offsetMismatch = (iv.offset != expectedOffset);
+        const bool offsetOverruns = (iv.offset > s.header.glyphCount - span);
+        if (overlapsPrev || spanTooBig || offsetMismatch || offsetOverruns) {
+          LOG_ERR("SDCF", "Style %u: invalid interval layout at %u (overlap=%d span=%u offMis=%d offOver=%d)", i,
+                  base + j, overlapsPrev, span, offsetMismatch, offsetOverruns);
+          freeAll();
+          return false;
+        }
+        if (iv.first > UINT16_MAX || iv.last > UINT16_MAX || iv.offset > UINT16_MAX) {
+          canUseBmp16 = false;
+        }
+        if (s.bmpIntervals && canUseBmp16) {
+          s.bmpIntervals[base + j] = {static_cast<uint16_t>(iv.first), static_cast<uint16_t>(iv.last),
+                                      static_cast<uint16_t>(iv.offset)};
+        } else if (fullScratch) {
+          fullScratch[base + j] = iv;
+        }
+        expectedOffset += span;
+        prevLast = iv.last;
+      }
+      base += n;
+    }
+
+    // If we discovered a non-BMP codepoint mid-pass after allocating bmpIntervals,
+    // re-read into fullIntervals (rare for our CJK subsets).
+    if (s.bmpIntervals && !canUseBmp16) {
+      delete[] s.bmpIntervals;
+      s.bmpIntervals = nullptr;
+      fullScratch.reset(new (std::nothrow) EpdUnicodeInterval[intervalCount]);
+      if (!fullScratch) {
+        LOG_ERR("SDCF", "Failed to allocate %u intervals for style %u", intervalCount, i);
+        freeAll();
+        return false;
+      }
+      if (!file.seekSet(s.intervalsFileOffset)) {
+        LOG_ERR("SDCF", "Failed to seek back to intervals for style %u", i);
+        freeAll();
+        return false;
+      }
+      const size_t intervalsBytes = intervalCount * sizeof(EpdUnicodeInterval);
+      if (file.read(reinterpret_cast<uint8_t*>(fullScratch.get()), intervalsBytes) !=
+          static_cast<int>(intervalsBytes)) {
         LOG_ERR("SDCF", "Failed to read intervals for style %u", i);
         freeAll();
         return false;
       }
+    }
+
+    if (s.bmpIntervals) {
+      s.intervalsAreBmp16 = true;
+    } else {
+      s.fullIntervals = fullScratch.release();
+      s.intervalsAreBmp16 = false;
     }
 
     // Initialize stub data
@@ -637,6 +686,7 @@ bool SdCardFont::load(const char* path) {
 // --- Codepoint lookup ---
 
 int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) const {
+  codepoint = resolveCnCodepointForLookup(codepoint);
   int left = 0;
   int right = static_cast<int>(s.header.intervalCount) - 1;
   while (left <= right) {
@@ -1103,7 +1153,13 @@ uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
   const auto& s = styles_[styleIdx];
   if (!s.present) return 0;
   const int32_t gIdx = findGlobalGlyphIndex(s, codepoint);
-  if (gIdx < 0) return 0;  // font genuinely lacks this glyph
+  if (gIdx < 0) {
+    // CJK may live only on the regular style; retry before giving up.
+    if (styleIdx != 0 && styles_[0].present) {
+      return getAdvanceOrLoad(codepoint, 0);
+    }
+    return 0;  // font genuinely lacks this glyph
+  }
 
   HalFile file;
   if (!Storage.openFileForRead("SDCF", filePath_, file)) {
@@ -1232,6 +1288,9 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
   if (!loaded_) return -1;
   styleMask = resolveStyleMask(styleMask);
   if (styleMask == 0) return 0;
+  // CJK-only-in-regular SD fonts: always pull regular advances when any styled
+  // face is requested so bold/italic paragraphs still measure Han correctly.
+  if (styleMask & ~0x01u) styleMask |= 0x01u;
 
   unsigned long startMs = millis();
 

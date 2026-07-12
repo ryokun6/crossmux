@@ -123,4 +123,42 @@ To list all presets with codepoint counts:
 
 `--force-autohint` — force FreeType's auto-hinter instead of the font's native hinting (useful when a font's built-in hints produce poor results at small sizes).
 
+### CJK subset fonts (lighter `.cpfont`s)
+
+Full-range `--intervals cjk` on a complete CJK OTF can produce **15–30 MB** per size and is slow on-device because SD fonts load glyphs on demand. For Chinese reading on `gh_release_cn`, prefer a **subset** matching the builtin reader tier:
+
+- ~7000 通用汉字 converted Simplified→Traditional (OpenCC `s2t`)
+- Extended symbol blocks for EPUB (arrows, box drawing, dingbats, etc.)
+- Traditional glyphs only; firmware remaps Simplified codepoints at runtime via `ScToTcRemap.h`
+
+**EB Garamond + Source Han Serif TC** (Latin from EB Garamond, CJK from weight-matched SHS TC fallbacks):
+
+```bash
+pip install freetype-py fonttools OpenCC
+
+# Defaults: ~/Downloads/EB_Garamond/static and
+# ~/Downloads/10_SourceHanSerifTC/OTF/TraditionalChinese
+bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh
+```
+
+Output lands in `lib/EpdFont/scripts/output/EBGaramondSHS7000/`. Copy the folder to `/.fonts/EBGaramondSHS7000/` on the SD card.
+
+Override font locations:
+
+```bash
+EB_GARAMOND_DIR=/path/to/EB_Garamond/static \
+SHS_TC_DIR=/path/to/SourceHanSerifTC/OTF/TraditionalChinese \
+bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh
+```
+
+| `.cpfont` style | EB Garamond (primary) | Source Han Serif TC (fallback) |
+|---|---|---|
+| regular | Regular | Regular (CJK + Latin) |
+| bold | Bold | — (Latin only; CJK falls back to regular at runtime) |
+| italic | Italic | — (Latin only; CJK falls back to regular) |
+| bolditalic | BoldItalic | — (Latin only; CJK falls back to regular) |
+
+CJK bitmaps are stored once (regular style) so SPI-SD indexing stays light;
+bold/italic Latin still come from EB Garamond.
+
 Install custom fonts via the web interface or manual SD card copy.

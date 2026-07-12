@@ -776,11 +776,14 @@ def style_sections_total_size(sections):
 # --- File writers ---
 
 def generate_cpfont_multistyle(style_fonts, size, intervals, output_path,
-                               force_autohint=False, fallback_style_fonts=None):
+                               force_autohint=False, fallback_style_fonts=None,
+                               intervals_by_style=None):
     """Generate a multi-style v4 .cpfont file.
 
     style_fonts: dict of {style_id: fontfile_path} e.g. {0: "Regular.ttf", 2: "Italic.ttf"}
     fallback_style_fonts: optional dict of {style_id: fallback_fontfile_path}
+    intervals_by_style: optional dict of {style_id: intervals}; styles not listed use `intervals`.
+      Used to put CJK only in regular while bold/italic stay Latin-only.
     """
     MAGIC = b"CPFONT\x00\x00"
     HEADER_SIZE = 32
@@ -791,12 +794,14 @@ def generate_cpfont_multistyle(style_fonts, size, intervals, output_path,
     # Rasterize each style
     raster_data = {}  # style_id -> StyleRasterData
     fallback_style_fonts = fallback_style_fonts or {}
+    intervals_by_style = intervals_by_style or {}
     for style_id in sorted(style_fonts.keys()):
         fontfile = style_fonts[style_id]
         fallback_fontfile = fallback_style_fonts.get(style_id)
+        style_intervals = intervals_by_style.get(style_id, intervals)
         print(f"  Rasterizing style {style_id}...", file=sys.stderr)
         raster_data[style_id] = rasterize_font_style(
-            fontfile, size, intervals, style_id=style_id,
+            fontfile, size, style_intervals, style_id=style_id,
             force_autohint=force_autohint,
             fallback_fontfile=fallback_fontfile)
 
@@ -882,6 +887,9 @@ def main():
                         help="Path to the font file (single-style mode).")
     parser.add_argument("--intervals", dest="intervals",
                         help="Comma-separated interval presets (e.g., 'latin-ext,greek,cyrillic').")
+    parser.add_argument("--regular-intervals", dest="regular_intervals",
+                        help="Interval presets for regular style only (e.g. add cjk). "
+                             "Other styles keep --intervals. Useful for Latin R/B/I/BI + Regular-only CJK.")
     parser.add_argument("--size", type=int, dest="size",
                         help="Single font size to generate.")
     parser.add_argument("--sizes", dest="sizes",
@@ -958,6 +966,9 @@ def main():
         sys.exit(1)
 
     intervals = resolve_intervals(args.intervals)
+    intervals_by_style = None
+    if args.regular_intervals:
+        intervals_by_style = {0: resolve_intervals(args.regular_intervals)}
 
     # Determine sizes
     if args.sizes:
@@ -1016,7 +1027,8 @@ def main():
         total_size += generate_cpfont_multistyle(
             style_fonts, sz, intervals, output_path,
             force_autohint=args.force_autohint,
-            fallback_style_fonts=fallback_style_fonts)
+            fallback_style_fonts=fallback_style_fonts,
+            intervals_by_style=intervals_by_style)
     print(f"\nTotal: {len(sizes)} files, {total_size / 1024 / 1024:.2f} MB", file=sys.stderr)
 
 
