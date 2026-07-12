@@ -10,6 +10,11 @@ class EpdFont {
   ~EpdFont() = default;
   void getTextDimensions(const char* string, int* w, int* h) const;
 
+  /// Like getGlyph, but returns nullptr instead of substituting U+FFFD.
+  /// Used by EpdFontFamily to fall back to the regular face for codepoints
+  /// only present there (e.g. CJK in regular-only SD fonts).
+  const EpdGlyph* getGlyphNoReplacement(uint32_t cp) const;
+
   const EpdGlyph* getGlyph(uint32_t cp) const;
 
   /// Returns the kerning adjustment (4.4 fixed-point in pixels) between two codepoints.

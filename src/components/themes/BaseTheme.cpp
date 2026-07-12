@@ -717,7 +717,14 @@ Rect BaseTheme::drawPopup(const GfxRenderer& renderer, const char* message) cons
   }
 
   const int textX = x + (w - textWidth) / 2;
+  // popupTextBaselineOffsetY (-2) optically lifts Latin/Ubuntu UI text in the
+  // popup box. CJK builtin fonts already apply the same nudge via ascender
+  // (--baseline-adjust 2), so skip it there to avoid double-correcting.
+#ifdef ENABLE_CHINESE_VERSION
+  const int textY = y + marginY;
+#else
   const int textY = y + marginY + metrics.popupTextBaselineOffsetY;
+#endif
   renderer.drawText(UI_12_FONT_ID, textX, textY, message, metrics.popupTextInverted, popupFontFamily);
   renderer.displayBuffer();
   return Rect{x, y, w, h};

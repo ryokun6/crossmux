@@ -569,10 +569,13 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
       UIIcon icon = rowIcon(i);
       const uint8_t* iconBitmap = iconForName(icon, mainMenuIconSize);
       if (iconBitmap != nullptr) {
-        const int iconTopY = textY + 3;
+        // Center the 32px icon in the row, then align the label to the icon's
+        // vertical midpoint. (Previously iconTopY = textY + 3, which sat ~4px
+        // low once GenSen's taller UI_12 line height raised textY.)
+        const int iconTopY = tileRect.y + (LyraMetrics::values.menuRowHeight - mainMenuIconSize) / 2 + 2;
         renderer.drawIcon(iconBitmap, textX, iconTopY, mainMenuIconSize, mainMenuIconSize);
         textX += mainMenuIconSize + hPaddingInSelection + 2;
-        textY = iconTopY + mainMenuIconSize / 2 - lineHeight / 2;
+        textY = iconTopY + mainMenuIconSize / 2 - lineHeight / 2 + 1;
       }
     }
 

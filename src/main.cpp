@@ -47,19 +47,21 @@ static unsigned long allowSleepAt = 0;
 // Fonts
 #ifdef ENABLE_CHINESE_VERSION
 // Chinese build: each Latin EpdFont global aliases the matching-size CJK
-// header (notosans_cjk_{8,10,12,14,16,18}, raw 2-bit bitmaps). Bold /
-// italic / bolditalic variants share the single Regular OTF — bold and
-// italic styling are not available for built-in CJK glyphs in this build.
-// SD-card fonts continue to provide style variants when loaded.
+// header (notosans_cjk_{8,10,12,14,16,18} from GenSen Rounded 2 TW, raw
+// 2-bit Traditional bitmaps). Bold / italic / bolditalic variants share
+// the single Regular face — style variants are not available for built-in
+// CJK glyphs. Simplified UI/EPUB codepoints remap to Traditional at
+// glyph lookup (ScToTcRemap.h). SD-card fonts still provide styles when loaded.
 //
 // CJK character coverage is non-uniform across sizes (see
 // build-cn-builtin-fonts.sh):
-//   - 8/10/12/14pt: full subset (top-3500 现代汉语常用字表 by Zipf, ∪
-//     i18n require-from chars). Sized for reader SMALL/MEDIUM and all UI.
-//   - 16/18pt: i18n-only subset (~430 chars from chinese.yaml). Sized
-//     for reader LARGE/EXTRA_LARGE (intended for English EPUB) while
-//     still letting UI strings render — game win banners etc. Chinese
-//     EPUB text at 16/18pt renders blank for chars outside the subset.
+//   - 8/10/12/14pt: full subset (top-3500 现代汉语常用字表 by Zipf,
+//     Traditionalized ∪ i18n require-from). Sized for reader SMALL/MEDIUM
+//     and all UI.
+//   - 16/18pt: i18n-only subset (Traditionalized). Sized for reader
+//     LARGE/EXTRA_LARGE (intended for English EPUB) while still letting
+//     UI strings render. Chinese EPUB text at 16/18pt renders blank for
+//     chars outside the subset.
 EpdFont notoserif14RegularFont(&notosans_cjk_14);
 EpdFont notoserif14BoldFont(&notosans_cjk_14);
 EpdFont notoserif14ItalicFont(&notosans_cjk_14);

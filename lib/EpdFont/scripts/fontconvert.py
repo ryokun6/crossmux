@@ -23,6 +23,13 @@ parser.add_argument("--additional-intervals", dest="additional_intervals", actio
 parser.add_argument("--compress", dest="compress", action="store_true", help="Compress glyph bitmaps using DEFLATE with group-based compression.")
 parser.add_argument("--force-autohint", dest="force_autohint", action="store_true", help="Force FreeType auto-hinter instead of native font hinting. Improves stem width consistency for fonts with weak or no native TrueType hints.")
 parser.add_argument("--pnum", dest="pnum", action="store_true", help="Use proportional numerals (pnum OpenType feature) instead of default tabular figures. Reduces visual gaps between digits in running prose.")
+parser.add_argument("--baseline-adjust", dest="baseline_adjust", type=int, default=0,
+                    help="Subtract N from the emitted font ascender (raises ink by N px relative to "
+                         "drawText's line-top y). Used for CJK fonts whose FreeType ascender sits "
+                         "~2px above the optical center of ideographs.")
+parser.add_argument("--line-height-adjust", dest="line_height_adjust", type=int, default=0,
+                    help="Add N to the emitted advanceY (line height). Used when a face's "
+                         "FreeType height is tighter than the Ubuntu UI layouts expect.")
 args = parser.parse_args()
 
 import freetype
@@ -991,8 +998,14 @@ print(f"    {font_name}Bitmaps,")
 print(f"    {font_name}Glyphs,")
 print(f"    {font_name}Intervals,")
 print(f"    {len(intervals)},")
-print(f"    {norm_ceil(face.size.height)},")
-print(f"    {norm_ceil(face.size.ascender)},")
+# advanceY is getLineHeight(); GenSen Rounded TW's FreeType box is tighter than
+# Latin Noto at the same pt/DPI, so --line-height-adjust pads toward notosans_*
+# advanceY (see build-cn-builtin-fonts.sh).
+print(f"    {norm_ceil(face.size.height) + args.line_height_adjust},")
+# Ascender drives GfxRenderer::drawText's baseline (y + ascender). A positive
+# --baseline-adjust lowers that baseline so glyph ink rises relative to the
+# line-top y callers pass — matching Ubuntu UI optical centering for CJK.
+print(f"    {norm_ceil(face.size.ascender) - args.baseline_adjust},")
 print(f"    {norm_floor(face.size.descender)},")
 print(f"    {'true' if is2Bit else 'false'},")
 if compress:

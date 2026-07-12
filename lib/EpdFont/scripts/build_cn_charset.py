@@ -8,7 +8,7 @@ Default pool:  lib/EpdFont/scripts/chars_3500_common.txt
                https://github.com/elephantnose/characters/blob/master/
                3500%E5%B8%B8%E7%94%A8%E6%B1%89%E5%AD%97.txt)
 Output:        lib/EpdFont/scripts/cn_common_chars.txt
-               (top N, single-line UTF-8)
+               (top N, single-line UTF-8; Traditional when --traditional)
 
 The output file feeds pyftsubset's --text-file= in build-cn-builtin-fonts.sh.
 
@@ -29,7 +29,12 @@ common modern chars like 浏 (U+6D4F, used in "浏览器") that would otherwise
 be silently dropped by the renderer (see EpdFont::getTextBounds when
 getGlyph returns nullptr).
 
-Requires:  pip install wordfreq jieba
+With --traditional (GenSen Rounded TW CN build), kept / require-from chars
+are converted Simplified→Traditional via OpenCC s2t and deduped before
+writing. Bitmaps store Traditional glyphs only; runtime remaps Simplified
+codepoints through ScToTcRemap.h.
+
+Requires:  pip install wordfreq jieba OpenCC
 """
 
 from __future__ import annotations
@@ -79,6 +84,26 @@ def load_required(paths: list[Path]) -> set[str]:
     return required
 
 
+def to_traditional(chars: list[str] | set[str]) -> list[str]:
+    """Map Simplified→Traditional (OpenCC s2t), drop multi-char expansions, dedupe."""
+    try:
+        from opencc import OpenCC
+    except ImportError:
+        print("error: OpenCC not installed. Run: pip install OpenCC", file=sys.stderr)
+        sys.exit(1)
+
+    cc = OpenCC("s2t")
+    out: set[str] = set()
+    for ch in chars:
+        tc = cc.convert(ch)
+        if len(tc) == 1:
+            out.add(tc)
+        else:
+            # Should not happen for single ideographs with s2t; keep original.
+            out.add(ch)
+    return sorted(out)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -97,6 +122,12 @@ def main() -> None:
         help="Force-include every CJK Unified Ideograph found in FILE "
         "regardless of Zipf rank. Repeatable. Intended for i18n YAML files "
         "so UI strings never silently drop glyphs.",
+    )
+    parser.add_argument(
+        "--traditional",
+        action="store_true",
+        help="Convert kept / require-from chars to Traditional (OpenCC s2t) "
+        "and dedupe before writing. Used by the GenSen Rounded TW CN font build.",
     )
     parser.add_argument(
         "--review",
@@ -149,6 +180,19 @@ def main() -> None:
     # readable when --top changes by a small amount. The font generation
     # doesn't care about order.
     kept_chars = sorted(c for c, _ in kept)
+    i18n_chars = sorted(required) if required else []
+
+    if args.traditional:
+        sc_kept_n = len(kept_chars)
+        sc_i18n_n = len(i18n_chars)
+        kept_chars = to_traditional(kept_chars)
+        if i18n_chars:
+            i18n_chars = to_traditional(i18n_chars)
+        print(
+            f"[traditional] kept {sc_kept_n} SC → {len(kept_chars)} TC; "
+            f"i18n {sc_i18n_n} SC → {len(i18n_chars)} TC",
+            file=sys.stderr,
+        )
 
     OUTPUT_FILE.write_text("".join(kept_chars), encoding="utf-8")
 
@@ -157,8 +201,7 @@ def main() -> None:
         file=sys.stderr,
     )
 
-    if required:
-        i18n_chars = sorted(required)
+    if i18n_chars:
         I18N_OUTPUT_FILE.write_text("".join(i18n_chars), encoding="utf-8")
         print(
             f"Wrote {len(i18n_chars)} i18n-only characters to "
