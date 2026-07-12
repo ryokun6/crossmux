@@ -61,6 +61,7 @@ class ContentOpfParser final : public Print {
   std::string title;
   std::string author;
   std::string language;
+  bool pageProgressionRtl = false;
   std::string tocNcxPath;
   std::string tocNavPath;  // EPUB 3 nav document path
   std::string coverItemHref;

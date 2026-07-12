@@ -68,6 +68,7 @@ class EpubReaderActivity final : public Activity {
   // because no KOReader credentials are stored.
   bool launchKOReaderSync();
   void applyOrientation(uint8_t orientation);
+  void applyWritingMode(uint8_t writingMode);
   void toggleAutoPageTurn(uint8_t selectedPageTurnOption);
   void pageTurn(bool isForwardTurn);
   void loadCachedBookmarks();

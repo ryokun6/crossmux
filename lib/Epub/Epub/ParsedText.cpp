@@ -25,6 +25,267 @@ constexpr size_t RTL_PARAGRAPH_PROBE_WORDS = 3;
 // before giving up. 64 is a hedge for pathological cases like long numeric tokens.
 constexpr int RTL_PER_WORD_PROBE_DEPTH = 64;
 constexpr size_t MIN_JUSTIFY_GAPS = 1;
+constexpr int VERTICAL_SIDEWAYS_EDGE_GAP = 2;
+
+// Vertical-rl: upright CJK/Hangul cells; short ASCII runs use 縦中横; longer
+// Latin runs rotate 90° CCW and advance top→bottom into the reserved cell.
+bool isVerticalUprightWord(const std::string& word) {
+  size_t upright = 0;
+  size_t total = 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (cp == 0x00AD) continue;
+    total++;
+    if (utf8IsCjkBreakable(cp)) upright++;
+  }
+  return total > 0 && upright * 2 >= total;
+}
+
+bool isTateChuYokoWord(const std::string& word) {
+  size_t n = 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (cp == 0x00AD) continue;
+    const bool asciiWordChar = (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
+    if (!asciiWordChar) return false;
+    n++;
+    if (n > 2) return false;
+  }
+  return n > 0;
+}
+
+bool containsAsciiAlphaNumeric(const std::string& word) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) return false;
+    if ((cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) {
+      return true;
+    }
+  }
+}
+
+size_t verticalDashRunLength(const std::string& word) {
+  size_t count = 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (cp != 0xFE31 && cp != 0xFE32) return 0;  // ︱ / ︲
+    ++count;
+  }
+  return count >= 2 ? count : 0;
+}
+
+bool isSidewaysVerticalWord(const std::string& word) {
+  return verticalDashRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word);
+}
+
+bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_t index) {
+  if (isSidewaysVerticalWord(words[index])) {
+    return true;
+  }
+  if (!isTateChuYokoWord(words[index])) {
+    return false;
+  }
+
+  // Short Latin/numeric tokens use 縦中横 only in isolation. Within a Latin
+  // phrase (e.g. "out of space" or "version 2 beta"), rotate them with their
+  // neighbors so orientation cannot alternate word by word.
+  const bool latinBefore = index > 0 && containsAsciiAlphaNumeric(words[index - 1]);
+  const bool latinAfter = index + 1 < words.size() && containsAsciiAlphaNumeric(words[index + 1]);
+  return latinBefore || latinAfter;
+}
+
+int verticalExtentForWord(const GfxRenderer& renderer, int fontId, const std::string& word, EpdFontFamily::Style style,
+                          int cellStep, uint16_t wordWidth, const bool sideways) {
+  const size_t dashCount = verticalDashRunLength(word);
+  if (dashCount > 0) {
+    return static_cast<int>(dashCount) * cellStep;
+  }
+  if (!sideways) {
+    return cellStep;
+  }
+  (void)renderer;
+  (void)fontId;
+  (void)style;
+  // Sideways run: horizontal advance becomes vertical extent. Never thinner than
+  // one em so adjacent CJK cells don't collide with glyph ink.
+  return std::max(static_cast<int>(wordWidth), cellStep);
+}
+
+// In-column CJK pitch = em advance (glyph width), not lineHeight. Column gaps stay
+// on lineHeight × lineCompression so character spacing stays tighter than 行距.
+int verticalCellStep(const GfxRenderer& renderer, int fontId) {
+  // U+672C 本 — common CJK ideograph present in both Latin and CN font subsets.
+  const int em = renderer.getTextAdvanceX(fontId, "\xe6\x9c\xac", EpdFontFamily::REGULAR);
+  if (em > 0) return em;
+  const int asc = renderer.getFontAscenderSize(fontId);
+  return asc > 0 ? asc : renderer.getLineHeight(fontId);
+}
+
+void appendUtf8(std::string& out, uint32_t cp) {
+  if (cp < 0x80) {
+    out.push_back(static_cast<char>(cp));
+  } else if (cp < 0x800) {
+    out.push_back(static_cast<char>(0xC0 | (cp >> 6)));
+    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else if (cp < 0x10000) {
+    out.push_back(static_cast<char>(0xE0 | (cp >> 12)));
+    out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  } else {
+    out.push_back(static_cast<char>(0xF0 | (cp >> 18)));
+    out.push_back(static_cast<char>(0x80 | ((cp >> 12) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | ((cp >> 6) & 0x3F)));
+    out.push_back(static_cast<char>(0x80 | (cp & 0x3F)));
+  }
+}
+
+// Vertical-rl punctuation: Western quotes → ﹁﹂/﹃﹄; CJK/FW punct → Vertical Forms /
+// Compatibility Forms so glyphs sit correctly in the column (GenSen ships these cps).
+struct VerticalPunctRemapState {
+  bool nextDoubleQuoteOpen = true;
+  bool nextSingleQuoteOpen = true;
+};
+
+bool isBracketedAsciiReference(const std::string& word) {
+  // Keep compact footnote/citation markers such as [1] and [123] intact so the
+  // whole token follows the sideways-Latin path instead of mixing vertical
+  // presentation brackets with upright digits.
+  if (word.size() < 3 || word.size() > 5 || word.front() != '[' || word.back() != ']') {
+    return false;
+  }
+  return std::all_of(word.begin() + 1, word.end() - 1, [](const unsigned char c) { return c >= '0' && c <= '9'; });
+}
+
+bool containsSidewaysAlphaNumeric(const std::string& word) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) return false;
+    if ((cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z') ||
+        (cp >= 0x00C0 && cp <= 0x02AF) ||  // Latin extensions and modifiers
+        (cp >= 0x0370 && cp <= 0x052F) ||  // Greek and Cyrillic
+        (cp >= 0x0590 && cp <= 0x08FF)) {  // Hebrew and Arabic
+      return true;
+    }
+  }
+}
+
+uint32_t verticalFormForCodepoint(uint32_t cp, VerticalPunctRemapState& state) {
+  switch (cp) {
+    // Ambiguous ASCII quotes: alternate open/close across the paragraph.
+    case '"':
+    case 0xFF02: {                                                       // ＂
+      const uint32_t out = state.nextDoubleQuoteOpen ? 0xFE41 : 0xFE42;  // ﹁ / ﹂
+      state.nextDoubleQuoteOpen = !state.nextDoubleQuoteOpen;
+      return out;
+    }
+    case '\'':
+    case 0xFF07: {                                                       // ＇
+      const uint32_t out = state.nextSingleQuoteOpen ? 0xFE43 : 0xFE44;  // ﹃ / ﹄
+      state.nextSingleQuoteOpen = !state.nextSingleQuoteOpen;
+      return out;
+    }
+    case '(':
+    case 0xFF08:      // （
+      return 0xFE35;  // ︵
+    case ')':
+    case 0xFF09:      // ）
+      return 0xFE36;  // ︶
+    case '[':
+    case 0xFF3B:      // ［
+      return 0xFE47;  // ﹇
+    case ']':
+    case 0xFF3D:      // ］
+      return 0xFE48;  // ﹈
+    case '{':
+    case 0xFF5B:      // ｛
+      return 0xFE37;  // ︷
+    case '}':
+    case 0xFF5D:      // ｝
+      return 0xFE38;  // ︸
+
+    case 0x201C:      // “
+    case 0x300C:      // 「
+      return 0xFE41;  // ﹁
+    case 0x201D:      // ”
+    case 0x300D:      // 」
+      return 0xFE42;  // ﹂
+    case 0x2018:      // ‘
+    case 0x300E:      // 『
+      return 0xFE43;  // ﹃
+    case 0x2019:      // ’
+    case 0x300F:      // 』
+      return 0xFE44;  // ﹄
+
+    case 0x3008:      // 〈
+      return 0xFE3F;  // ︿
+    case 0x3009:      // 〉
+      return 0xFE40;  // ﹀
+    case 0x300A:      // 《
+      return 0xFE3D;  // ︽
+    case 0x300B:      // 》
+      return 0xFE3E;  // ︾
+    case 0x3010:      // 【
+      return 0xFE3B;  // ︻
+    case 0x3011:      // 】
+      return 0xFE3C;  // ︼
+    case 0x3014:      // 〔
+      return 0xFE39;  // ︹
+    case 0x3015:      // 〕
+      return 0xFE3A;  // ︺
+
+    case 0x3001:      // 、
+      return 0xFE11;  // ︑
+    case 0x3002:      // 。
+      return 0xFE12;  // ︒
+    case 0xFF0C:      // ，
+      return 0xFE10;  // ︐
+    case 0xFF1A:      // ：
+      return 0xFE13;  // ︓
+    case 0xFF1B:      // ；
+      return 0xFE14;  // ︔
+    case 0xFF01:      // ！
+      return 0xFE15;  // ︕
+    case 0xFF1F:      // ？
+      return 0xFE16;  // ︖
+    case 0x2026:      // …
+    case 0x22EF:      // ⋯
+      return 0xFE19;  // ︙
+    case 0x2025:      // ‥
+      return 0xFE30;  // ︰
+    case 0x2014:      // —
+    case 0x2015:      // ―
+      return 0xFE31;  // ︱
+    case 0x2013:      // –
+      return 0xFE32;  // ︲
+
+    default:
+      return cp;
+  }
+}
+
+void remapVerticalPunctuationInPlace(std::string& word, VerticalPunctRemapState& state) {
+  if (isBracketedAsciiReference(word) || containsSidewaysAlphaNumeric(word)) {
+    return;
+  }
+
+  std::string out;
+  out.reserve(word.size() * 2);
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    appendUtf8(out, verticalFormForCodepoint(cp, state));
+  }
+  word.swap(out);
+}
 
 // Byte-level pre-check: Hebrew UTF-8 lead bytes 0xD6-0xD7, Arabic/Syriac 0xD8-0xDB.
 bool mayContainRtlBytes(const char* str) {
@@ -54,6 +315,29 @@ uint32_t lastCodepoint(const std::string& word) {
   }
   const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str() + i);
   return utf8NextCodepoint(&ptr);
+}
+
+int verticalGapBeforeWord(const GfxRenderer& renderer, const int fontId, const std::vector<std::string>& words,
+                          const std::vector<EpdFontFamily::Style>& styles, const std::vector<bool>& continues,
+                          const std::vector<bool>& noSpaceBefore, const size_t index) {
+  const bool currentSideways = isSidewaysVerticalWordAt(words, index);
+  if (index == 0) {
+    return currentSideways ? VERTICAL_SIDEWAYS_EDGE_GAP : 0;
+  }
+
+  const bool previousSideways = isSidewaysVerticalWordAt(words, index - 1);
+  if (previousSideways != currentSideways) {
+    return VERTICAL_SIDEWAYS_EDGE_GAP;
+  }
+  if (!currentSideways || noSpaceBefore[index]) {
+    return 0;
+  }
+  if (continues[index]) {
+    return renderer.getKerning(fontId, lastCodepoint(words[index - 1]), firstCodepoint(words[index]),
+                               styles[index - 1]);
+  }
+  return renderer.getSpaceAdvance(fontId, lastCodepoint(words[index - 1]), firstCodepoint(words[index]),
+                                  styles[index - 1]);
 }
 
 bool containsSoftHyphen(const std::string& word) { return word.find(SOFT_HYPHEN_UTF8) != std::string::npos; }
@@ -92,6 +376,23 @@ bool isNoBreakBeforeCjkPunctuation(const uint32_t cp) {
     case 0xFF1F:  // ？
     case 0xFF3D:  // ］
     case 0xFF5D:  // ｝
+    case 0xFE10:  // ︐
+    case 0xFE11:  // ︑
+    case 0xFE12:  // ︒
+    case 0xFE13:  // ︓
+    case 0xFE14:  // ︔
+    case 0xFE15:  // ︕
+    case 0xFE16:  // ︖
+    case 0xFE19:  // ︙
+    case 0xFE36:  // ︶
+    case 0xFE38:  // ︸
+    case 0xFE3A:  // ︺
+    case 0xFE3C:  // ︼
+    case 0xFE3E:  // ︾
+    case 0xFE40:  // ﹀
+    case 0xFE42:  // ﹂
+    case 0xFE44:  // ﹄
+    case 0xFE48:  // ﹈
       return true;
     default:
       return false;
@@ -118,6 +419,15 @@ bool isNoBreakAfterCjkPunctuation(const uint32_t cp) {
     case 0xFF08:  // （
     case 0xFF3B:  // ［
     case 0xFF5B:  // ｛
+    case 0xFE35:  // ︵
+    case 0xFE37:  // ︷
+    case 0xFE39:  // ︹
+    case 0xFE3B:  // ︻
+    case 0xFE3D:  // ︽
+    case 0xFE3F:  // ︿
+    case 0xFE41:  // ﹁
+    case 0xFE43:  // ﹃
+    case 0xFE47:  // ﹇
       return true;
     default:
       return false;
@@ -465,8 +775,13 @@ int ParsedText::resolveFirstLineIndent(const bool isFirstLine, const GfxRenderer
 // Consumes data to minimize memory usage
 void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fontId, const uint16_t viewportWidth,
                                        const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
-                                       const bool includeLastLine) {
+                                       const bool includeLastLine, const uint16_t viewportHeight) {
   if (words.empty()) {
+    return;
+  }
+
+  if (blockStyle.isVerticalRtl && viewportHeight > 0) {
+    layoutAndExtractVerticalColumns(renderer, fontId, viewportHeight, processLine, includeLastLine);
     return;
   }
 
@@ -530,6 +845,120 @@ void ParsedText::layoutAndExtractLines(const GfxRenderer& renderer, const int fo
     wordContinues.erase(wordContinues.begin(), wordContinues.begin() + consumed);
     wordNoSpaceBefore.erase(wordNoSpaceBefore.begin(), wordNoSpaceBefore.begin() + consumed);
     wordIsFocusSuffix.erase(wordIsFocusSuffix.begin(), wordIsFocusSuffix.begin() + consumed);
+  }
+}
+
+std::vector<size_t> ParsedText::computeVerticalColumnBreaks(const GfxRenderer& renderer, const int fontId,
+                                                            const int columnHeight,
+                                                            const std::vector<uint16_t>& wordWidths) {
+  if (words.empty()) {
+    return {};
+  }
+  const int cellStep = verticalCellStep(renderer, fontId);
+  std::vector<size_t> columnBreakIndices;
+  size_t i = 0;
+  const size_t total = words.size();
+  while (i < total) {
+    int y = 0;
+    size_t j = i;
+    while (j < total) {
+      const int gap = verticalGapBeforeWord(renderer, fontId, words, wordStyles, wordContinues, wordNoSpaceBefore, j);
+      const int extent = verticalExtentForWord(renderer, fontId, words[j], wordStyles[j], cellStep, wordWidths[j],
+                                               isSidewaysVerticalWordAt(words, j));
+      if (y + gap + extent > columnHeight && j > i) {
+        break;
+      }
+      y += gap + extent;
+      j++;
+      if (y > columnHeight && j == i + 1) {
+        break;
+      }
+    }
+    // Kinsoku shori: closing punctuation must not begin the next vertical
+    // column. Move the preceding token with it instead of leaving punctuation
+    // alone at the column top.
+    if (j < total && j > i + 1 && isNoBreakBeforeCjkPunctuation(firstCodepoint(words[j]))) {
+      --j;
+    }
+    if (j <= i) {
+      j = i + 1;
+    }
+    columnBreakIndices.push_back(j);
+    i = j;
+  }
+  return columnBreakIndices;
+}
+
+void ParsedText::extractVerticalColumn(const size_t startIdx, const size_t endIdx,
+                                       const std::vector<uint16_t>& wordWidths, const GfxRenderer& renderer,
+                                       const int fontId, const int cellStep,
+                                       const std::function<void(std::shared_ptr<TextBlock>)>& processLine) {
+  const size_t columnWordCount = endIdx - startIdx;
+  if (columnWordCount == 0) {
+    return;
+  }
+
+  std::vector<std::string> columnWords;
+  std::vector<EpdFontFamily::Style> columnStyles;
+  std::vector<int16_t> columnYPos;
+  columnWords.reserve(columnWordCount);
+  columnStyles.reserve(columnWordCount);
+  columnYPos.reserve(columnWordCount);
+
+  int ypos = 0;
+  for (size_t i = startIdx; i < endIdx; ++i) {
+    ypos += verticalGapBeforeWord(renderer, fontId, words, wordStyles, wordContinues, wordNoSpaceBefore, i);
+    columnWords.push_back(words[i]);
+    columnStyles.push_back(wordStyles[i]);
+    columnYPos.push_back(static_cast<int16_t>(ypos));
+    ypos += verticalExtentForWord(renderer, fontId, words[i], wordStyles[i], cellStep, wordWidths[i],
+                                  isSidewaysVerticalWordAt(words, i));
+  }
+
+  processLine(std::make_shared<TextBlock>(std::move(columnWords), std::move(columnYPos), std::move(columnStyles),
+                                          std::vector<uint8_t>{}, std::vector<uint16_t>{}, blockStyle));
+}
+
+void ParsedText::layoutAndExtractVerticalColumns(const GfxRenderer& renderer, const int fontId,
+                                                 const uint16_t columnHeight,
+                                                 const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
+                                                 const bool includeLastLine) {
+  VerticalPunctRemapState punctState;
+  for (auto& w : words) {
+    remapVerticalPunctuationInPlace(w, punctState);
+  }
+
+  if (renderer.isSdCardFont(fontId)) {
+    uint8_t styleMask = 0;
+    for (auto s : wordStyles) {
+      styleMask |= static_cast<uint8_t>(1u << (static_cast<uint8_t>(s) & 0x03));
+    }
+    if (styleMask == 0) styleMask = 0x01;
+    renderer.ensureSdCardFontReady(fontId, words, false, styleMask);
+  }
+
+  const int cellStep = verticalCellStep(renderer, fontId);
+  auto wordWidths = calculateWordWidths(renderer, fontId);
+  auto columnBreakIndices = computeVerticalColumnBreaks(renderer, fontId, columnHeight, wordWidths);
+  const size_t columnCount =
+      includeLastLine ? columnBreakIndices.size() : (columnBreakIndices.empty() ? 0 : columnBreakIndices.size() - 1);
+
+  size_t startIdx = 0;
+  for (size_t col = 0; col < columnCount; ++col) {
+    const size_t endIdx = columnBreakIndices[col];
+    extractVerticalColumn(startIdx, endIdx, wordWidths, renderer, fontId, cellStep, processLine);
+    startIdx = endIdx;
+  }
+
+  if (columnCount > 0) {
+    const size_t consumed = columnBreakIndices[columnCount - 1];
+    words.erase(words.begin(), words.begin() + static_cast<std::ptrdiff_t>(consumed));
+    wordStyles.erase(wordStyles.begin(), wordStyles.begin() + static_cast<std::ptrdiff_t>(consumed));
+    wordContinues.erase(wordContinues.begin(), wordContinues.begin() + static_cast<std::ptrdiff_t>(consumed));
+    wordNoSpaceBefore.erase(wordNoSpaceBefore.begin(),
+                            wordNoSpaceBefore.begin() + static_cast<std::ptrdiff_t>(consumed));
+    wordIsFocusSuffix.erase(wordIsFocusSuffix.begin(),
+                            wordIsFocusSuffix.begin() + static_cast<std::ptrdiff_t>(consumed));
   }
 }
 

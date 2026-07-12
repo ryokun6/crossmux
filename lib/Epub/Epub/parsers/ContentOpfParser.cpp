@@ -133,6 +133,14 @@ void XMLCALL ContentOpfParser::startElement(void* userData, const XML_Char* name
 
   if (self->state == IN_PACKAGE && (strcmp(name, "spine") == 0 || strcmp(name, "opf:spine") == 0)) {
     self->state = IN_SPINE;
+    for (int i = 0; atts[i]; i += 2) {
+      if ((strcmp(atts[i], "page-progression-direction") == 0 ||
+           strcmp(atts[i], "opf:page-progression-direction") == 0) &&
+          strcmp(atts[i + 1], "rtl") == 0) {
+        self->pageProgressionRtl = true;
+        break;
+      }
+    }
     if (!Storage.openFileForRead("COF", self->cachePath + itemCacheFile, self->tempItemStore)) {
       LOG_ERR("COF", "Couldn't open temp items file for reading. This is probably going to be a fatal error.");
     }

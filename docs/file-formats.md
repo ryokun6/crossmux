@@ -6,18 +6,14 @@ All POD fields are written in the ESP32 little-endian representation used by
 
 ## `book.bin`
 
-### Version 9
+### Version 10
 
 `book.bin` stores EPUB metadata plus lookup tables for spine and TOC entries.
 The current firmware writes this version from `BookMetadataCache`.
 
-> Version 9 was set on the upstream-master sync. The byte layout is identical to
-> the fork's 8 and upstream's 8 (both added the `language` metadata field), but
-> those two v8 lineages stored TOC/book titles un-normalized while upstream now
-> NFC-composes them (#2277). Because the `version != EXPECTED_VERSION` check
-> cannot distinguish "same number, NFC vs non-NFC", 9 forces a one-time clean
-> re-parse that re-composes existing caches' titles to NFC. `BookMetadataCache.cpp`
-> is the source of truth.
+> Version 10 adds `pageProgressionRtl`, parsed from the OPF spine's
+> `page-progression-direction="rtl"` attribute. Version 9 added NFC-composed
+> titles. `BookMetadataCache.cpp` is the source of truth.
 
 ImHex pattern:
 
@@ -26,7 +22,7 @@ import std.mem;
 import std.string;
 import std.core;
 
-#define EXPECTED_VERSION 9
+#define EXPECTED_VERSION 10
 #define MAX_STRING_LENGTH 65535
 
 struct String {
@@ -45,6 +41,7 @@ struct Metadata {
     String title [[comment("Book title")]];
     String author [[comment("Book author")]];
     String language [[comment("Book language code")]];
+    bool pageProgressionRtl [[comment("OPF spine page progression is right-to-left")]];
     String coverItemHref [[comment("Path to cover image")]];
     String textReferenceHref [[comment("Path to guided first text reference")]];
 };
@@ -101,17 +98,21 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry an independent version counter,
-> currently **33**. The byte layout is identical to the Latin version below; only
+> currently **46**. The byte layout is identical to the Latin version below; only
 > the word-stream contents differ (per-character CJK tokenization), so caches are
 > not reusable across flavors.
 >
-> Both counters were bumped in the upstream-master sync that NFC-composes words
-> (#2277) and serializes `blockStyle.isRtl` / `blockStyle.directionDefined` per
-> text block (#1700): those change the serialized word-stream/style content, so
-> pre-sync caches are auto-invalidated on mismatch. The numbers are kept above
-> every previously-shipped value (Latin 24/26/30, Chinese 27/29/31, upstream
-> single 26/27) so a firmware flavor swap never reads the other flavor's stale
-> cache. `lib/Epub/Epub/Section.cpp` is the source of truth.
+> Latin builds use version **45** (was 44). Counters track `writingMode`, em-based
+> in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
+> (﹁﹂︵︒ etc.), horizontal inter-paragraph spacing in vertical-rl, and normal
+> brackets in rotated numeric references such as `[12]`. Vertical column breaks
+> also enforce kinsoku so closing punctuation cannot begin a column; repeated
+> vertical dashes stack and consume one character cell each. Sideways Latin
+> preserves source word spaces and punctuation, and adds a 2px gap at
+> upright/sideways boundaries. One- and two-character Latin/numeric tokens rotate
+> when they belong to a phrase, while isolated short numbers retain 縦中横.
+> Large-only image mode suppresses inline images and standalone assets whose
+> intrinsic or displayed dimensions are below the large-image threshold.
 
 
 Each file in `sections/*.bin` stores one laid-out spine section. The header is
@@ -120,8 +121,8 @@ current reader settings, the section is discarded and rebuilt.
 
 Version 32 includes:
 
-- cache-busting fields for paragraph alignment, hyphenation, embedded CSS,
-  image rendering mode, and Focus Reading
+- cache-busting fields for paragraph alignment, writing mode (horizontal /
+  vertical-rl), hyphenation, embedded CSS, image rendering mode, and Focus Reading
 - page offset LUT
 - anchor-to-page map for fragment and footnote navigation
 - paragraph and list-item LUTs used by KOReader sync page refinement

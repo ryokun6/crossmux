@@ -10,11 +10,13 @@
 EpubReaderMenuActivity::EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                                const std::string& title, const int currentPage, const int totalPages,
                                                const int bookProgressPercent, const uint8_t currentOrientation,
-                                               const bool hasFootnotes, const bool hasBookmarks)
+                                               const uint8_t currentWritingMode, const bool hasFootnotes,
+                                               const bool hasBookmarks)
     : Activity("EpubReaderMenu", renderer, mappedInput),
       menuItems(buildMenuItems(hasFootnotes, hasBookmarks)),
       title(title),
       pendingOrientation(currentOrientation),
+      pendingWritingMode(currentWritingMode),
       currentPage(currentPage),
       totalPages(totalPages),
       bookProgressPercent(bookProgressPercent) {}
@@ -32,6 +34,7 @@ std::vector<EpubReaderMenuActivity::MenuItem> EpubReaderMenuActivity::buildMenuI
   }
   items.push_back({MenuAction::TOGGLE_BOOKMARK, StrId::STR_TOGGLE_BOOKMARK});
   items.push_back({MenuAction::ROTATE_SCREEN, StrId::STR_ORIENTATION});
+  items.push_back({MenuAction::TOGGLE_WRITING_MODE, StrId::STR_WRITING_MODE});
   items.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_PAGES_PER_MIN});
   items.push_back({MenuAction::GO_TO_PERCENT, StrId::STR_GO_TO_PERCENT});
   items.push_back({MenuAction::SCREENSHOT, StrId::STR_SCREENSHOT_BUTTON});
@@ -70,19 +73,26 @@ void EpubReaderMenuActivity::loop() {
       return;
     }
 
+    if (selectedAction == MenuAction::TOGGLE_WRITING_MODE) {
+      pendingWritingMode = (pendingWritingMode + 1) % writingModeLabels.size();
+      requestUpdate();
+      return;
+    }
+
     if (selectedAction == MenuAction::AUTO_PAGE_TURN) {
       selectedPageTurnOption = (selectedPageTurnOption + 1) % pageTurnLabels.size();
       requestUpdate();
       return;
     }
 
-    setResult(MenuResult{static_cast<int>(selectedAction), pendingOrientation, selectedPageTurnOption});
+    setResult(
+        MenuResult{static_cast<int>(selectedAction), pendingOrientation, selectedPageTurnOption, pendingWritingMode});
     finish();
     return;
   } else if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     ActivityResult result;
     result.isCancelled = true;
-    result.data = MenuResult{-1, pendingOrientation, selectedPageTurnOption};
+    result.data = MenuResult{-1, pendingOrientation, selectedPageTurnOption, pendingWritingMode};
     setResult(std::move(result));
     finish();
     return;
@@ -122,6 +132,8 @@ void EpubReaderMenuActivity::render(RenderLock&&) {
         if (value == MenuAction::ROTATE_SCREEN) {
           // Render current orientation value on the right edge of the content area.
           return I18N.get(orientationLabels[pendingOrientation]);
+        } else if (value == MenuAction::TOGGLE_WRITING_MODE) {
+          return I18N.get(writingModeLabels[pendingWritingMode]);
         } else if (value == MenuAction::AUTO_PAGE_TURN) {
           // Render current page turn value on the right edge of the content area.
           return pageTurnLabels[selectedPageTurnOption];

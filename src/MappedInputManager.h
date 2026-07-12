@@ -33,6 +33,10 @@ class MappedInputManager {
   // LANDSCAPE_CCW). Keyed on the live renderer orientation rather than the persisted reader setting,
   // so portrait UI (home, settings) never swaps while the reader and its menus do.
   [[nodiscard]] bool isNavDirectionSwapped() const;
+  // EPUB reader sets this from the OPF spine. Vertical-rl also reverses controls
+  // independently, so callers use the combined query below.
+  void setPageProgressionRtl(const bool rtl) { pageProgressionRtl = rtl; }
+  [[nodiscard]] bool isPageTurnDirectionReversed() const;
 
  private:
   HalGPIO& gpio;
@@ -42,6 +46,7 @@ class MappedInputManager {
   // read it here instead of CrossPointSettings.orientation, which is just the persisted reader
   // preference and stays "rotated" even while portrait UI like home/settings is on screen.
   const GfxRenderer& renderer;
+  bool pageProgressionRtl = false;
 
   bool mapButton(Button button, bool (HalGPIO::*fn)(uint8_t) const) const;
 };

@@ -4,8 +4,79 @@
 #include <GfxRenderer.h>
 #include <Logging.h>
 #include <Serialization.h>
+#include <Utf8.h>
 
 #include <cstring>
+
+namespace {
+bool isVerticalUprightWord(const std::string& word) {
+  size_t upright = 0;
+  size_t total = 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (cp == 0x00AD) continue;
+    total++;
+    if (utf8IsCjkBreakable(cp)) upright++;
+  }
+  return total > 0 && upright * 2 >= total;
+}
+
+// 縦中横: short ASCII digit/letter runs stay upright in one em cell (years like
+// "19" fit; longer runs still rotate sideways down the column).
+bool isTateChuYokoWord(const std::string& word) {
+  size_t n = 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (cp == 0x00AD) continue;
+    const bool asciiWordChar = (cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z');
+    if (!asciiWordChar) return false;
+    n++;
+    if (n > 2) return false;
+  }
+  return n > 0;
+}
+
+bool containsAsciiAlphaNumeric(const std::string& word) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) return false;
+    if ((cp >= '0' && cp <= '9') || (cp >= 'A' && cp <= 'Z') || (cp >= 'a' && cp <= 'z')) {
+      return true;
+    }
+  }
+}
+
+size_t verticalDashRunLength(const std::string& word) {
+  size_t count = 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
+  while (true) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    if (cp != 0xFE31 && cp != 0xFE32) return 0;  // ︱ / ︲
+    ++count;
+  }
+  return count >= 2 ? count : 0;
+}
+
+bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_t index) {
+  const std::string& word = words[index];
+  if (verticalDashRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word)) {
+    return true;
+  }
+  if (!isTateChuYokoWord(word)) {
+    return false;
+  }
+  const bool latinBefore = index > 0 && containsAsciiAlphaNumeric(words[index - 1]);
+  const bool latinAfter = index + 1 < words.size() && containsAsciiAlphaNumeric(words[index + 1]);
+  return latinBefore || latinAfter;
+}
+}  // namespace
+
 uint8_t TextBlock::fakeBold = 0;
 void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int x, const int y) const {
   // Focus annotations are optional: empty vectors mean no word in this block has a split.
@@ -21,22 +92,53 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
 
   const bool scanning = renderer.isFontCacheScanning();
   const int ascender = renderer.getFontAscenderSize(fontId);
+  const bool verticalRtl = blockStyle.isVerticalRtl;
   for (size_t i = 0; i < words.size(); i++) {
-    const int wordX = wordXpos[i] + x;
+    const int wordX = verticalRtl ? x : wordXpos[i] + x;
+    const int wordY = verticalRtl ? y + wordXpos[i] : y;
     const EpdFontFamily::Style currentStyle = wordStyles[i];
     const auto baseDir = static_cast<BidiUtils::BidiBaseDir>(
         BidiUtils::detectParagraphLevel(words[i].c_str(), blockStyle.isRtl ? 1 : 0));
     const uint8_t boundary = hasFocus ? wordFocusBoundary[i] : 0;
 
-    // SUP/SUB shift the baseline passed to drawText; the glyph is also scaled 50% inside
-    // drawText, so these offsets are chosen relative to the full-size ascender:
-    //   SUP: raise by 40% of ascender — sits clearly above the cap-height
-    //   SUB: lower by 25% of ascender — descends below baseline without clashing with ascenders below
-    int wordY = y;
-    if ((currentStyle & EpdFontFamily::SUP) != 0) {
-      wordY -= ascender * 2 / 5;
+    // SUP/SUB shift the baseline passed to the renderer; glyphs are scaled 50% there.
+    // Horizontal text shifts along Y; vertical text rotates the same shift onto X.
+    int drawX = wordX;
+    int drawY = wordY;
+    if (verticalRtl) {
+      // A baseline shift rotates with the text: superscript moves toward the
+      // right edge of the column, not upward into the preceding character.
+      if ((currentStyle & EpdFontFamily::SUP) != 0) {
+        drawX += ascender * 2 / 5;
+      } else if ((currentStyle & EpdFontFamily::SUB) != 0) {
+        drawX -= ascender / 4;
+      }
+    } else if ((currentStyle & EpdFontFamily::SUP) != 0) {
+      drawY -= ascender * 2 / 5;
     } else if ((currentStyle & EpdFontFamily::SUB) != 0) {
-      wordY += ascender / 4;
+      drawY += ascender / 4;
+    }
+
+    const size_t dashCount = verticalRtl ? verticalDashRunLength(words[i]) : 0;
+    if (dashCount > 0) {
+      int cellStep = renderer.getTextAdvanceX(fontId, "\xe6\x9c\xac", EpdFontFamily::REGULAR);  // 本
+      if (cellStep <= 0) cellStep = ascender;
+
+      const auto* dashPtr = reinterpret_cast<const unsigned char*>(words[i].c_str());
+      for (size_t dashIndex = 0; dashIndex < dashCount; ++dashIndex) {
+        const uint32_t cp = utf8NextCodepoint(&dashPtr);
+        const char* dash = cp == 0xFE31 ? "\xef\xb8\xb1" : "\xef\xb8\xb2";  // ︱ / ︲
+        renderer.drawText(fontId, drawX, drawY + static_cast<int>(dashIndex) * cellStep, dash, true, currentStyle,
+                          baseDir);
+      }
+      continue;
+    }
+
+    if (verticalRtl && isSidewaysVerticalWordAt(words, i)) {
+      // Sideways Latin in vertical-rl: CCW (un-flipped vs CW side-button helper) and
+      // advance down the reserved cell so the run cannot climb into the previous glyph.
+      renderer.drawTextRotated90CCW(fontId, drawX, drawY, words[i].c_str(), true, currentStyle);
+      continue;
     }
 
     if (boundary > 0) {
@@ -52,28 +154,28 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
       const size_t boldLen = std::min<size_t>({static_cast<size_t>(boundary), words[i].size(), sizeof(boldBuf) - 1});
       memcpy(boldBuf, words[i].c_str(), boldLen);
       boldBuf[boldLen] = '\0';
-      renderer.drawText(fontId, wordX, wordY, boldBuf, true, boldStyle, baseDir);
-      const int suffixX = wordX + wordFocusSuffixX[i];
-      renderer.drawText(fontId, suffixX, wordY, words[i].c_str() + boldLen, true, currentStyle, baseDir);
+      renderer.drawText(fontId, drawX, drawY, boldBuf, true, boldStyle, baseDir);
+      const int suffixX = drawX + wordFocusSuffixX[i];
+      renderer.drawText(fontId, suffixX, drawY, words[i].c_str() + boldLen, true, currentStyle, baseDir);
     } else {
       if (fakeBold && (currentStyle & EpdFontFamily::BOLD) != 0) {
         auto fbStyle = static_cast<EpdFontFamily::Style>(currentStyle & ~EpdFontFamily::BOLD);
         if (fakeBold >= 2) {
           // Extra Bold: 3-pass at x-1, x, x+1
-          renderer.drawText(fontId, wordX - 1, wordY, words[i].c_str(), true, fbStyle, baseDir);
-          renderer.drawText(fontId, wordX, wordY, words[i].c_str(), true, fbStyle, baseDir);
-          renderer.drawText(fontId, wordX + 1, wordY, words[i].c_str(), true, fbStyle, baseDir);
+          renderer.drawText(fontId, drawX - 1, drawY, words[i].c_str(), true, fbStyle, baseDir);
+          renderer.drawText(fontId, drawX, drawY, words[i].c_str(), true, fbStyle, baseDir);
+          renderer.drawText(fontId, drawX + 1, drawY, words[i].c_str(), true, fbStyle, baseDir);
         } else {
           // Bold: 2-pass at x, x+1
-          renderer.drawText(fontId, wordX, wordY, words[i].c_str(), true, fbStyle, baseDir);
-          renderer.drawText(fontId, wordX + 1, wordY, words[i].c_str(), true, fbStyle, baseDir);
+          renderer.drawText(fontId, drawX, drawY, words[i].c_str(), true, fbStyle, baseDir);
+          renderer.drawText(fontId, drawX + 1, drawY, words[i].c_str(), true, fbStyle, baseDir);
         }
       } else {
-        renderer.drawText(fontId, wordX, wordY, words[i].c_str(), true, currentStyle, baseDir);
+        renderer.drawText(fontId, drawX, drawY, words[i].c_str(), true, currentStyle, baseDir);
       }
     }
 
-    if (!scanning && (currentStyle & EpdFontFamily::UNDERLINE) != 0) {
+    if (!scanning && !verticalRtl && (currentStyle & EpdFontFamily::UNDERLINE) != 0) {
       const std::string& w = words[i];
       const int fullWordWidth = renderer.getTextWidth(fontId, w.c_str(), currentStyle, baseDir);
       // y is the top of the text line; add ascender to reach baseline, then offset 2px below
@@ -143,6 +245,7 @@ bool TextBlock::serialize(HalFile& file) const {
   serialization::writePod(file, blockStyle.textIndentDefined);
   serialization::writePod(file, blockStyle.isRtl);
   serialization::writePod(file, blockStyle.directionDefined);
+  serialization::writePod(file, blockStyle.isVerticalRtl);
 
   return true;
 }
@@ -198,6 +301,7 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
   serialization::readPod(file, blockStyle.textIndentDefined);
   serialization::readPod(file, blockStyle.isRtl);
   serialization::readPod(file, blockStyle.directionDefined);
+  serialization::readPod(file, blockStyle.isVerticalRtl);
 
   return std::unique_ptr<TextBlock>(new TextBlock(std::move(words), std::move(wordXpos), std::move(wordStyles),
                                                   std::move(wordFocusBoundary), std::move(wordFocusSuffixX),

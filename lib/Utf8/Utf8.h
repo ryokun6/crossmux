@@ -37,6 +37,7 @@ inline bool utf8IsCjkBreakable(const uint32_t cp) {
          || (cp >= 0xAC00 && cp <= 0xD7AF)     // Hangul Syllables
          || (cp >= 0xD7B0 && cp <= 0xD7FF)     // Hangul Jamo Extended-B
          || (cp >= 0xF900 && cp <= 0xFAFF)     // CJK Compatibility Ideographs
+         || (cp >= 0xFE10 && cp <= 0xFE1F)     // Vertical Forms (︐︒︵ etc.)
          || (cp >= 0xFE30 && cp <= 0xFE4F)     // CJK Compatibility Forms
          || (cp >= 0xFF01 && cp <= 0xFF60)     // Fullwidth Latin / Punctuation
          || (cp >= 0xFF65 && cp <= 0xFFEF)     // Halfwidth Katakana / Hangul

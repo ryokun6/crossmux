@@ -21,6 +21,7 @@
 // Minimum file size (in bytes) to show indexing popup - smaller chapters don't benefit from it
 constexpr size_t MIN_SIZE_FOR_POPUP = 10 * 1024;  // 10KB
 constexpr size_t PARSE_BUFFER_SIZE = 1024;
+constexpr int MIN_LARGE_IMAGE_EDGE_PX = 48;
 
 // Hard cap on the number of anchor IDs recorded per chapter. Legitimate navigation
 // anchors (TOC entries, footnotes, cross-references) rarely exceed a few hundred per
@@ -76,6 +77,11 @@ bool isInternalEpubLink(const char* href) {
 
 bool isHeaderOrBlock(const char* name) {
   return matches(name, HEADER_TAGS, std::size(HEADER_TAGS)) || matches(name, BLOCK_TAGS, std::size(BLOCK_TAGS));
+}
+
+bool isInlineImageContainer(const char* name) {
+  return strcmp(name, "p") == 0 || strcmp(name, "li") == 0 || strcmp(name, "td") == 0 || strcmp(name, "th") == 0 ||
+         matches(name, HEADER_TAGS, std::size(HEADER_TAGS));
 }
 
 bool isTableStructuralTag(const char* name) {
@@ -202,7 +208,11 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
       // open. Merge those into the new style so the first child in a container inherits
       // the container's vertical spacing.
       const auto style = currentTextBlock->getBlockStyle();
-      currentTextBlock->setBlockStyle(style.getCombinedBlockStyle(blockStyle, BlockStyle::CombineAxis::Vertical));
+      auto combined = style.getCombinedBlockStyle(blockStyle, BlockStyle::CombineAxis::Vertical);
+      if (writingMode == 1) {
+        combined.isVerticalRtl = true;
+      }
+      currentTextBlock->setBlockStyle(combined);
 
       flushPendingAnchor();
       return;
@@ -214,6 +224,11 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   // block is flushed so the chapter starts on a fresh page.
   flushPendingAnchor();
   currentTextBlock.reset(new ParsedText(extraParagraphSpacing, hyphenationEnabled, focusReadingEnabled, blockStyle));
+  if (writingMode == 1) {
+    auto style = currentTextBlock->getBlockStyle();
+    style.isVerticalRtl = true;
+    currentTextBlock->setBlockStyle(style);
+  }
   wordsExtractedInBlock = 0;
 }
 
@@ -293,6 +308,9 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
   }
   if (strcmp(name, "li") == 0) {
     self->xpathListItemIndex++;
+  }
+  if (self->inlineImageContainerDepth < 0 && isInlineImageContainer(name)) {
+    self->inlineImageContainerDepth = self->depth;
   }
 
   // Extract class, style, id, and dir attributes for CSS/RTL processing
@@ -454,9 +472,17 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       }
 
       // imageRendering: 0=display, 1=placeholder (alt text only), 2=suppress,
-      // 3=large only (skip small icons/dividers after layout size is known).
+      // 3=large only (suppress inline images, then filter standalone images by size).
       // Values match CrossPointSettings::IMAGE_RENDERING.
       if (self->imageRendering == 2) {
+        self->skipUntilDepth = self->depth;
+        self->depth += 1;
+        return;
+      }
+      const bool inlineWithText =
+          self->inlineImageContainerDepth >= 0 || self->partWordBufferIndex > 0 || self->nextWordContinues;
+      if (self->imageRendering == 3 && inlineWithText) {
+        LOG_DBG("EHP", "Skipping inline image in large-only mode: %s", src.c_str());
         self->skipUntilDepth = self->depth;
         self->depth += 1;
         return;
@@ -608,11 +634,13 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                 }
 
                 // Large-only: keep figures, drop icons and thin dividers. Threshold is
-                // post-CSS layout size so width:100%;height:2px rules still count as small.
+                // enforced on both source and post-CSS dimensions so styles cannot upscale
+                // a tiny icon enough to pass as a figure.
                 if (self->imageRendering == 3) {
-                  constexpr int kMinLargeEdgePx = 48;
-                  if (displayWidth < kMinLargeEdgePx || displayHeight < kMinLargeEdgePx) {
-                    LOG_DBG("EHP", "Skipping small image %dx%d (large-only mode)", displayWidth, displayHeight);
+                  if (dims.width < MIN_LARGE_IMAGE_EDGE_PX || dims.height < MIN_LARGE_IMAGE_EDGE_PX ||
+                      displayWidth < MIN_LARGE_IMAGE_EDGE_PX || displayHeight < MIN_LARGE_IMAGE_EDGE_PX) {
+                    LOG_DBG("EHP", "Skipping small image source=%dx%d display=%dx%d (large-only mode)", dims.width,
+                            dims.height, displayWidth, displayHeight);
                     Storage.remove(cachedImagePath.c_str());
                     self->skipUntilDepth = self->depth;
                     self->depth += 1;
@@ -1161,13 +1189,24 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
   // Spotted when reading Intermezzo, there are some really long text blocks in there.
   if (self->currentTextBlock->size() > 750) {
     LOG_DBG("EHP", "Text block too long, splitting into multiple pages");
-    const int horizontalInset = self->currentTextBlock->getBlockStyle().totalHorizontalInset();
-    const uint16_t effectiveWidth = (horizontalInset < self->viewportWidth)
-                                        ? static_cast<uint16_t>(self->viewportWidth - horizontalInset)
-                                        : self->viewportWidth;
-    self->currentTextBlock->layoutAndExtractLines(
-        self->renderer, self->fontId, effectiveWidth,
-        [self](const std::shared_ptr<TextBlock>& textBlock) { self->addLineToPage(textBlock); }, false);
+    if (self->writingMode == 1) {
+      const int topUsed = self->currentPageNextY + self->currentTextBlock->getBlockStyle().topInset();
+      const uint16_t effectiveHeight = topUsed < static_cast<int>(self->viewportHeight)
+                                           ? static_cast<uint16_t>(self->viewportHeight - topUsed)
+                                           : self->viewportHeight;
+      self->currentTextBlock->layoutAndExtractLines(
+          self->renderer, self->fontId, 0,
+          [self](const std::shared_ptr<TextBlock>& textBlock) { self->addLineToPage(textBlock); }, false,
+          effectiveHeight);
+    } else {
+      const int horizontalInset = self->currentTextBlock->getBlockStyle().totalHorizontalInset();
+      const uint16_t effectiveWidth = (horizontalInset < self->viewportWidth)
+                                          ? static_cast<uint16_t>(self->viewportWidth - horizontalInset)
+                                          : self->viewportWidth;
+      self->currentTextBlock->layoutAndExtractLines(
+          self->renderer, self->fontId, effectiveWidth,
+          [self](const std::shared_ptr<TextBlock>& textBlock) { self->addLineToPage(textBlock); }, false);
+    }
   }
 }
 
@@ -1231,6 +1270,10 @@ void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* n
   }
 
   self->depth -= 1;
+
+  if (self->inlineImageContainerDepth == self->depth && isInlineImageContainer(name)) {
+    self->inlineImageContainerDepth = -1;
+  }
 
   // Closing a footnote link — create entry from collected text and href
   if (self->insideFootnoteLink && self->depth == self->footnoteLinkDepth) {
@@ -1405,11 +1448,43 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
 }
 
 void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
-  const int lineHeight = renderer.getLineHeight(fontId) * lineCompression;
+  const int lineHeight = static_cast<int>(renderer.getLineHeight(fontId) * lineCompression);
+  const bool verticalRtl = writingMode == 1;
+  const int columnPitch = lineHeight;
 
   if (!currentPage) {
     currentPage.reset(new Page());
     currentPageNextY = 0;
+    if (verticalRtl) {
+      currentPageNextX = static_cast<int16_t>(viewportWidth - line->getBlockStyle().rightInset());
+    }
+  }
+
+  if (verticalRtl) {
+    const BlockStyle& bs = line->getBlockStyle();
+    const int leftBound = bs.leftInset();
+
+    if (currentPageNextX - columnPitch < leftBound) {
+      completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
+      completedPageCount++;
+      currentPage.reset(new Page());
+      currentPageNextY = 0;
+      currentPageNextX = static_cast<int16_t>(viewportWidth - bs.rightInset());
+    }
+
+    wordsExtractedInBlock += line->wordCount();
+    auto footnoteIt = pendingFootnotes.begin();
+    while (footnoteIt != pendingFootnotes.end() && footnoteIt->first <= wordsExtractedInBlock) {
+      currentPage->addFootnote(footnoteIt->second.number, footnoteIt->second.href);
+      ++footnoteIt;
+    }
+    pendingFootnotes.erase(pendingFootnotes.begin(), footnoteIt);
+
+    const int16_t colX = static_cast<int16_t>(currentPageNextX - columnPitch);
+    const int16_t yOffset = static_cast<int16_t>(currentPageNextY + bs.topInset());
+    currentPage->elements.push_back(std::make_shared<PageLine>(line, colX, yOffset));
+    currentPageNextX = colX;
+    return;
   }
 
   if (currentPageNextY + lineHeight > viewportHeight) {
@@ -1443,9 +1518,13 @@ void ChapterHtmlSlimParser::makePages() {
   if (!currentPage) {
     currentPage.reset(new Page());
     currentPageNextY = 0;
+    if (writingMode == 1) {
+      currentPageNextX = static_cast<int16_t>(viewportWidth);
+    }
   }
 
-  const int lineHeight = renderer.getLineHeight(fontId) * lineCompression;
+  const int lineHeight = static_cast<int>(renderer.getLineHeight(fontId) * lineCompression);
+  const bool verticalRtl = writingMode == 1;
 
   // Apply top spacing before the paragraph (stored in pixels)
   const BlockStyle& blockStyle = currentTextBlock->getBlockStyle();
@@ -1456,14 +1535,23 @@ void ChapterHtmlSlimParser::makePages() {
     currentPageNextY += blockStyle.paddingTop;
   }
 
-  // Calculate effective width accounting for horizontal margins/padding
-  const int horizontalInset = blockStyle.totalHorizontalInset();
-  const uint16_t effectiveWidth =
-      (horizontalInset < viewportWidth) ? static_cast<uint16_t>(viewportWidth - horizontalInset) : viewportWidth;
+  if (verticalRtl) {
+    const int topUsed = currentPageNextY + blockStyle.topInset();
+    const uint16_t effectiveHeight =
+        topUsed < static_cast<int>(viewportHeight) ? static_cast<uint16_t>(viewportHeight - topUsed) : viewportHeight;
+    currentTextBlock->layoutAndExtractLines(
+        renderer, fontId, 0, [this](const std::shared_ptr<TextBlock>& textBlock) { addLineToPage(textBlock); }, true,
+        effectiveHeight);
+  } else {
+    // Calculate effective width accounting for horizontal margins/padding
+    const int horizontalInset = blockStyle.totalHorizontalInset();
+    const uint16_t effectiveWidth =
+        (horizontalInset < viewportWidth) ? static_cast<uint16_t>(viewportWidth - horizontalInset) : viewportWidth;
 
-  currentTextBlock->layoutAndExtractLines(
-      renderer, fontId, effectiveWidth,
-      [this](const std::shared_ptr<TextBlock>& textBlock) { addLineToPage(textBlock); });
+    currentTextBlock->layoutAndExtractLines(
+        renderer, fontId, effectiveWidth,
+        [this](const std::shared_ptr<TextBlock>& textBlock) { addLineToPage(textBlock); });
+  }
 
   // Fallback: transfer any remaining pending footnotes to current page.
   // Normally addLineToPage handles this via word-index tracking, but this catches
@@ -1485,6 +1573,12 @@ void ChapterHtmlSlimParser::makePages() {
 
   // Extra paragraph spacing if enabled (default behavior)
   if (extraParagraphSpacing) {
-    currentPageNextY += lineHeight / 2;
+    if (verticalRtl) {
+      // Columns progress right-to-left, so paragraph separation belongs between
+      // columns rather than above the first character of the next paragraph.
+      currentPageNextX -= lineHeight / 2;
+    } else {
+      currentPageNextY += lineHeight / 2;
+    }
   }
 }

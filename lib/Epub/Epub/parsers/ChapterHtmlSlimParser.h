@@ -40,10 +40,12 @@ class ChapterHtmlSlimParser {
   std::unique_ptr<ParsedText> currentTextBlock = nullptr;
   std::unique_ptr<Page> currentPage = nullptr;
   int16_t currentPageNextY = 0;
+  int16_t currentPageNextX = 0;
   int fontId;
   float lineCompression;
   bool extraParagraphSpacing;
   uint8_t paragraphAlignment;
+  uint8_t writingMode;
   uint16_t viewportWidth;
   uint16_t viewportHeight;
   bool hyphenationEnabled;
@@ -79,6 +81,9 @@ class ChapterHtmlSlimParser {
   int tableDepth = 0;
   int tableRowIndex = 0;
   int tableColIndex = 0;
+  // Depth of the outermost paragraph/list/header containing inline prose.
+  // Used by "large images only" to reject icons embedded in text before extraction.
+  int inlineImageContainerDepth = -1;
 
   // Anchor-to-page mapping: tracks which page each HTML id attribute lands on
   int completedPageCount = 0;
@@ -112,9 +117,9 @@ class ChapterHtmlSlimParser {
  public:
   explicit ChapterHtmlSlimParser(std::shared_ptr<Epub> epub, const std::string& filepath, GfxRenderer& renderer,
                                  const int fontId, const float lineCompression, const bool extraParagraphSpacing,
-                                 const uint8_t paragraphAlignment, const uint16_t viewportWidth,
-                                 const uint16_t viewportHeight, const bool hyphenationEnabled,
-                                 const bool focusReadingEnabled,
+                                 const uint8_t paragraphAlignment, const uint8_t writingMode,
+                                 const uint16_t viewportWidth, const uint16_t viewportHeight,
+                                 const bool hyphenationEnabled, const bool focusReadingEnabled,
                                  const std::function<void(std::unique_ptr<Page>, uint16_t, uint16_t)>& completePageFn,
                                  const bool embeddedStyle, const std::string& contentBase,
                                  const std::string& imageBasePath, const uint8_t imageRendering = 0,
@@ -128,10 +133,11 @@ class ChapterHtmlSlimParser {
         lineCompression(lineCompression),
         extraParagraphSpacing(extraParagraphSpacing),
         paragraphAlignment(paragraphAlignment),
+        writingMode(writingMode),
         viewportWidth(viewportWidth),
         viewportHeight(viewportHeight),
-        hyphenationEnabled(hyphenationEnabled),
-        focusReadingEnabled(focusReadingEnabled),
+        hyphenationEnabled(hyphenationEnabled && writingMode != 1),
+        focusReadingEnabled(focusReadingEnabled && writingMode != 1),
         completePageFn(completePageFn),
         popupFn(popupFn),
         cssParser(cssParser),

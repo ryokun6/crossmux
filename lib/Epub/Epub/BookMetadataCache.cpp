@@ -10,12 +10,9 @@
 #include "FsHelpers.h"
 
 namespace {
-// v9: TOC/book titles stored NFC-composed (upstream NFC normalization). The byte
-// layout is identical to the fork's v8 and upstream's v8 (both added the `language`
-// field), but those two v8 lineages stored titles un-normalized; the `!=` version
-// check cannot tell "same number, NFC vs non-NFC" apart, so bump to 9 to force a
-// one-time clean re-parse that re-composes existing caches' titles to NFC.
-constexpr uint8_t BOOK_CACHE_VERSION = 9;
+// v10: stores the OPF spine's page-progression-direction so RTL publications can
+// reverse page-turn controls. This adds one bool after the language metadata field.
+constexpr uint8_t BOOK_CACHE_VERSION = 10;
 constexpr char bookBinFile[] = "/book.bin";
 constexpr char tmpSpineBinFile[] = "/spine.bin.tmp";
 constexpr char tmpTocBinFile[] = "/toc.bin.tmp";
@@ -128,7 +125,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
       sizeof(BOOK_CACHE_VERSION) + /* LUT Offset */ sizeof(uint32_t) + sizeof(spineCount) + sizeof(tocCount);
   const uint32_t metadataSize = metadata.title.size() + metadata.author.size() + metadata.language.size() +
                                 metadata.coverItemHref.size() + metadata.textReferenceHref.size() +
-                                sizeof(uint32_t) * 5;
+                                sizeof(uint32_t) * 5 + sizeof(metadata.pageProgressionRtl);
   const uint32_t lutSize = sizeof(uint32_t) * spineCount + sizeof(uint32_t) * tocCount;
   const uint32_t lutOffset = headerASize + metadataSize;
 
@@ -141,6 +138,7 @@ bool BookMetadataCache::buildBookBin(const std::string& epubPath, const BookMeta
   serialization::writeString(bookFile, metadata.title);
   serialization::writeString(bookFile, metadata.author);
   serialization::writeString(bookFile, metadata.language);
+  serialization::writePod(bookFile, metadata.pageProgressionRtl);
   serialization::writeString(bookFile, metadata.coverItemHref);
   serialization::writeString(bookFile, metadata.textReferenceHref);
 
@@ -400,6 +398,7 @@ bool BookMetadataCache::load() {
   serialization::readString(bookFile, coreMetadata.title);
   serialization::readString(bookFile, coreMetadata.author);
   serialization::readString(bookFile, coreMetadata.language);
+  serialization::readPod(bookFile, coreMetadata.pageProgressionRtl);
   serialization::readString(bookFile, coreMetadata.coverItemHref);
   serialization::readString(bookFile, coreMetadata.textReferenceHref);
 

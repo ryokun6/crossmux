@@ -49,6 +49,11 @@ constexpr int centerOverRotated90CW(int baseCursorPos, int baseLeft, int baseWid
   return baseCursorPos - baseLeft - baseWidth / 2 + markWidth / 2 + markLeft;
 }
 
+/// Rotated-90CCW: Y mapping matches upright X (cursorY + left + glyphX).
+constexpr int centerOverRotated90CCW(int baseCursorPos, int baseLeft, int baseWidth, int markLeft, int markWidth) {
+  return baseCursorPos + baseLeft + baseWidth / 2 - markWidth / 2 - markLeft;
+}
+
 /// For combining marks that sit entirely above the baseline, compute how many
 /// pixels to raise the mark so there is at least MIN_GAP_PX between its bottom
 /// edge and the top of the base glyph.  Returns 0 for marks that extend to or

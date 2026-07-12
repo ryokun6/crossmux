@@ -66,5 +66,15 @@ class ParsedText {
   bool isEmpty() const { return words.empty(); }
   void layoutAndExtractLines(const GfxRenderer& renderer, int fontId, uint16_t viewportWidth,
                              const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
-                             bool includeLastLine = true);
+                             bool includeLastLine = true, uint16_t viewportHeight = 0);
+
+ private:
+  void layoutAndExtractVerticalColumns(const GfxRenderer& renderer, int fontId, uint16_t columnHeight,
+                                       const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
+                                       bool includeLastLine);
+  void extractVerticalColumn(size_t startIdx, size_t endIdx, const std::vector<uint16_t>& wordWidths,
+                             const GfxRenderer& renderer, int fontId, int cellStep,
+                             const std::function<void(std::shared_ptr<TextBlock>)>& processLine);
+  std::vector<size_t> computeVerticalColumnBreaks(const GfxRenderer& renderer, int fontId, int columnHeight,
+                                                  const std::vector<uint16_t>& wordWidths);
 };

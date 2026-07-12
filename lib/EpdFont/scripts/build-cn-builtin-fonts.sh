@@ -13,10 +13,11 @@
 # converted Simplified→Traditional (OpenCC s2t) and deduped so bitmaps store
 # one glyph per character. Runtime remaps SC codepoints via ScToTcRemap.h.
 #
-# Every tier also ships ASCII + Latin-1 + CJK punctuation + full-width forms.
-# The 14pt tier additionally ships number forms / enclosed alphanumerics /
-# box drawing / block elements / geometric shapes / misc symbols / dingbats
-# for richer EPUB rendering at the reader-default size.
+# Every tier also ships ASCII + Latin-1 + CJK punctuation + full-width forms +
+# Vertical Forms (U+FE10–FE19) and CJK Compatibility Forms used for tategaki
+# punctuation (U+FE30–FE48). The 14pt tier additionally ships number forms /
+# enclosed alphanumerics / box drawing / block elements / geometric shapes /
+# misc symbols / dingbats for richer EPUB rendering at the reader-default size.
 #
 # Pipeline:
 #   0. build_cn_charset.py --traditional + build_sc_to_tc_remap.py
@@ -176,7 +177,7 @@ echo "Subsetting $(basename "$SOURCE_OTF") → $(basename "$SUBSET_OTF") (small)
 "$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
   --output-file="$SUBSET_OTF" \
   --text-file="$CHARSET_FILE" \
-  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+3000-303F,U+FF00-FFEF,U+FFFD" \
+  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+3000-303F,U+FE10-FE19,U+FE30-FE48,U+FF00-FFEF,U+FFFD" \
   --layout-features='*' \
   --notdef-outline \
   --recommended-glyphs \
@@ -188,7 +189,7 @@ echo "Subsetting $(basename "$SOURCE_OTF") → $(basename "$LARGE_OTF") (large).
 "$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
   --output-file="$LARGE_OTF" \
   --text-file="$LARGE_CHARSET_FILE" \
-  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+2030-205F,U+2070-209F,U+20A0-20CF,U+2150-218F,U+2190-21FF,U+2200-22FF,U+2460-24FF,U+2500-257F,U+2580-259F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+3000-303F,U+FF00-FFEF,U+FFFD" \
+  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+2030-205F,U+2070-209F,U+20A0-20CF,U+2150-218F,U+2190-21FF,U+2200-22FF,U+2460-24FF,U+2500-257F,U+2580-259F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+3000-303F,U+FE10-FE19,U+FE30-FE48,U+FF00-FFEF,U+FFFD" \
   --layout-features='*' \
   --notdef-outline \
   --recommended-glyphs \
@@ -200,7 +201,7 @@ echo "Subsetting $(basename "$SOURCE_OTF") → $(basename "$I18N_OTF") (i18n)...
 "$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
   --output-file="$I18N_OTF" \
   --text-file="$I18N_CHARSET_FILE" \
-  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+3000-303F,U+FF00-FFEF,U+FFFD" \
+  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+3000-303F,U+FE10-FE19,U+FE30-FE48,U+FF00-FFEF,U+FFFD" \
   --layout-features='*' \
   --notdef-outline \
   --recommended-glyphs \
@@ -228,6 +229,8 @@ emit_size() {
     --line-height-adjust "$line_height_adjust" \
     --additional-intervals 0x4E00,0x9FFF \
     --additional-intervals 0x3000,0x303F \
+    --additional-intervals 0xFE10,0xFE19 \
+    --additional-intervals 0xFE30,0xFE48 \
     --additional-intervals 0xFF00,0xFFEF \
     ${extra_intervals[@]+"${extra_intervals[@]}"} \
     > "$tmp_path"
