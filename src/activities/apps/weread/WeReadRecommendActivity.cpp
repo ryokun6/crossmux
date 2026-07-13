@@ -61,7 +61,7 @@ void WeReadRecommendActivity::renderContent(Rect contentRect) {
         if (!r.reason.empty()) {
           std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · %s", r.author.c_str(), r.reason.c_str());
         } else if (r.newRating > 0) {
-          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 评分 %.1f", r.author.c_str(), r.newRating / 10.0);
+          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 評分 %.1f", r.author.c_str(), r.newRating / 10.0);
         } else {
           std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s", r.author.c_str());
         }

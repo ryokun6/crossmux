@@ -22,10 +22,17 @@
 namespace {
 
 // Firmware language SKU marker, persisted in settings.json. Lets the next boot
-// detect a cross-SKU reflash (CN <-> global) and reset the UI language to this
-// build's default — see loadSettings().
+// detect a cross-SKU reflash (zh-tw / zh-cn / global) and reset the UI language
+// to this build's default — see loadSettings().
 #ifdef ENABLE_CHINESE_VERSION
-constexpr char BUILD_LANG_SKU[] = "cn";
+#ifdef CHINESE_UI_SIMPLIFIED
+constexpr char BUILD_LANG_SKU[] = "zh-cn";
+#else
+constexpr char BUILD_LANG_SKU[] = "zh-tw";
+// Pre-dual-SKU / pre-tc rename markers; treat as same Traditional SKU.
+constexpr char LEGACY_LANG_SKU_ZH[] = "zh";
+constexpr char LEGACY_LANG_SKU_CN[] = "cn";
+#endif
 #else
 constexpr char BUILD_LANG_SKU[] = "global";
 #endif
@@ -323,21 +330,40 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
 
   // Language -- stored as code string for stability across enum reorders.
   if (doc["language"].is<const char*>()) {
-    s.language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
+    const char* langCode = doc["language"].as<const char*>();
+    s.language = static_cast<uint8_t>(I18n::languageFromCode(langCode));
+    // Rewrite legacy ZH / ZH_CN / ZH_TW enum-style codes as zh-TW / zh-CN.
+    if ((strcmp(langCode, "ZH") == 0 || strcmp(langCode, "ZH_CN") == 0 || strcmp(langCode, "ZH_TW") == 0) &&
+        needsResave) {
+      *needsResave = true;
+    }
   }
 
   // Cross-SKU reflash recovery. settings.json survives a firmware flash, so a
-  // language chosen under one SKU can linger into another (e.g. "ZH_CN" left by
-  // the Chinese build now loaded by the global build, which has no CJK font ->
+  // language chosen under one SKU can linger into another (e.g. "zh-TW" left by
+  // the TC build now loaded by the global build, which has no CJK font ->
   // garbled). The langSku marker tells us which SKU last wrote this file:
   //   - present & different  -> cross-SKU reflash; reset to this build's default
-  //                             (EN on global, ZH_CN on CN), regardless of choice.
+  //                             (EN on global, zh-TW/zh-CN on Chinese SKUs).
   //   - missing (pre-feature file) -> treat as same SKU; do NOT clobber a
   //                             deliberate choice. The renderability check below
   //                             still rescues an unrenderable leftover language.
   const char* langSku = doc["langSku"] | "";
-  const bool skuMatches = langSku[0] != '\0' && strcmp(langSku, BUILD_LANG_SKU) == 0;
-  if (langSku[0] != '\0' && !skuMatches) {
+  const bool skuMatchesExact = langSku[0] != '\0' && strcmp(langSku, BUILD_LANG_SKU) == 0;
+#ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+  const bool skuCompatible = skuMatchesExact;
+#else
+  // Accept legacy "zh" / "cn" as Traditional so renames do not look like
+  // cross-SKU reflashes; still mark needsResave to rewrite as "zh-tw".
+  const bool skuCompatible =
+      skuMatchesExact ||
+      (langSku[0] != '\0' && (strcmp(langSku, LEGACY_LANG_SKU_ZH) == 0 || strcmp(langSku, LEGACY_LANG_SKU_CN) == 0));
+#endif
+#else
+  const bool skuCompatible = skuMatchesExact;
+#endif
+  if (langSku[0] != '\0' && !skuCompatible) {
     s.language = CrossPointSettings::defaultLanguageIndex();
   }
   // Safety net independent of the marker: never keep a language this build can't
@@ -345,8 +371,9 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
   if (!I18n::isLanguageAvailable(static_cast<Language>(s.language))) {
     s.language = CrossPointSettings::defaultLanguageIndex();
   }
-  // Record / refresh the current SKU marker so the next reflash is detectable.
-  if (!skuMatches && needsResave) *needsResave = true;
+  // Record / refresh the current SKU marker so the next reflash is detectable
+  // (also migrates legacy "cn"/"zh" → "zh-tw" on Traditional builds).
+  if (!skuMatchesExact && needsResave) *needsResave = true;
 
   LOG_DBG("CPS", "Settings loaded from file");
 

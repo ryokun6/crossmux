@@ -15,7 +15,7 @@ void LanguageSelectActivity::onEnter() {
   Activity::onEnter();
 
   // Build the list of languages this build can actually render, so the global
-  // build doesn't list (and let users pick) ZH_CN, whose name itself renders as
+  // build doesn't list (and let users pick) ZH_TW, whose name itself renders as
   // garbled boxes without the CJK font.
   totalItems = 0;
   for (const uint8_t langIndex : SORTED_LANGUAGE_INDICES) {

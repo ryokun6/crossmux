@@ -1,8 +1,8 @@
-# CrossPoint User Guide
+# ryOS CrossMux User Guide
 
-Welcome to the **CrossPoint** firmware. This guide outlines the hardware controls, navigation, and reading features of the device.
+Welcome to the **ryOS CrossMux** firmware. This guide outlines the hardware controls, navigation, and reading features of the device.
 
-- [CrossPoint User Guide](#crosspoint-user-guide)
+- [ryOS CrossMux User Guide](#ryos-crossmux-user-guide)
   - [1. Hardware Overview](#1-hardware-overview)
     - [Button Layout](#button-layout)
   - [2. Power \& Startup](#2-power--startup)
@@ -120,7 +120,7 @@ A **Wi-Fi signal strength indicator** (dBm) is displayed on-screen during joined
 
 ### 3.5.1 Calibre Wireless Transfers
 
-CrossPoint supports sending books from Calibre using the CrossPoint Reader device plugin.
+ryOS CrossMux supports sending books from Calibre using the CrossPoint Reader device plugin.
 
 #### Installing the Plugin in Calibre
 
@@ -297,13 +297,13 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **SD Card Firmware Update**: Install a selected `.bin` firmware image from the SD card.
 
-- **Language**: Set the UI language. CrossPoint supports 24 languages: English, Spanish, French, German, Czech, Brazilian Portuguese, Russian, Swedish, Romanian, Catalan, Ukrainian, Belarusian, Italian, Polish, Finnish, Danish, Dutch, Turkish, Kazakh, Hungarian, Lithuanian, Slovenian, Valencian, and Hebrew.
+- **Language**: Set the UI language. ryOS CrossMux supports English, Spanish, French, German, Czech, Brazilian Portuguese, Russian, Swedish, Romanian, Catalan, Ukrainian, Belarusian, Italian, Polish, Finnish, Danish, Dutch, Turkish, Kazakh, Hungarian, Lithuanian, Slovenian, Valencian, Hebrew, and Chinese (`中文`, Traditional UI strings). The Chinese firmware build (`gh_release_tc`) defaults to Chinese and embeds CJK fonts; the international build lists Chinese only when CJK glyphs are available.
 
 - **Manage Fonts**: Browse, download, and manage custom font families installed from the SD card. See [Custom Fonts (SD Card)](#38-custom-fonts-sd-card) for more information.
 
 #### 3.6.5 OPDS Servers (Multiple Libraries)
 
-CrossPoint supports saving multiple OPDS servers and switching between them when browsing catalogs.
+ryOS CrossMux supports saving multiple OPDS servers and switching between them when browsing catalogs.
 
 1. Open **Settings -> System -> OPDS Servers**.
 
@@ -349,7 +349,7 @@ Behavior notes:
 
 #### 3.6.7 KOReader Sync Quick Setup
 
-CrossPoint can sync reading progress with KOReader-compatible sync servers.
+ryOS CrossMux can sync reading progress with KOReader-compatible sync servers.
 It also interoperates with KOReader apps/devices when they use the same server and credentials.
 
 ##### Option A: Free Public Server (`sync.koreader.rocks`)
@@ -371,11 +371,11 @@ Already have KOReader Sync credentials? Skip registration; basic sync only requi
 
 When this returns `HTTP 402` with `{"code":2002,"message":"Username is already registered."}`, pick a different username or use that existing account.
 
-2. On each CrossPoint device:
+2. On each ryOS CrossMux device:
    
    - Go to **Settings -> System -> KOReader Sync**.
    
-   - Set **Username** and **Password** (enter the plain password; CrossPoint computes MD5 internally, and use the same values on all devices).
+   - Set **Username** and **Password** (enter the plain password; ryOS CrossMux computes MD5 internally, and use the same values on all devices).
    
    - Set **Sync Server URL** to `https://sync.koreader.rocks`, or leave it empty (both use the same default KOReader sync server).
    
@@ -427,7 +427,7 @@ curl -H "Accept: application/vnd.koreader.v1+json" "http://<server-ip>:17200/hea
 ```
 
 3. Register a user once.
-   CrossPoint authenticates against KOReader Sync (`koreader/kosync`) using an MD5 key, so register using the MD5 of your password:
+   ryOS CrossMux authenticates against KOReader Sync (`koreader/kosync`) using an MD5 key, so register using the MD5 of your password:
 
 > [!WARNING]
 > Sending a reusable MD5-derived password over plain HTTP is insecure.
@@ -448,11 +448,11 @@ curl -i "http://<server-ip>:17200/users/create" \
 
 If this returns `HTTP 402` with `{"code":2002,"message":"Username is already registered."}`, the account already exists.
 
-4. On each CrossPoint device:
+4. On each ryOS CrossMux device:
    
    - Go to **Settings -> System -> KOReader Sync**.
    
-   - Set **Username** and **Password** (enter the plain password; CrossPoint computes MD5 internally, and use the same values on all devices).
+   - Set **Username** and **Password** (enter the plain password; ryOS CrossMux computes MD5 internally, and use the same values on all devices).
    
    - Set **Sync Server URL** to `http://<server-ip>:17200`.
    
@@ -472,8 +472,8 @@ The **Sleep Screen** setting controls what is displayed when the device goes to 
 
 | Mode               | Behavior                                                                                                                     |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| **Dark** (default) | The CrossPoint logo on a dark background.                                                                                    |
-| **Light**          | The CrossPoint logo on a white background.                                                                                   |
+| **Dark** (default) | The ryOS CrossMux logo on a dark background.                                                                                    |
+| **Light**          | The ryOS CrossMux logo on a white background.                                                                                   |
 | **Custom**         | A custom image from the SD card (see below). Falls back to **Dark** if no custom image is found.                             |
 | **Cover**          | The cover of the currently open book. Falls back to **Dark** if no book is open.                                             |
 | **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading. |
@@ -507,7 +507,7 @@ To use custom sleep images, set the sleep screen mode to **Custom** or **Cover +
 
 ### 3.8 Custom Fonts (SD Card)
 
-CrossPoint supports loading additional fonts from the SD card, extending beyond the two built-in families (Noto Serif, Noto Sans). Custom fonts can include extended Unicode coverage, enabling CJK (Chinese, Japanese, Korean) and other scripts.
+ryOS CrossMux supports loading additional fonts from the SD card, extending beyond the two built-in families (Noto Serif, Noto Sans). Custom fonts can include extended Unicode coverage, enabling CJK (Chinese, Japanese, Korean) and other scripts.
 
 There are three ways to install fonts:
 
@@ -566,13 +566,13 @@ If the device goes to sleep or you close the book while viewing a footnote, the 
 
 ### Supported Languages
 
-CrossPoint renders text using the following Unicode character blocks, enabling support for a wide range of languages:
+ryOS CrossMux renders text using the following Unicode character blocks, enabling support for a wide range of languages:
 
 * **Latin Script (Basic, Supplement, Extended-A/B):** Covers English, German, French, Spanish, Portuguese, Italian, Dutch, Swedish, Norwegian, Danish, Finnish, Polish, Czech, Hungarian, Romanian, Slovak, Slovenian, Turkish, Catalan, and others.
 * **Cyrillic Script (Standard and Extended):** Covers Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian, Kazakh, Kyrgyz, Mongolian, and others.
 * **Vietnamese:** Supported via extended Latin glyph coverage in the built-in reader fonts.
 
-What is not supported with built-in reader fonts: Chinese, Japanese, Korean, Arabic, Greek, Hebrew, and Farsi. However, **CJK, Hebrew, Greek, and other extended scripts can be enabled by installing custom SD card fonts** — see [Custom Fonts (SD Card)](#38-custom-fonts-sd-card).
+On the **international** build, built-in reader fonts do not cover Chinese, Japanese, Korean, Arabic, Greek, Hebrew, or Farsi — install custom SD card fonts for those scripts (see [Custom Fonts (SD Card)](#38-custom-fonts-sd-card)). The **Chinese** build (`gh_release_tc`) embeds Traditional CJK bitmap fonts and remaps Simplified codepoints at lookup time; its UI language `中文` uses Traditional Chinese strings.
 
 ---
 
@@ -630,7 +630,7 @@ Please note that this firmware is currently in active development. The following
 
 If an issue or crash is encountered while using Crosspoint, feel free to raise an issue ticket and attach the logs.
 
-**Crash reports on SD card:** After a crash, CrossPoint automatically saves a crash report to the SD card (no USB connection needed). Check the root of the SD card for a crash log file and include it with any bug report.
+**Crash reports on SD card:** After a crash, ryOS CrossMux automatically saves a crash report to the SD card (no USB connection needed). Check the root of the SD card for a crash log file and include it with any bug report.
 
 **Serial monitor logs:** For more detailed debugging, connect the device to a computer and run the custom debugging monitor script (requires Python 3 with `pyserial`, `colorama`, and `matplotlib`; install via `pip3 install pyserial colorama matplotlib`):
 

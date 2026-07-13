@@ -12,7 +12,11 @@
 #include "EpdFontFamily.h"
 
 #ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+#include "TcToScRemap.h"
+#else
 #include "ScToTcRemap.h"
+#endif
 #endif
 
 static_assert(sizeof(EpdGlyph) == 16, "EpdGlyph must be 16 bytes to match .cpfont file layout");
@@ -48,8 +52,13 @@ inline uint32_t readU32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] <<
 
 uint32_t resolveCnCodepointForLookup(uint32_t cp) {
 #ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+  // SC SD fonts store Simplified glyphs; Traditional EPUB codepoints remap here.
+  return mapTraditionalToSimplified(cp);
+#else
   // SD CJK subsets store Traditional glyphs; EPUB/UI may pass Simplified codepoints.
   return mapSimplifiedToTraditional(cp);
+#endif
 #else
   return cp;
 #endif

@@ -7,6 +7,7 @@
 #include <WiFi.h>
 #include <esp_task_wdt.h>
 
+#include <algorithm>
 #include <cstddef>
 
 #include "MappedInputManager.h"

@@ -43,17 +43,29 @@ FetchContent_MakeAvailable(qrcode)
 # bitbank2/JPEGDEC — same pin as platformio.ini. Needed for home/recent cover
 # thumbnails (JpegToBmpConverter). WASM keeps the stub path (no FetchContent).
 if(NOT EMSCRIPTEN)
-    set(JPEGDEC_FROM_PIO "${REPO_ROOT}/.pio/libdeps/default/JPEGDEC")
-    if(EXISTS "${JPEGDEC_FROM_PIO}/src/JPEGDEC.cpp")
-        set(JPEGDEC_ROOT "${JPEGDEC_FROM_PIO}")
-        message(STATUS "JPEGDEC: using PlatformIO libdep at ${JPEGDEC_ROOT}")
-    else()
+    set(JPEGDEC_ROOT "")
+    foreach(_jpegdec_candidate
+            "${REPO_ROOT}/.pio/libdeps/default/JPEGDEC"
+            "${REPO_ROOT}/.pio/libdeps/gh_release/JPEGDEC"
+            "${REPO_ROOT}/.pio/libdeps/gh_release_tc/JPEGDEC"
+            "${REPO_ROOT}/.pio/libdeps/gh_release_sc/JPEGDEC")
+        if(EXISTS "${_jpegdec_candidate}/src/JPEGDEC.cpp")
+            set(JPEGDEC_ROOT "${_jpegdec_candidate}")
+            message(STATUS "JPEGDEC: using PlatformIO libdep at ${JPEGDEC_ROOT}")
+            break()
+        endif()
+    endforeach()
+    if(JPEGDEC_ROOT STREQUAL "")
+        # JPEGDEC's tree has an ESP-IDF CMakeLists; populate without add_subdirectory.
         FetchContent_Declare(
             jpegdec
             GIT_REPOSITORY https://github.com/bitbank2/JPEGDEC.git
             GIT_TAG 86282979224c8a32fd51e091ed5a35b0c699a52b
         )
-        FetchContent_MakeAvailable(jpegdec)
+        FetchContent_GetProperties(jpegdec)
+        if(NOT jpegdec_POPULATED)
+            FetchContent_Populate(jpegdec)
+        endif()
         set(JPEGDEC_ROOT "${jpegdec_SOURCE_DIR}")
         message(STATUS "JPEGDEC: fetched to ${JPEGDEC_ROOT}")
     endif()
@@ -214,6 +226,12 @@ if(NOT EMSCRIPTEN)
     list(APPEND CROSSPOINT_LIB ${JPEGDEC_ROOT}/src/JPEGDEC.cpp)
 endif()
 
+# Chinese UI variant: OFF = Traditional (default, matches gh_release_tc fonts/remap);
+# ON = Simplified (matches gh_release_sc — CHINESE_UI_SIMPLIFIED + ZH_CN via OpenCC t2s).
+# Build dirs must be separate (e.g. simulator/build vs simulator/build_sc) because
+# gen_i18n writes into shared lib/I18n/ headers.
+option(SIMULATOR_CHINESE_UI_SIMPLIFIED "Build Simplified Chinese simulator SKU" OFF)
+
 # Generate I18n headers (mirrors what scripts/gen_i18n.py does pre-build for PlatformIO).
 # All translation YAMLs are listed as inputs so edits to any one of them re-run the
 # generator; otherwise downstream code referencing a freshly-added STR_* key would
@@ -224,11 +242,23 @@ set(I18N_GENERATED
     ${REPO_ROOT}/lib/I18n/I18nStrings.cpp
 )
 file(GLOB I18N_TRANSLATIONS "${REPO_ROOT}/lib/I18n/translations/*.yaml")
+if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
+    # SC firmware tables are EN + ZH_CN only (OpenCC t2s from chinese.yaml).
+    set(I18N_GEN_ARGS
+        ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
+        --only-languages ZH_CN)
+    set(I18N_GEN_COMMENT "Generating I18n strings (EN + ZH_CN)")
+else()
+    # Default simulator keeps the full language table (WASM language picker) and
+    # Traditional chinese.yaml as ZH_TW — same as a TC-capable Chinese demo.
+    set(I18N_GEN_ARGS ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n)
+    set(I18N_GEN_COMMENT "Generating I18n strings")
+endif()
 add_custom_command(
     OUTPUT ${I18N_GENERATED}
-    COMMAND python3 ${REPO_ROOT}/scripts/gen_i18n.py ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
+    COMMAND python3 ${REPO_ROOT}/scripts/gen_i18n.py ${I18N_GEN_ARGS}
     DEPENDS ${REPO_ROOT}/scripts/gen_i18n.py ${I18N_TRANSLATIONS}
-    COMMENT "Generating I18n strings"
+    COMMENT ${I18N_GEN_COMMENT}
 )
 add_custom_target(i18n_generated DEPENDS ${I18N_GENERATED})
 
@@ -311,6 +341,7 @@ target_include_directories(crosspoint_simulator PRIVATE
 # ENABLE_CHINESE_VERSION is on for both native and WASM: the browser demo ships the
 # Chinese build (CJK fonts + WeRead/农历/CJK typography), with the startup
 # language following navigator.language (see simulator_main_wasm.cpp --lang).
+# SIMULATOR_CHINESE_UI_SIMPLIFIED mirrors PlatformIO's CHINESE_UI_SIMPLIFIED (SC SKU).
 target_compile_definitions(crosspoint_simulator PRIVATE
     CROSSPOINT_EMULATED=1
     EINK_DISPLAY_SINGLE_BUFFER_MODE=1
@@ -324,9 +355,19 @@ target_compile_definitions(crosspoint_simulator PRIVATE
     "setup=firmware_setup"
     "loop=firmware_loop"
 )
+if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
+    target_compile_definitions(crosspoint_simulator PRIVATE CHINESE_UI_SIMPLIFIED=1)
+endif()
 
 target_compile_options(crosspoint_simulator PRIVATE -fno-exceptions -fno-rtti
     -Wno-unused-parameter -Wno-deprecated-declarations -Wno-bidi-chars)
+# Host clang does not get Arduino/ESP transitive includes that pull in
+# <cmath>/<algorithm>/<cstdint>. Force them so firmware sources that use
+# std::round/std::clamp/uint32_t compile without ESP toolchain headers.
+if(NOT EMSCRIPTEN)
+    target_compile_options(crosspoint_simulator PRIVATE
+        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${CMAKE_CURRENT_SOURCE_DIR}/force_includes.h>")
+endif()
 
 # -----------------------------------------------------------------------------
 # WebAssembly (Emscripten) link configuration.

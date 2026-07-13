@@ -7,6 +7,7 @@
 #include <I18n.h>
 
 #include <algorithm>
+#include <cmath>
 
 #include "CrossPointSettings.h"
 #include "components/UITheme.h"

@@ -62,7 +62,7 @@ void WeReadSimilarActivity::renderContent(Rect contentRect) {
         const auto& r = rows_[i];
         // newRating is 0..100 → /10 with one decimal.
         if (r.newRating > 0) {
-          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 评分 %.1f", r.author.c_str(), r.newRating / 10.0);
+          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 評分 %.1f", r.author.c_str(), r.newRating / 10.0);
         } else {
           std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s", r.author.c_str());
         }

@@ -31,7 +31,7 @@ class LanguageSelectActivity final : public Activity {
   ButtonNavigator buttonNavigator;
   int selectedIndex = 0;
   // Languages this build can actually render, in display-name order. Built in
-  // onEnter(): hides e.g. ZH_CN on the global build (no CJK font). EN is always
+  // onEnter(): hides e.g. ZH_TW on the global build (no CJK font). EN is always
   // present, so totalItems >= 1.
   uint8_t visibleIndices[getLanguageCount()] = {};
   uint8_t totalItems = 0;

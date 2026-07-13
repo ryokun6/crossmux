@@ -1,6 +1,6 @@
-# CrossPoint Reader Simulator
+# ryOS CrossMux Simulator
 
-Runs the CrossPoint Reader firmware UI/EPUB logic on a desktop machine (macOS/Linux)
+Runs the ryOS CrossMux firmware UI/EPUB logic on a desktop machine (macOS/Linux)
 without flashing the Xteink X4 hardware. Backed by SDL2 for window+input and a POSIX
 filesystem for the "SD card".
 
@@ -70,6 +70,18 @@ cmake -S simulator -B simulator/build
 cmake --build simulator/build -j
 ```
 
+Default native/WASM builds enable `ENABLE_CHINESE_VERSION` with **Traditional**
+fonts/remap (like `gh_release_tc`). For a **Simplified** SKU (like
+`gh_release_sc`), use a separate build directory and
+`-DSIMULATOR_CHINESE_UI_SIMPLIFIED=ON` — gen_i18n writes into shared
+`lib/I18n/` headers, so TC and SC cannot share one build tree:
+
+```sh
+cmake -S simulator -B simulator/build_sc -DSIMULATOR_CHINESE_UI_SIMPLIFIED=ON
+cmake --build simulator/build_sc -j
+./simulator/build_sc/crosspoint_simulator --scale 1 --sd-root ./simulator/sd_root_sc
+```
+
 CMake fetches ArduinoJson and `ricmoo/QRCode` via `FetchContent` on first configure
 (shallow clones, a few seconds).
 
@@ -82,7 +94,7 @@ SDL texture; JavaScript events instead of SDL keys), and `shims/esp_http_client.
 curl-free offline stub under the same guard. The WASM build sets **ENABLE_CHINESE_VERSION**
 (CJK fonts + WeRead/中国象棋/农历/CJK typography — same as native) and preloads a small
 public-domain book from `sd_root_demo/` into MEMFS at `/sd`. The startup UI language follows the
-browser: `index.html` maps `navigator.language` to a `--lang ZH_CN|EN` arg that
+browser: `index.html` maps `navigator.language` to a `--lang zh-TW|zh-CN|EN` arg that
 `simulator_main_wasm.cpp` applies before first render. FreeRTOS tasks run on Web Worker threads
 (pthreads), so the page must be cross-origin isolated (COOP/COEP).
 

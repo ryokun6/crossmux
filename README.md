@@ -9,7 +9,7 @@ coverage, reliable SD-card fonts, and faster 4-level grayscale text. It keeps
 reading stats, WeRead, and standby faces. The old game and toy apps are not part
 of the firmware.
 
-Current firmware version: **1.4.3**
+Current firmware version: **1.4.4**
 
 ![ryOS CrossMux running on an Xteink device](./docs/images/cover.jpg)
 
@@ -34,21 +34,17 @@ setting is vertical.
 
 ### Chinese firmware
 
-The `gh_release_cn` environment builds a Chinese-first firmware with:
+Two Chinese SKUs ship alongside international:
 
-- Simplified Chinese as the first-boot language
-- English and Simplified Chinese UI strings
-- built-in GenSen Rounded TW bitmap fonts
-- CJK line-breaking and punctuation rules
-- WeRead shelf, notes, reviews, search, recommendations, and offline SD cache
-- OTA updates from `ryokun6/crossmux` releases, using the Chinese firmware asset
-- the same dual-slot firmware layout and rollback support as the international build
+| Env | Locale | UI | OTA asset |
+| --- | --- | --- | --- |
+| `gh_release_tc` | `zh-TW` | Traditional (繁體中文) | `firmware-tc.bin` |
+| `gh_release_sc` | `zh-CN` | Simplified (简体中文, from Traditional YAML via OpenCC t2s) | `firmware-sc.bin` |
 
-The default 14 pt reader font carries roughly 7,000 common ideographs plus
-symbols used by modern EPUBs. Smaller UI sizes use tighter subsets to stay
-within the ESP32-C3 flash budget. Simplified codepoints map to the bundled
-Traditional-form glyphs at lookup time, so the firmware does not store two
-copies of each bitmap.
+Both include English + Chinese UI strings, CJK line-breaking, WeRead, dual-slot
+OTA from `ryokun6/crossmux`, and embedded CJK bitmap fonts (GenSen TW for TC;
+Source Han Sans CN for SC). TC remaps Simplified EPUB codepoints → Traditional
+glyphs; SC remaps Traditional → Simplified.
 
 ### Better SD-card fonts
 
@@ -110,7 +106,7 @@ ryOS CrossMux keeps the main CrossPoint reader:
 Wireless tools include file transfer, the EPUB Optimizer, web settings, fast
 WebSocket uploads, WebDAV, Calibre wireless connection, OPDS browsing, and
 network OTA from the latest `ryokun6/crossmux` GitHub release. OTA selects
-`firmware.bin` or `firmware-cn.bin` to match the installed build. Firmware can
+`firmware.bin`, `firmware-tc.bin`, or `firmware-sc.bin` to match the installed build. Firmware can
 also be installed through USB, the web flasher, or `SD Card Firmware Update`.
 
 ## X3 and X4 support
@@ -169,14 +165,14 @@ git submodule update --init --recursive
 pio run -e gh_release
 
 # Chinese firmware
-pio run -e gh_release_cn
+pio run -e gh_release_tc
 ```
 
 Build outputs:
 
 ```text
 .pio/build/gh_release/firmware.bin
-.pio/build/gh_release_cn/firmware.bin
+.pio/build/gh_release_tc/firmware.bin
 ```
 
 ### Flash over USB
@@ -186,7 +182,7 @@ Build outputs:
 pio run -e gh_release -t upload
 
 # Chinese
-pio run -e gh_release_cn -t upload
+pio run -e gh_release_tc -t upload
 ```
 
 You can also open the
@@ -231,7 +227,7 @@ Useful checks before opening a pull request:
 ./bin/clang-format-fix
 pio check -e default
 pio run -e default
-pio run -e gh_release_cn
+pio run -e gh_release_tc
 ```
 
 The ESP32-C3 has about 380 KB of usable RAM. Reader caches live on the SD card

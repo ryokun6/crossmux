@@ -1,28 +1,25 @@
 #pragma once
 
 #ifdef ENABLE_CHINESE_VERSION
-// Chinese build: one CJK font header per UI/reader point size, generated from
-// GenSen Rounded 2 TW Regular. Glyphs are Traditional only; Simplified
-// codepoints remap at runtime (ScToTcRemap.h). All sizes are raw 2-bit
-// bitmaps (fontconvert.py's --compress is NOT used because the large
-// per-group buffers fragment the heap on a 5+ font load — see
-// build-cn-builtin-fonts.sh).
-//
-// Character coverage is non-uniform across sizes:
-//   - 8/10/12/14pt: full frequency-ranked subset (top-N of
-//     现代汉语常用字表, Traditionalized + i18n require-from chars) — sized
-//     for reader SMALL/MEDIUM and UI at all readable sizes.
-//   - 16/18pt: i18n-only subset (CJK chars used by UI strings, Traditionalized,
-//     plus ASCII + Latin-1 + CJK punctuation) — sized for reader
-//     LARGE/EXTRA_LARGE (intended for English EPUB). Chinese EPUB text
-//     at these sizes shows blank for any char outside the i18n subset;
-//     UI strings still render because their chars are always included.
+#ifdef CHINESE_UI_SIMPLIFIED
+// Simplified Chinese build: SC-keyed CJK headers from Source Han Sans CN.
+// Traditional EPUB codepoints remap at runtime (TcToScRemap.h).
+#include <builtinFonts/notosans_sc_8.h>
+#include <builtinFonts/notosans_sc_10.h>
+#include <builtinFonts/notosans_sc_12.h>
+#include <builtinFonts/notosans_sc_14.h>
+#include <builtinFonts/notosans_sc_16.h>
+#include <builtinFonts/notosans_sc_18.h>
+#else
+// Traditional Chinese build: TC-keyed CJK headers from GenSen Rounded TW.
+// Simplified codepoints remap at runtime (ScToTcRemap.h).
 #include <builtinFonts/notosans_cjk_8.h>
 #include <builtinFonts/notosans_cjk_10.h>
 #include <builtinFonts/notosans_cjk_12.h>
 #include <builtinFonts/notosans_cjk_14.h>
 #include <builtinFonts/notosans_cjk_16.h>
 #include <builtinFonts/notosans_cjk_18.h>
+#endif
 #else
 #include <builtinFonts/notoserif_12_bold.h>
 #include <builtinFonts/notoserif_12_bolditalic.h>

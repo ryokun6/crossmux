@@ -1,6 +1,6 @@
 # SD Card Fonts
 
-CrossPoint supports loading additional fonts from the SD card, including fonts
+ryOS CrossMux supports loading additional fonts from the SD card, including fonts
 with extended Unicode coverage (CJK, Cyrillic, Greek, etc.).
 
 ## Installing Fonts
@@ -9,7 +9,7 @@ There are three ways to install fonts:
 
 ### Option 1: Download from device (recommended)
 
-1. Connect your CrossPoint reader to Wi-Fi
+1. Connect your ryOS CrossMux reader to Wi-Fi
 2. Go to **Settings > System > Manage Fonts**
 3. Browse available font families and tap to download
 4. Downloaded fonts appear immediately in **Settings > Reader > Font Family**
@@ -50,7 +50,7 @@ There are three ways to install fonts:
                ├── Merriweather_12.cpfont
                └── ...
 
-3. Insert the SD card and power on your CrossPoint reader
+3. Insert the SD card and power on your ryOS CrossMux reader
 
 ## Available Pre-Built Fonts
 
@@ -125,7 +125,7 @@ To list all presets with codepoint counts:
 
 ### CJK subset fonts (lighter `.cpfont`s)
 
-Full-range `--intervals cjk` on a complete CJK OTF can produce **15–30 MB** per size and is slow on-device because SD fonts load glyphs on demand. For Chinese reading on `gh_release_cn`, prefer a **subset** matching the builtin reader tier:
+Full-range `--intervals cjk` on a complete CJK OTF can produce **15–30 MB** per size and is slow on-device because SD fonts load glyphs on demand. For Chinese reading on `gh_release_tc`, prefer a **subset** matching the builtin reader tier:
 
 - ~7000 通用汉字 converted Simplified→Traditional (OpenCC `s2t`)
 - Extended symbol blocks for EPUB (arrows, box drawing, dingbats, etc.)
@@ -165,7 +165,7 @@ italic Han still falls back to regular at runtime. Latin always comes from EB Ga
 
 If the selected SD font lacks a codepoint (typical: Latin family + Chinese EPUB),
 the reader uses the **builtin system font** at the current size for that glyph —
-layout advances and bitmaps both. On `gh_release_cn` the builtins carry CJK; on
+layout advances and bitmaps both. On `gh_release_tc` the builtins carry CJK; on
 the global build they are Latin-only, so missing glyphs remain blank/tofu.
 
 This also avoids an indexing hang: absent codepoints are no longer mapped onto

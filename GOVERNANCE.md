@@ -1,6 +1,6 @@
 # Project Governance & Community Principles
 
-CrossPoint Reader is a community-driven, open-source project. Our goal is to provide a high-quality, open-source
+ryOS CrossMux is a community-driven, open-source project. Our goal is to provide a high-quality, open-source
 firmware alternative for the Xteink X4 hardware. To keep this project productive and welcoming as we grow, we ask all
 contributors to follow these principles.
 

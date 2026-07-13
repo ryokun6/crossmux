@@ -27,3 +27,6 @@ weread_apikey*.bin
 # (worktrees, scheduled-task locks, settings.local, scout CLEANUP.md) out.
 .claude/*
 !.claude/skills/
+
+# GenSen OTF source used to regenerate CN builtin fonts (large, licensed OFL)
+lib/EpdFont/builtinFonts/source/

@@ -1,8 +1,8 @@
 name: Nightly
 
 # Daily rolling nightly build of main, published as a prerelease tagged
-# `nightly` with both international (firmware.bin) and Chinese (firmware-cn.bin)
-# assets. The website's Insider/Nightly reads the newest prerelease.
+# `nightly` with international (firmware.bin), Traditional (firmware-tc.bin),
+# and Simplified (firmware-sc.bin) assets. The website's Insider/Nightly reads the newest prerelease.
 on:
   schedule:
     - cron: '0 18 * * *' # daily 18:00 UTC
@@ -35,16 +35,17 @@ jobs:
       - name: Extract short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      - name: Build CrossMux Nightly (international + Chinese)
+      - name: Build ryOS CrossMux Nightly (international + TC + SC)
         env:
           CROSSPOINT_RC_HASH: ${{ env.SHORT_SHA }}
-        run: pio run -e gh_release_rc -e gh_release_cn_rc
+        run: pio run -e gh_release_rc -e gh_release_tc_rc -e gh_release_sc_rc
 
       - name: Stage nightly assets
         run: |
           mkdir -p dist
           cp .pio/build/gh_release_rc/firmware.bin     dist/firmware.bin
-          cp .pio/build/gh_release_cn_rc/firmware.bin  dist/firmware-cn.bin
+          cp .pio/build/gh_release_tc_rc/firmware.bin  dist/firmware-tc.bin
+          cp .pio/build/gh_release_sc_rc/firmware.bin  dist/firmware-sc.bin
 
       # Roll the single `nightly` release/tag forward to the current commit.
       - name: Remove previous nightly release
@@ -56,7 +57,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: CrossMux Nightly (${{ env.SHORT_SHA }})
+          name: ryOS CrossMux Nightly (${{ env.SHORT_SHA }})
           prerelease: true
           target_commitish: ${{ github.sha }}
           files: dist/*
@@ -64,7 +65,8 @@ jobs:
           body: |
             Rolling nightly build from `main` (${{ env.SHORT_SHA }}).
             - `firmware.bin` — international
-            - `firmware-cn.bin` — Chinese (中文)
+            - `firmware-tc.bin` — Traditional Chinese (繁體中文)
+            - `firmware-sc.bin` — Simplified Chinese (简体中文)
 
       # Roll the same nightly binaries onto Gitee for the China mirror. The
       # script deletes the previous Gitee `nightly` release and recreates it.
@@ -78,8 +80,8 @@ jobs:
           bash scripts/publish-gitee-release.sh \
             "x1abin/crossmux" \
             "nightly" \
-            "CrossMux Nightly (${{ env.SHORT_SHA }})" \
+            "ryOS CrossMux Nightly (${{ env.SHORT_SHA }})" \
             "true" \
             "${{ github.sha }}" \
             "gitee-nightly-body.md" \
-            dist/firmware.bin dist/firmware-cn.bin
+            dist/firmware.bin dist/firmware-tc.bin dist/firmware-sc.bin

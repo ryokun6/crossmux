@@ -8,6 +8,8 @@
 #include <Txt.h>
 #include <Xtc.h>
 
+#include <cmath>
+
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "activities/reader/ReaderUtils.h"

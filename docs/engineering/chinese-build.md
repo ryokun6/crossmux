@@ -1,31 +1,40 @@
-# Chinese Build (ENABLE_CHINESE_VERSION)
+# Chinese Builds (ENABLE_CHINESE_VERSION)
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). Self-contained guide to the
-> `gh_release_cn` Simplified-Chinese firmware: how the flag gates resources, the
-> flash budget, and how to regenerate the embedded CJK fonts.
+> Deep reference for [CLAUDE.md](../../CLAUDE.md). Guide to the Traditional
+> (`gh_release_tc`) and Simplified (`gh_release_sc`) Chinese firmwares: how the
+> flags gate resources, flash budget, locales, and regenerating CJK fonts.
 
-A dedicated build env, `gh_release_cn`, produces a Simplified-Chinese-only
-firmware. The `-DENABLE_CHINESE_VERSION` flag in [platformio.ini](../../platformio.ini)
-gates every CN-only resource:
+Two Chinese release envs share `-DENABLE_CHINESE_VERSION` and add a locale axis:
+
+| Env | Locale | UI strings | Fonts | Glyph remap | OTA asset | Version suffix |
+|---|---|---|---|---|---|---|
+| `gh_release_tc` | `zh-TW` | Traditional (`chinese.yaml`) | GenSen TW → `notosans_cjk_*.h` | SC→TC (`ScToTcRemap.h`) | `firmware-tc.bin` | `-tc` |
+| `gh_release_sc` | `zh-CN` | Traditional YAML → OpenCC **t2s** at gen_i18n | Source Han Sans CN → `notosans_sc_*.h` (same `notosans_cjk_*` symbols) | TC→SC (`TcToScRemap.h`) | `firmware-sc.bin` | `-sc` |
+
+`CHINESE_UI_SIMPLIFIED` is set only on SC envs. International (`gh_release`) has
+neither flag.
+
+The `-DENABLE_CHINESE_VERSION` flag in [platformio.ini](../../platformio.ini)
+gates every Chinese-only resource:
 
 | Resource | Behavior under ENABLE_CHINESE_VERSION |
 |---|---|
-| i18n string table (`gen_i18n.py`) | Pre-script auto-detects the flag via `env.subst("$BUILD_FLAGS")` and emits **only EN + ZH_CN** into `I18nStrings.cpp` (saves ~144 KB vs the full 23-language table). Detection logs `[gen_i18n] ENABLE_CHINESE_VERSION detected …` during the build. |
-| Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers are skipped. Six per-size CJK headers (`notosans_cjk_{8,10,12,14,16,18}.h`) replace them — raw 2-bit bitmaps. **Character coverage is tiered by point size**: 8/10/12pt carry the small UI subset (~3500 chars from `cn_common_chars.txt` + i18n require-from + ASCII + Latin-1 + CJK punctuation); **14pt carries the large reader-default subset (7000 通用汉字 from `chars_7000_common.txt` + extended symbol ranges — number forms / enclosed alphanumerics / box drawing / block elements / geometric shapes / misc symbols / dingbats — plus the standard ASCII/Latin/punct base)**; 16pt/18pt carry only the i18n require-from CJK subset (~430 chars from `chinese.yaml` + ASCII + Latin-1 + CJK punctuation). The 16/18pt sizes are tuned for reader LARGE/EXTRA_LARGE (intended for English EPUB) while still rendering UI strings; Chinese EPUB text at 16/18pt shows blank for chars outside the i18n subset. |
-| `src/main.cpp` font globals | Each Latin `EpdFont`/`EpdFontFamily` global is aliased to the matching-size CJK header. Bold/italic variants all point at the Regular OTF (no style data in the subset). SD-card fonts still provide style variants when the user loads them. |
-| EPUB layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp)) | CJK punctuation rules are active: line-head prohibition (禁则) glues trailing punctuation back onto the previous line; full-width punctuation gets width-padded so it occupies a full CJK cell. Both are zero-cost in non-CN builds (gated by `#ifdef`). |
-| Activities (`src/activities/apps/weread/`) | Compiled in (also gated by `build_src_filter +<activities/apps/weread/>`). Game apps (sudoku, chess, etc.) are excluded from all builds. |
-| First-boot default language (`src/CrossPointSettings.h`) | `language` is initialized to `Language::ZH_CN` so a fresh device boots straight into Chinese UI; non-CN builds still default to `Language::EN`. |
+| i18n string table (`gen_i18n.py`) | Emits **EN + ZH_TW** (TC) or synthesizes **EN + ZH_CN** via OpenCC t2s from the same Traditional `chinese.yaml` when `CHINESE_UI_SIMPLIFIED` is set. Persisted codes are BCP47 `zh-TW` / `zh-CN` (`_locale`). |
+| Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers skipped. Six per-size CJK headers — TC files `notosans_cjk_*.h` or SC files `notosans_sc_*.h` — raw 2-bit bitmaps. Coverage tiers: 8/10/12pt ~3500 common; 14pt ~7000 + symbols; 16/18pt i18n-only. |
+| `src/main.cpp` font globals | Each Latin `EpdFont`/`EpdFontFamily` aliases the matching-size CJK symbol (`notosans_cjk_*`). Bold/italic share Regular. |
+| EPUB layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp)) | CJK punctuation rules (禁则 / full-width padding). |
+| Activities (`src/activities/apps/weread/`) | Compiled in via `build_src_filter`. |
+| First-boot language | `Language::ZH_TW` or `Language::ZH_CN` by SKU; international defaults to `EN`. |
 
-**Flash budget** (default `partitions.csv`, dual A/B app slot = 6.25 MB):
+**Flash budget** (default `partitions.csv`, dual A/B app slot = 6.25 MB) — each Chinese SKU separately:
 
 | Section | Bytes |
 |---|---|
 | Code + non-font data | ~3.0 MB |
-| 3 CJK font headers 8/10/12pt (3500 SC + ASCII/Latin/CJK-punct) | ~1.10 MB |
-| 1 CJK font header 14pt (7000 通用汉字 + extended symbols) | ~1.43 MB |
-| 2 CJK font headers 16/18pt (i18n-only ~430 chars + ASCII/Latin/CJK-punct) | ~375 KB |
-| i18n strings (EN + ZH_CN only) | ~16 KB |
+| 3 CJK font headers 8/10/12pt | ~1.1 MB |
+| 1 CJK font header 14pt | ~1.43 MB |
+| 2 CJK font headers 16/18pt | ~400 KB |
+| i18n strings (EN + one Chinese) | ~16 KB |
 | **Total** | **~6.05 MB / 6.25 MB (~92.3%)**, ~500 KB headroom |
 
 A/B OTA rollback works exactly like the Latin build — the firmware fits in
@@ -50,7 +59,7 @@ both app slots, and a failed update can auto-revert.
 The CN build keeps two size strategies stacked together to land in that
 budget:
 
-1. **`-flto=auto`** in `[env:gh_release_cn]`. Saves ~140 KB on `.text` via
+1. **`-flto=auto`** in `[env:gh_release_tc]` / `[env:gh_release_sc]`. Saves ~140 KB on `.text` via
    cross-TU dead-code elimination. The framework's default `-fno-lto`
    linker flag is stripped via `build_unflags` so the linker plugin
    picks up LTO IR in project objects; pre-built framework `.a` libs
@@ -62,7 +71,7 @@ budget:
    (see "Regenerating the CJK fonts" below). 8/10/12pt carry the small
    ~3500-char UI subset; **14pt carries the reader-default 7000 通用汉字
    subset plus extended symbol ranges**; 16/18pt carry an i18n-only subset
-   (~430 chars from `chinese.yaml`). The tiering keeps the heavy 7000-char
+   (~700 chars from `chinese.yaml`). The tiering keeps the heavy 7000-char
    bitmap to a single point size and shrinks 16/18pt to i18n-only,
    saving ~1 MB vs running the full 7000-char subset at every size.
 
@@ -90,7 +99,9 @@ PYTHON=/tmp/cn_font_venv/bin/python3 \
   bash lib/EpdFont/scripts/build-cn-builtin-fonts.sh
 
 # 5. Build
-pio run -e gh_release_cn
+pio run -e gh_release_tc
+# or
+pio run -e gh_release_sc
 ```
 
 `build_cn_charset.py` prints the highest-frequency casualties (chars just
@@ -149,9 +160,10 @@ Override with `CN_BASELINE_ADJUST[_SIZE]` / `CN_LINE_HEIGHT_ADJUST[_SIZE]`.
 ### Traditional glyphs + Simplified remap
 
 Bitmaps store **Traditional** codepoints only (OpenCC `s2t` on the same 3500 /
-7000 / i18n lists, deduped). UI strings remain Simplified in `chinese.yaml`;
-`EpdFont::getGlyph` remaps via committed `lib/EpdFont/ScToTcRemap.h` (~10 KB)
-so SC and TC do not duplicate bitmaps.
+7000 / i18n lists, deduped). UI strings in `chinese.yaml` are Traditional
+(language display name `中文`); `EpdFont::getGlyph` still remaps via committed
+`lib/EpdFont/ScToTcRemap.h` (~10 KB) so Simplified EPUB/codepoint input does
+not need duplicate bitmaps.
 
 Anti-pattern (don't do this): hiding chars in a `#` YAML comment inside
 `chinese.yaml` to abuse the regex scanner. It works (build_cn_charset.py
@@ -187,7 +199,7 @@ shrinks proportionally.
 - **Rare characters render as □ in reader at SMALL**: the SMALL (12pt) bitmap uses the 3500-char pool, which covers all of modern SC but omits classical / scientific rarities, Traditional Chinese variants, and most niche surnames/place names. MEDIUM (14pt, reader default) now uses the 7000 通用汉字 pool and covers most modern names, place names, and regulated chars from the 2013 通用规范汉字表. Expand SMALL by adding a feature-scoped `cn_<feature>_chars.txt` or by enlarging the pool — see "Expanding character coverage" above. Bumping `--top` alone does nothing.
 - **CJK in reader at LARGE/EXTRA_LARGE shows blank** for chars outside the i18n subset — by design, since 16/18pt reader sizes are tuned for English EPUB. Switch to MEDIUM to read Chinese.
 - **`FontDecompressor` is bypassed for CJK** by design — bitmaps are stored raw because compressing 6 fonts × ~50 KB groups fragments the heap on boot.
-- **No Traditional Chinese support**: the build is explicitly SC-only (`_language_code: ZH_CN`, no `zh-TW`/`zh-HK` yaml). TC glyphs are not in any pool; TC strings would render as missing-glyph placeholders.
+- **UI language codes are `zh-TW` / `zh-CN`**: enum members `ZH_TW` / `ZH_CN`; Traditional YAML is the single source (`_language_name: 繁體中文`); SC UI is synthesized via OpenCC t2s at gen_i18n.
 
 ## Files
 
@@ -200,10 +212,13 @@ shrinks proportionally.
 | `lib/EpdFont/scripts/cn_i18n_chars.txt` | Generated i18n-only subset, drives 16/18pt (committed). Contains every CJK char found in `--require-from` inputs. |
 | `lib/EpdFont/scripts/build-cn-builtin-fonts.sh` | pyftsubset → fontconvert.py pipeline, six headers. Default re-runs `build_cn_charset.py`; set `SKIP_CHARSET=1` to reuse the current `cn_common_chars.txt`. The `REQUIRE_FROM=(...)` array at the top lists every file scanned for force-included CJK chars — add new feature-scoped `cn_*_chars.txt` files here. |
 | `lib/EpdFont/scripts/cn_almanac_chars.txt` | Feature-scoped force-include for `ChineseAlmanac.cpp` / `ChineseCalendarFace.cpp` — ganzhi stems/branches + lunar-row vocab that aren't in the pool or any `chinese.yaml` STR_ value. Single-line UTF-8. |
+| `lib/EpdFont/scripts/cn_weread_chars.txt` | Feature-scoped force-include for hardcoded WeRead shelf/search UI fragments. |
 | `lib/EpdFont/builtinFonts/notosans_cjk_{8,10,12,14,16,18}.h` | Generated bitmap headers (committed). Should always match `cn_common_chars.txt` (8/10/12pt), `chars_7000_common.txt` (14pt), and `cn_i18n_chars.txt` (16/18pt) — see consistency check below. |
 | `lib/EpdFont/builtinFonts/source/GenSenRounded2TW/` | OTF source dir (gitignored). Drop `GenSenRounded2TW-R.otf` here. |
 | `lib/EpdFont/ScToTcRemap.h` | Committed SC→TC lookup (~2600 pairs). Regenerated by `build_sc_to_tc_remap.py`. |
-| `lib/I18n/translations/chinese.yaml` | Simplified Chinese translations (`_language_code: ZH_CN`); also fed to `--require-from` so every CJK char in `STR_*: "value"` lines is forced into both subsets. Do **not** hide font-only chars in `#` comments — use a `cn_<feature>_chars.txt` file instead. |
+| `lib/I18n/translations/chinese.yaml` | Traditional Chinese UI translations (`_language_name: 繁體中文`, `_language_code: ZH_TW`, `_locale: zh-TW`); SC builds synthesize `ZH_CN`/`zh-CN`/`简体中文` via OpenCC t2s. Fed to `--require-from` for font subsets. |
+| `lib/EpdFont/scripts/build-sc-builtin-fonts.sh` | SC font pipeline (Source Han Sans CN → `notosans_sc_*.h` + `TcToScRemap.h`). |
+| `lib/EpdFont/scripts/sc_common_chars.txt` / `sc_i18n_chars.txt` | Simplified charset lists for the SC font build. |
 
 ## Consistency check
 

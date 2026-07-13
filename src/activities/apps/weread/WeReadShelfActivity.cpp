@@ -123,15 +123,15 @@ void WeReadShelfActivity::renderContent(Rect contentRect) {
 
   // Subtitle uses a static buffer so we don't allocate every redraw.
   static char subtitleBuf[64];
-  std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%d · %d 有声 · %s", ebookCount_, albumCount_,
-                hasMpEntry_ ? "含文章收藏" : "无文章收藏");
+  std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%d · %d 有聲 · %s", ebookCount_, albumCount_,
+                hasMpEntry_ ? "含文章收藏" : "無文章收藏");
 
   GUI.drawList(
       renderer, contentRect, static_cast<int>(books_.size()), selected,
       [this](int i) {
         const auto& b = books_[i];
         std::string title;
-        if (b.isAlbum) title += "[听] ";
+        if (b.isAlbum) title += "[聽] ";
         if (b.isTop) title += "★ ";
         title += b.title;
         return title;
