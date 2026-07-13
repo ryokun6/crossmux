@@ -1,307 +1,247 @@
-# CrossMux
+# ryOS CrossMux
 
-**English** | [简体中文](./README.zh-CN.md)
+ryOS CrossMux is reading-first firmware for the Xteink X3 and X4. It is a fork of
+[CrossMux](https://github.com/0x1abin/crossmux), built on
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).
 
-**CrossMux** is a community fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) that turns the device into more than a reader — it adds an Apps hub of mini-games and tools, richer standby faces, and a first-class Simplified Chinese build.
+This fork focuses on Chinese and CJK books: vertical EPUB layout, broader font
+coverage, reliable SD-card fonts, and faster 4-level grayscale text. It keeps
+reading stats, WeRead, and standby faces. The old game and toy apps are not part
+of the firmware.
 
-**Version:** CrossMux 1.4.0 (based on CrossPoint Reader 1.4.0)
+Current firmware version: **1.4.1**
 
-**Now running on:** ESP32C3-based Xteink [X4](https://www.xteink.com/products/xteink-x4) and [X3](https://www.xteink.com/products/xteink-x3).
+![ryOS CrossMux running on an Xteink device](./docs/images/cover.jpg)
 
-![CrossMux running on Xteink device](./docs/images/cover.jpg)
+## What this fork adds
 
-What CrossMux adds on top of upstream:
+### Vertical CJK EPUB reading
 
-- **Apps hub** (the `Apps` menu): 2048, Minesweeper, Sudoku, Gomoku (五子棋), Chinese Chess / Xiangqi (象棋), Conway's Game of Life, and a procedural "Ugly Avatar" generator. The menu paginates with page dots once the apps overflow a single screen.
-- **WeRead Copilot** (微信读书): browse your shelf, notes, and reviews with an SD-backed offline cache and bulk sync.
-- **Reading analytics**: reading stats, a monthly reading heatmap, a reading profile, and achievements — backed by an SD-stored JSON history.
-- **Standby faces**: a hand-drawn "sloppy" clock and a Chinese almanac/calendar face (老黄历), plus **AirPage** — a cloud-backed face that shows a QR code to its upload page and fetches a cloud-rendered image over Wi-Fi (manual or live MQTT push), shown full-screen in 4-level grayscale and cached on SD. Optional 4-level grayscale and inverse display modes throughout.
-- **Simplified Chinese firmware** (`gh_release_cn`): Chinese UI + i18n, embedded CJK fonts, and CJK-aware EPUB layout (word breaking and line-break rules). See [Build the Simplified Chinese firmware](#build-the-simplified-chinese-firmware).
-- **Desktop / WebAssembly simulator** for developing and previewing the UI on the host.
+Choose `Writing Mode > Vertical (RTL)` in Reader Settings or the in-book menu.
+The layout engine then:
 
----
+- lays out columns from right to left
+- uses vertical presentation forms for CJK punctuation
+- stacks repeated ellipses and dashes one character cell at a time
+- rotates Latin runs and keeps short numeric references readable
+- applies tate-chu-yoko layout to compact horizontal runs
+- moves paragraph spacing and block margins along the column axis
+- reverses page controls to follow the reading direction
 
-[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
+Vertical mode activates only for EPUBs whose language metadata is tagged
+Chinese, Japanese, or Korean. Other books stay horizontal even if the global
+setting is vertical.
 
-CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
+### Chinese firmware
 
-## What can CrossPoint do?
+The `gh_release_cn` environment builds a Chinese-first firmware with:
 
-- **Reader engine**: EPUB 2/3 rendering with embedded-style option, image handling, hyphenation, kerning, chapter navigation, footnotes, bookmarks, go-to-percent, auto page turn, orientation control, focus reading, KOReader progress sync and more. 
+- Simplified Chinese as the first-boot language
+- English and Simplified Chinese UI strings
+- built-in GenSen Rounded TW bitmap fonts
+- CJK line-breaking and punctuation rules
+- WeRead shelf, notes, reviews, search, recommendations, and offline SD cache
+- the same dual-slot OTA layout as the international build
 
-- **Various formats**: native handling for `.epub`, `.xtc/.xtch`, `.txt`, and `.bmp`.
+The default 14 pt reader font carries roughly 7,000 common ideographs plus
+symbols used by modern EPUBs. Smaller UI sizes use tighter subsets to stay
+within the ESP32-C3 flash budget. Simplified codepoints map to the bundled
+Traditional-form glyphs at lookup time, so the firmware does not store two
+copies of each bitmap.
 
-- **Screenshots.**
+### Better SD-card fonts
 
-- **Custom fonts**: install your favorite fonts on the SD card.
+`.cpfont` families can live in either `/.fonts/` or `/fonts/` on the SD card.
+The loader indexes large CJK families on demand, prewarms upcoming page glyphs,
+and falls back to the regular style when a CJK bold or italic glyph is absent.
 
-- **Tilt page turn (X3 only)**.
+The repo also includes an EB Garamond plus Source Han Serif TC builder. Its
+current character set covers base CJK ideographs, compatibility ideographs,
+Hiragana, Katakana, Greek, EPUB symbols, and a small book-derived supplement.
+See [SD-card fonts](./docs/sd-card-fonts.md).
 
-- **Library workflow**: folder browser, hidden-file toggle, long-press delete, recent books, SD-cache management.
+### Faster grayscale text
 
-- **Wireless workflows**:
-  
-  - File transfer web UI
-  - EPUB Optimizer
-  - Web settings UI/API (edit many device settings from browser)
-  - WebSocket fast uploads
-  - WebDAV handler
-  - AP mode (hotspot) and STA mode (join existing Wi-Fi), both with QR helpers
-  - Calibre wireless connect flow
-  - OPDS browser with saved servers (up to 8), search, pagination, and direct download
-  - OTA update checks and installs from GitHub releases
+Text anti-aliasing uses the display's four grayscale levels. The fork renders
+the two grayscale planes in narrow strips and writes them directly to the
+display, instead of keeping two extra full-screen buffers in RAM. Fast glyph
+blitting and strip rejection reduce repeated work on pages with SD fonts and
+vertical columns.
 
-- **Customization**: multiple themes (Classic, Lyra, Lyra Extended, RoundedRaff), sleep screen modes, front/side button remapping, status bar controls, power-button behavior, refresh cadence, and more.
+### A smaller Apps menu
 
-- **Localization**: 24 UI languages and counting. RTL support.
+The firmware ships only reading-related apps:
 
-### Coming soon:
+- Reading Stats, including history, heatmap, profile, and achievements
+- WeRead in the Chinese build
+- Standby faces, including Sloppy Clock and AirPage, plus Chinese Calendar in
+  the Chinese build
 
-- Dictionary lookup — inline word lookup without leaving the reader.
+Sudoku, Gomoku, Minesweeper, 2048, Chinese Chess, Game of Life, and the avatar
+generator are intentionally excluded.
 
-- More themes.
+## Reader features
 
-- Much more! stay tuned.
+ryOS CrossMux keeps the main CrossPoint reader:
 
----
+- EPUB 2 and EPUB 3 rendering
+- chapter navigation, footnotes, bookmarks, and go-to-percent
+- embedded styles, images, kerning, hyphenation, and focus reading
+- auto page turn, orientation control, screenshots, and QR display
+- KOReader progress sync
+- `.epub`, `.txt`, `.xtc`, `.xtch`, and `.bmp` files
+- recent books, folder browsing, cache management, and long-press delete
+- installable SD-card font families with regular, bold, italic, and bold-italic
+  styles
+- international UI translations and RTL interface support
 
-## USB-locked devices (Xteink Unlocker)
+Wireless tools include file transfer, the EPUB Optimizer, web settings, fast
+WebSocket uploads, WebDAV, Calibre wireless connection, OPDS browsing, and OTA
+updates.
 
-Some Xteink units purchased from third-party stores (e.g. AliExpress) ship with USB flashing locked from the factory.
-If your device is locked, you will need to use the **Xteink Unlocker** tool available at
-https://crosspointreader.com/#unlock-tool before you can flash CrossPoint.
+## X3 and X4 support
 
-**You do not need this tool if you bought your device directly from xteink.com.** Those units are not locked.
+One firmware image runs on both devices. It detects the hardware at boot and
+adapts the panel size, controls, battery source, and available peripherals.
 
-**Not sure if your device is locked?** Power it on, connect the USB-C cable, and try flashing via the web flasher first (see
-[Install firmware](#install-firmware) below). If the browser's serial device picker does not show your device, try a different
-USB port or browser before assuming the device is locked. Only reach for the unlocker if the device still doesn't appear.
+- X4: 800 x 480 SSD1677 display
+- X3: 792 x 528 UC81xx display, DS3231 clock, fuel gauge, and tilt page turn
 
-> ### ⚠️ WARNING: READ THIS BEFORE USING THE UNLOCKER ⚠️
-> 
-> **The only officially supported firmwares in the unlock tool are CrossPoint and CrossInk.**
-> 
-> Flashing any other firmware on a USB-locked device may **permanently brick the device** or leave it **permanently
-> stuck on that firmware with no recovery path**. Once USB flashing is re-locked, your only way back is via OTA, and if
-> the firmware you flashed doesn't support OTA, **there is no way out**.
-> 
-> **The Papyrix fork has removed OTA update support from its code.** If you flash Papyrix onto a
-> USB-locked unit, you will have **zero update or recovery path** and will be stuck on it forever. **Do not flash
-> Papyrix (or any other unsupported firmware) on a locked device.**
+There is no separate X3 build. Build either language variant and flash the same
+`firmware.bin` to the matching target in the web flasher. See
+[device variants](./docs/engineering/device-variants.md) for the detection and
+recovery details.
 
-## Install firmware
+## Before flashing
 
-### Web installer (recommended)
+> **USB-locked device warning**
+>
+> The Xteink Unlocker officially supports CrossPoint and CrossInk. ryOS
+> CrossMux is a community fork. Flashing it to a USB-locked device can leave the
+> device permanently stuck without a supported recovery path. Do not install
+> this fork on a locked unit unless you already have a verified way to recover
+> it.
 
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Go to https://crosspointreader.com/#flash-tools, select device (X3 or X4), and choose an official CrossPoint release.
+Units bought directly from xteink.com are normally not USB-locked. If a browser
+cannot see the serial device, try another data-capable cable, USB port, and
+Chromium-based browser before assuming the device is locked.
 
-### Web installer (specific version)
+## Build and install
 
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Download a `firmware.bin` from [Releases](https://github.com/crosspoint-reader/crosspoint-reader/releases), local build, or continuous integration artifact.
-3. Go to https://crosspointreader.com/#flash-tools, select device (X3 or X4), click "Custom .bin" and upload a `firmware.bin`.
+### Requirements
 
-### Revert to Official Firmware
+- [pioarduino](https://github.com/pioarduino/pioarduino) or its VS Code plugin
+- Python 3.8 or newer
+- Git with submodule support
+- a data-capable USB-C cable
 
-To revert to the official firmware, you can also flash the latest official firmware using https://crosspointreader.com/#flash-tools.
-
-### Command line
-
-1. Install [`esptool`](https://github.com/espressif/esptool):
+### Clone
 
 ```bash
-pip install esptool
+git clone --recursive https://github.com/ryokun6/crossmux.git
+cd crossmux
 ```
 
-2. Download `firmware.bin` from the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases).
-3. Connect your device via USB-C.
-4. Find the device port. On Linux, run `dmesg` after connecting. On macOS:
+If the repo was cloned without submodules:
 
 ```bash
-log stream --predicate 'subsystem == "com.apple.iokit"' --info
-```
-
-5. Flash:
-
-```bash
-esptool.py --chip esp32c3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
-```
-
-Adjust `/dev/ttyACM0` to match your system.
-
-### Manual
-
-See [Development quick start](#development-quick-start) below.
-
----
-
-## Custom SD-card fonts
-
-Convert your own TTF/OTF files into `.cpfont` files that load from the SD card. No firmware reflash is needed.
-
-1. Go to https://crosspointreader.com/fonts and open the "SD-card font builder" form.
-2. Upload up to four styles (regular, bold, italic, bold-italic), set the family name, point sizes, and Unicode range.
-3. Download the generated `.cpfont` files.
-4. Copy them to your SD card under `/fonts/YourFont/` (or `/.fonts/YourFont/` to hide the folder).
-5. Select the font on the device from the font settings.
-
-Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` script unmodified, so output matches a local host build.
-
----
-
-## Documentation
-
-- [User Guide](./USER_GUIDE.md)
-- [Web server usage](./docs/webserver.md)
-- [Web server endpoints](./docs/webserver-endpoints.md)
-- [Project scope](./SCOPE.md)
-- [Contributing docs](./docs/contributing/README.md)
-
----
-
-## Development quick start
-
-### Prerequisites
-
-- [pioarduino](https://github.com/pioarduino/pioarduino) or VS Code + pioarduino plugin
-- Python 3.8+
-- `clang-format` 21
-- USB-C cable supporting data transfer
-
-### Setup
-
-```bash
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
-cd crosspoint-reader
-
-# if cloned without --recursive:
 git submodule update --init --recursive
 ```
 
-### Build / flash / monitor
+### Build
 
 ```bash
-pio run --target upload
+# International firmware
+pio run -e gh_release
+
+# Chinese firmware
+pio run -e gh_release_cn
 ```
 
-### Build the Simplified Chinese firmware
+Build outputs:
 
-CrossMux ships a dedicated Simplified-Chinese build environment, `gh_release_cn`. It produces a Chinese-only firmware: Simplified Chinese UI + i18n, embedded CJK bitmap fonts, CJK-aware EPUB layout, and the Chinese Chess / WeRead apps. A fresh device boots straight into the Chinese UI.
+```text
+.pio/build/gh_release/firmware.bin
+.pio/build/gh_release_cn/firmware.bin
+```
 
-The CJK font headers are committed to the repo, so a normal build needs no extra asset steps:
+### Flash over USB
 
 ```bash
-# Build the Chinese firmware
-pio run -e gh_release_cn
+# International
+pio run -e gh_release -t upload
 
-# Build + flash to a connected device
+# Chinese
 pio run -e gh_release_cn -t upload
 ```
 
-The resulting `firmware.bin` is written to `.pio/build/gh_release_cn/firmware.bin`; it can also be flashed with the web installer (see [Install firmware](#install-firmware)).
+You can also open the
+[CrossPoint web flasher](https://crosspointreader.com/#flash-tools), select the
+physical device, choose `Custom .bin`, and upload the matching build output.
+The target selector patches the image for the device bootloader. It does not
+select a different firmware build.
 
-You only need to regenerate the CJK bitmap headers when changing the character set or updating the embedded fonts — see [docs/engineering/chinese-build.md](./docs/engineering/chinese-build.md) for the font toolchain and flash-budget details.
+To return to official firmware, flash an official
+[CrossPoint release](https://github.com/crosspoint-reader/crosspoint-reader/releases).
 
-### Contributor pre-PR checks
+## Install custom fonts
+
+You can install `.cpfont` files without rebuilding the firmware:
+
+1. On the device, open `Settings > System > Manage Fonts`.
+2. Or upload fonts through the file-transfer web interface.
+3. Or copy a family directory to `/.fonts/FamilyName/` or
+   `/fonts/FamilyName/` on the SD card.
+4. Select the family under `Settings > Reader > Reader Font Family`.
+
+The hidden `/.fonts/` directory wins if the same family exists in both font
+roots. Conversion commands, Unicode presets, and the CJK font builder are
+documented in [docs/sd-card-fonts.md](./docs/sd-card-fonts.md).
+
+## Known limits
+
+- The built-in Chinese font is best at the default 14 pt Medium size. The 12 pt
+  Small font has a smaller ideograph set, while Large and Extra Large are
+  intended mainly for English books.
+- Built-in CJK text has one weight. Install an SD-card family for distinct bold
+  and italic Latin styles.
+- Vertical mode depends on correct `zh`, `ja`, or `ko` EPUB language metadata.
+- The desktop simulator currently models X4 geometry only. X3 display and
+  peripheral testing needs real hardware.
+
+## Development
+
+Useful checks before opening a pull request:
 
 ```bash
 ./bin/clang-format-fix
 pio check -e default
 pio run -e default
+pio run -e gh_release_cn
 ```
 
-### Debugging
+The ESP32-C3 has about 380 KB of usable RAM. Reader caches live on the SD card
+under `/.crosspoint/`, and code changes should avoid adding persistent heap
+pressure.
 
-After flashing the new features, it’s recommended to capture detailed logs from the serial port.
+Start here:
 
-First, make sure all required Python packages are installed:
+- [User guide](./USER_GUIDE.md)
+- [Development guide](./docs/contributing/README.md)
+- [Architecture](./docs/contributing/architecture.md)
+- [Chinese build](./docs/engineering/chinese-build.md)
+- [Cache management](./docs/engineering/cache-management.md)
+- [Binary file formats](./docs/file-formats.md)
+- [Web server](./docs/webserver.md)
+- [Desktop and WebAssembly simulator](./simulator/README.md)
 
-```python
-python3 -m pip install pyserial colorama matplotlib
-```
+## Credits and license
 
-After that run the script:
+ryOS CrossMux builds on work from
+[CrossMux](https://github.com/0x1abin/crossmux),
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader),
+and [diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader).
 
-```sh
-# For Linux
-# This was tested on Debian and should work on most Linux systems.
-python3 scripts/debugging_monitor.py
+The project is not affiliated with Xteink or any device manufacturer.
 
-# For macOS
-python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
-```
-
-Minor adjustments may be required for Windows.
-
----
-
-## Internals
-
-CrossPoint Reader is pretty aggressive about caching data down to the SD card to minimise RAM usage. The ESP32-C3 only has ~380KB of usable RAM, so we have to be careful. A lot of the decisions made in the design of the firmware were based on this constraint.
-
-### Data caching
-
-The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
-cache. This cache directory exists at `.crosspoint` on the SD card. The structure is as follows:
-
-```text
-.crosspoint/
-├── epub_<hash>/         # one directory per book, named by content hash
-│   ├── progress.bin     # reading position (chapter, page, etc.)
-│   ├── cover.bmp        # generated cover image
-│   ├── book.bin         # metadata: title, author, spine, TOC
-│   ├── css_rules.cache  # parsed CSS rule cache
-│   ├── img_*            # rendered image cache files
-│   └── sections/        # per-chapter layout cache
-│       ├── 0.bin
-│       ├── 1.bin
-│       └── ...
-├── settings.json        # device settings
-├── state.json           # resume/runtime state
-└── recent.json          # recent books list
-```
-
-Removing `/.crosspoint` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
-
-For more details on the internal file structures, see the [file formats document](./docs/file-formats.md).
-
----
-
-## Contributing
-
-Contributions are welcome. If you're new to the codebase, start with the [contributing docs](./docs/contributing/README.md). For things to work on, check the [ideas discussion board](https://github.com/crosspoint-reader/crosspoint-reader/discussions/categories/ideas) — leave a comment before starting so we don't duplicate effort.
-
-Everyone here is a volunteer, so please be respectful and patient. For governance and community expectations, see [GOVERNANCE.md](./GOVERNANCE.md).
-
----
-
-## Community forks
-
-One of the best things about open source is that anyone can take the code in a different direction. If you need something outside CrossPoint's [scope](./SCOPE.md), check out the community forks:
-
-- [CrossInk](https://github.com/uxjulia/CrossInk) — Typography and reading tracking: Bionic Reading (bolds word stems to create fixation points), guide dots between words, improved paragraph indents, and replaces the default fonts with ChareInk/Lexend/Bitter.
-
-- [papyrix-reader](https://github.com/bigbag/papyrix-reader) — Adds FB2 and MD format support. Actively maintained with Arabic script support. Custom themes via SD card.
-
-- [crosspet](https://github.com/trilwu/crosspet) — A Vietnamese fork that adds a Tamagotchi-style virtual chicken that grows based on your reading milestones (pages read, streaks, care). Also: Flashcards, Weather, Pomodoro timer, and mini-games.
-
-- [crosspoint-reader-cjk](https://github.com/aBER0724/crosspoint-reader-cjk) — Purpose-built for Chinese, Japanese, and Korean reading.
-
-- [inx](https://github.com/obijuankenobiii/inx) — Completely reimagines the user interface with tabbed navigation.
-
-- ~~[PlusPoint](https://github.com/ngxson/pluspoint-reader) — custom JS apps support.~~ (Unmaintained)
-
-- [crosspoint-reader-papers3](https://github.com/juicecultus/crosspoint-reader-papers3) — Crosspoint port for M5Stack Paper S3. 
-
-- [t5s3-reader](https://github.com/ShallowGreen123/t5s3-reader) — Crosspoint port for LilyGo T5 ePaper S3 / T5S3 4.7-inch e-paper device.
-
-**Note:** Many of these features will make their way into CrossPoint over time. We maintain a slower pace to ensure rock-solid stability and squash bugs before they reach your device.
-
-Want to build your own device? Be sure to check out the [de-link](https://github.com/iandchasse/de-link) project.
-
----
-
-CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.
-
-Huge shoutout to [diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader), which inspired this project.
+Licensed under the [MIT License](./LICENSE).
