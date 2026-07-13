@@ -110,8 +110,14 @@ def parse_yaml_file(filepath: str) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
-def _opencc_t2s_convert(text: str) -> str:
-    """Traditional→Simplified via OpenCC (lazy import)."""
+def _opencc_tw2sp_convert(text: str) -> str:
+    """Taiwan Traditional → Mainland Simplified via OpenCC tw2sp (lazy import).
+
+    chinese.yaml is Taiwan-terminology Traditional. tw2sp maps both characters and
+    common TW↔CN phrases (檔案→文件, 網路→网络, 伺服器→服务器, …). A small
+    post-pass covers idiomatic mainland UI wording OpenCC leaves incomplete
+    (自订→自定义, 当机→崩溃, 竖屏/横屏, 默认, …).
+    """
     try:
         from opencc import OpenCC
     except ImportError as exc:  # pragma: no cover
@@ -119,7 +125,22 @@ def _opencc_t2s_convert(text: str) -> str:
             "OpenCC is required to synthesize ZH_CN from Traditional chinese.yaml. "
             "Install with: pip install OpenCC"
         ) from exc
-    return OpenCC("t2s").convert(text)
+    out = OpenCC("tw2sp").convert(text)
+    # Longest-first phrase overrides for mainland UI idioms tw2sp misses.
+    for tw_sc, cn in (
+        ("快显窗口", "弹窗"),
+        ("连字号", "连字符"),
+        ("自订", "自定义"),
+        ("当机", "崩溃"),
+        ("直向", "竖屏"),
+        ("横向", "横屏"),
+        ("预设", "默认"),
+        ("本机", "本地"),
+        ("帐号", "账号"),
+        ("套用", "应用"),
+    ):
+        out = out.replace(tw_sc, cn)
+    return out
 
 
 def _synthesize_zh_cn_from_zh_tw(tw_data: Dict[str, str]) -> Dict[str, str]:
@@ -133,7 +154,7 @@ def _synthesize_zh_cn_from_zh_tw(tw_data: Dict[str, str]) -> Dict[str, str]:
     for key, value in tw_data.items():
         if key.startswith("_"):
             continue
-        out[key] = _opencc_t2s_convert(value)
+        out[key] = _opencc_tw2sp_convert(value)
     return out
 
 
@@ -155,7 +176,8 @@ def load_translations(
     When *only_languages* is provided, keep only files whose _language_code
     appears in the set (case-insensitive). English is always retained as the
     fallback source. Requesting ZH_CN when only Traditional chinese.yaml
-    (ZH_TW) exists synthesizes Simplified strings via OpenCC t2s.
+    (ZH_TW) exists synthesizes Simplified strings via OpenCC tw2sp
+    (Taiwan terminology → Mainland Simplified phrases).
     """
     yaml_dir = Path(translations_dir)
     if not yaml_dir.is_dir():
@@ -190,7 +212,7 @@ def load_translations(
                     break
             if tw_data is not None:
                 print(
-                    f"[gen_i18n] Synthesizing ZH_CN (简体中文) from {tw_name} via OpenCC t2s"
+                    f"[gen_i18n] Synthesizing ZH_CN (简体中文) from {tw_name} via OpenCC tw2sp"
                 )
                 filtered["__zh_cn_synthesized__.yaml"] = _synthesize_zh_cn_from_zh_tw(tw_data)
                 missing.discard("ZH_CN")
@@ -1146,7 +1168,7 @@ else:
                     only = {"ZH_CN"}
                     print(
                         f"[gen_i18n] {flag}+{sc_flag} detected (env={env_name}); "
-                        f"restricting i18n tables to EN + ZH_CN (t2s from ZH_TW)"
+                        f"restricting i18n tables to EN + ZH_CN (tw2sp from ZH_TW)"
                     )
                 else:
                     only = {"ZH_TW"}

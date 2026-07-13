@@ -49,7 +49,7 @@ jobs:
       - name: Install PlatformIO Core
         run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
 
-      # OpenCC t2s synthesizes ZH_CN UI strings for gh_release_sc (gen_i18n.py).
+      # OpenCC tw2sp synthesizes ZH_CN UI strings for gh_release_sc (gen_i18n.py).
       - name: Install OpenCC
         run: uv pip install --system OpenCC
 

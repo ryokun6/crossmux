@@ -227,7 +227,7 @@ if(NOT EMSCRIPTEN)
 endif()
 
 # Chinese UI variant: OFF = Traditional (default, matches gh_release_tc fonts/remap);
-# ON = Simplified (matches gh_release_sc — CHINESE_UI_SIMPLIFIED + ZH_CN via OpenCC t2s).
+# ON = Simplified (matches gh_release_sc — CHINESE_UI_SIMPLIFIED + ZH_CN via OpenCC tw2sp).
 # Build dirs must be separate (e.g. simulator/build vs simulator/build_sc) because
 # gen_i18n writes into shared lib/I18n/ headers.
 option(SIMULATOR_CHINESE_UI_SIMPLIFIED "Build Simplified Chinese simulator SKU" OFF)
@@ -243,7 +243,7 @@ set(I18N_GENERATED
 )
 file(GLOB I18N_TRANSLATIONS "${REPO_ROOT}/lib/I18n/translations/*.yaml")
 if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
-    # SC firmware tables are EN + ZH_CN only (OpenCC t2s from chinese.yaml).
+    # SC firmware tables are EN + ZH_CN only (OpenCC tw2sp from chinese.yaml).
     set(I18N_GEN_ARGS
         ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
         --only-languages ZH_CN)

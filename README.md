@@ -39,7 +39,7 @@ Two Chinese SKUs ship alongside international:
 | Env | Locale | UI | OTA asset |
 | --- | --- | --- | --- |
 | `gh_release_tc` | `zh-TW` | Traditional (繁體中文) | `firmware-tc.bin` |
-| `gh_release_sc` | `zh-CN` | Simplified (简体中文, from Traditional YAML via OpenCC t2s) | `firmware-sc.bin` |
+| `gh_release_sc` | `zh-CN` | Simplified (简体中文, from Taiwan YAML via OpenCC tw2sp) | `firmware-sc.bin` |
 
 Both include English + Chinese UI strings, CJK line-breaking, WeRead, dual-slot
 OTA from `ryokun6/crossmux`, and embedded CJK bitmap fonts (GenSen TW for TC;
