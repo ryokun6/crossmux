@@ -8,6 +8,8 @@
 
 #include <cstring>
 
+#include "../VerticalPunctuation.h"
+
 namespace {
 bool isVerticalUprightWord(const std::string& word) {
   size_t upright = 0;
@@ -51,40 +53,9 @@ bool containsAsciiAlphaNumeric(const std::string& word) {
   }
 }
 
-size_t verticalStackedPunctuationRunLength(const std::string& word) {
-  size_t count = 0;
-  uint32_t runCodepoint = 0;
-  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
-  while (true) {
-    const uint32_t cp = utf8NextCodepoint(&ptr);
-    if (cp == 0) break;
-    if (cp != 0xFE19 && cp != 0xFE30 && cp != 0xFE31 && cp != 0xFE32) return 0;  // ︙ / ︰ / ︱ / ︲
-    if (runCodepoint == 0) {
-      runCodepoint = cp;
-    } else if (cp != runCodepoint) {
-      return 0;
-    }
-    ++count;
-  }
-  return count >= 2 ? count : 0;
-}
-
-const char* verticalPresentationGlyph(const uint32_t cp) {
-  switch (cp) {
-    case 0xFE19:
-      return "\xef\xb8\x99";  // ︙
-    case 0xFE30:
-      return "\xef\xb8\xb0";  // ︰
-    case 0xFE31:
-      return "\xef\xb8\xb1";  // ︱
-    default:
-      return "\xef\xb8\xb2";  // ︲
-  }
-}
-
 bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_t index) {
   const std::string& word = words[index];
-  if (verticalStackedPunctuationRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word)) {
+  if (VerticalPunctuation::stackedRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word)) {
     return true;
   }
   if (!isTateChuYokoWord(word)) {
@@ -138,16 +109,21 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
       drawY += ascender / 4;
     }
 
-    const size_t stackedCount = verticalRtl ? verticalStackedPunctuationRunLength(words[i]) : 0;
+    const size_t stackedCount = verticalRtl ? VerticalPunctuation::stackedRunLength(words[i]) : 0;
     if (stackedCount > 0) {
       int cellStep = renderer.getTextAdvanceX(fontId, "\xe6\x9c\xac", EpdFontFamily::REGULAR);  // 本
       if (cellStep <= 0) cellStep = ascender;
 
       const auto* punctuationPtr = reinterpret_cast<const unsigned char*>(words[i].c_str());
-      for (size_t punctuationIndex = 0; punctuationIndex < stackedCount; ++punctuationIndex) {
+      size_t punctuationIndex = 0;
+      while (*punctuationPtr != '\0' && punctuationIndex < stackedCount) {
         const uint32_t cp = utf8NextCodepoint(&punctuationPtr);
-        renderer.drawText(fontId, drawX, drawY + static_cast<int>(punctuationIndex) * cellStep,
-                          verticalPresentationGlyph(cp), true, currentStyle, baseDir);
+        if (VerticalPunctuation::isVariationSelector(cp)) continue;
+        char glyph[5];
+        if (!VerticalPunctuation::writeGlyphUtf8(cp, glyph)) continue;
+        renderer.drawText(fontId, drawX, drawY + static_cast<int>(punctuationIndex) * cellStep, glyph, true,
+                          currentStyle, baseDir);
+        ++punctuationIndex;
       }
       continue;
     }

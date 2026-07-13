@@ -98,11 +98,11 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry an independent version counter,
-> currently **50**. The byte layout is identical to the Latin version below; only
+> currently **54**. The byte layout is identical to the Latin version below; only
 > the word-stream contents differ (per-character CJK tokenization), so caches are
 > not reusable across flavors.
 >
-> Latin builds use version **49** (was 47). Counters track `writingMode`, em-based
+> Latin builds use version **53** (was 51). Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
 > (﹁﹂︵︒ etc.), horizontal inter-paragraph spacing in vertical-rl, and normal
 > brackets in rotated numeric references such as `[12]`. Vertical column breaks
@@ -116,7 +116,10 @@ if (parsedSize != fileSize) {
 > roles/types, or common separator hints in image metadata. In
 > vertical-rl, block start/end and extra paragraph spacing advance the horizontal
 > column axis rather than offsetting text vertically. Repeated vertical ellipsis
-> forms stack and consume one character cell each, matching repeated dashes.
+> variants (…, ⋯, ⋮, ︙, ‥, ︰), including mixed encodings, stack and consume one
+> character cell each, matching repeated dash variants. Upright punctuation
+> grouped into one parser token (for example, `……”`) also consumes one cell per
+> codepoint.
 
 
 Each file in `sections/*.bin` stores one laid-out spine section. The header is

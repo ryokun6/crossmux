@@ -20,9 +20,9 @@ namespace {
 // number (Latin: 24/26/30, Chinese: 27/29/31, upstream single: 26/27) so a
 // firmware flavor swap can never read the other flavor's stale cache.
 #ifdef ENABLE_CHINESE_VERSION
-constexpr uint8_t SECTION_FILE_VERSION = 50;  // was 48; large-only mode now rejects decorative separator images
+constexpr uint8_t SECTION_FILE_VERSION = 54;  // was 52; stack grouped upright punctuation by codepoint
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 49;  // was 47; large-only mode now rejects decorative separator images
+constexpr uint8_t SECTION_FILE_VERSION = 53;  // was 51; stack grouped upright punctuation by codepoint
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +

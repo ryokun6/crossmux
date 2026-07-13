@@ -10,6 +10,7 @@
 #include <limits>
 #include <vector>
 
+#include "VerticalPunctuation.h"
 #include "hyphenation/Hyphenator.h"
 
 constexpr int MAX_COST = std::numeric_limits<int>::max();
@@ -69,26 +70,8 @@ bool containsAsciiAlphaNumeric(const std::string& word) {
   }
 }
 
-size_t verticalStackedPunctuationRunLength(const std::string& word) {
-  size_t count = 0;
-  uint32_t runCodepoint = 0;
-  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
-  while (true) {
-    const uint32_t cp = utf8NextCodepoint(&ptr);
-    if (cp == 0) break;
-    if (cp != 0xFE19 && cp != 0xFE30 && cp != 0xFE31 && cp != 0xFE32) return 0;  // ︙ / ︰ / ︱ / ︲
-    if (runCodepoint == 0) {
-      runCodepoint = cp;
-    } else if (cp != runCodepoint) {
-      return 0;
-    }
-    ++count;
-  }
-  return count >= 2 ? count : 0;
-}
-
 bool isSidewaysVerticalWord(const std::string& word) {
-  return verticalStackedPunctuationRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word);
+  return VerticalPunctuation::stackedRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word);
 }
 
 bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_t index) {
@@ -109,7 +92,7 @@ bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_
 
 int verticalExtentForWord(const GfxRenderer& renderer, int fontId, const std::string& word, EpdFontFamily::Style style,
                           int cellStep, uint16_t wordWidth, const bool sideways) {
-  const size_t stackedCount = verticalStackedPunctuationRunLength(word);
+  const size_t stackedCount = VerticalPunctuation::stackedRunLength(word);
   if (stackedCount > 0) {
     return static_cast<int>(stackedCount) * cellStep;
   }
@@ -184,6 +167,10 @@ bool containsSidewaysAlphaNumeric(const std::string& word) {
 }
 
 uint32_t verticalFormForCodepoint(uint32_t cp, VerticalPunctRemapState& state) {
+  if (const uint32_t stackedPresentation = VerticalPunctuation::presentationCodepoint(cp); stackedPresentation != 0) {
+    return stackedPresentation;
+  }
+
   switch (cp) {
     // Ambiguous ASCII quotes: alternate open/close across the paragraph.
     case '"':
@@ -261,17 +248,6 @@ uint32_t verticalFormForCodepoint(uint32_t cp, VerticalPunctRemapState& state) {
       return 0xFE15;  // ︕
     case 0xFF1F:      // ？
       return 0xFE16;  // ︖
-    case 0x2026:      // …
-    case 0x22EF:      // ⋯
-      return 0xFE19;  // ︙
-    case 0x2025:      // ‥
-      return 0xFE30;  // ︰
-    case 0x2014:      // —
-    case 0x2015:      // ―
-      return 0xFE31;  // ︱
-    case 0x2013:      // –
-      return 0xFE32;  // ︲
-
     default:
       return cp;
   }
