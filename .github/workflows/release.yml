@@ -36,7 +36,7 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
-      - name: Build CrossMux (international + Chinese)
+      - name: Build ryOS CrossMux (international + Chinese)
         run: pio run -e gh_release -e gh_release_cn
 
       - name: Stage release assets
@@ -93,7 +93,7 @@ jobs:
           bash scripts/publish-gitee-release.sh \
             "x1abin/crossmux" \
             "${{ github.ref_name }}" \
-            "CrossMux ${{ github.ref_name }}" \
+            "ryOS CrossMux ${{ github.ref_name }}" \
             "false" \
             "${{ github.sha }}" \
             "release-body.md" \
@@ -102,7 +102,7 @@ jobs:
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: CrossMux-${{ github.ref_name }}
+          name: ryOS-CrossMux-${{ github.ref_name }}
           path: |
             .pio/build/gh_release/bootloader.bin
             .pio/build/gh_release/firmware.bin

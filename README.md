@@ -36,8 +36,8 @@ setting is vertical.
 
 The `gh_release_cn` environment builds a Chinese-first firmware with:
 
-- Simplified Chinese as the first-boot language
-- English and Simplified Chinese UI strings
+- Chinese as the first-boot language
+- English and Chinese UI strings
 - built-in GenSen Rounded TW bitmap fonts
 - CJK line-breaking and punctuation rules
 - WeRead shelf, notes, reviews, search, recommendations, and offline SD cache
@@ -131,7 +131,7 @@ recovery details.
 > **USB-locked device warning**
 >
 > The Xteink Unlocker officially supports CrossPoint and CrossInk. ryOS
-> CrossMux is a community fork. Flashing it to a USB-locked device can leave the
+> ryOS CrossMux is a community fork. Flashing it to a USB-locked device can leave the
 > device permanently stuck without a supported recovery path. Do not install
 > this fork on a locked unit unless you already have a verified way to recover
 > it.

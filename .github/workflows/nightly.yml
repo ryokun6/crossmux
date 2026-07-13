@@ -35,7 +35,7 @@ jobs:
       - name: Extract short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      - name: Build CrossMux Nightly (international + Chinese)
+      - name: Build ryOS CrossMux Nightly (international + Chinese)
         env:
           CROSSPOINT_RC_HASH: ${{ env.SHORT_SHA }}
         run: pio run -e gh_release_rc -e gh_release_cn_rc
@@ -56,7 +56,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly
-          name: CrossMux Nightly (${{ env.SHORT_SHA }})
+          name: ryOS CrossMux Nightly (${{ env.SHORT_SHA }})
           prerelease: true
           target_commitish: ${{ github.sha }}
           files: dist/*
@@ -78,7 +78,7 @@ jobs:
           bash scripts/publish-gitee-release.sh \
             "x1abin/crossmux" \
             "nightly" \
-            "CrossMux Nightly (${{ env.SHORT_SHA }})" \
+            "ryOS CrossMux Nightly (${{ env.SHORT_SHA }})" \
             "true" \
             "${{ github.sha }}" \
             "gitee-nightly-body.md" \
