@@ -8,8 +8,8 @@ ryOS CrossMux is reading-first firmware for the Xteink X3 and X4. It is a fork o
 
 This fork focuses on Chinese and CJK books: vertical EPUB layout, broader font
 coverage, reliable SD-card fonts, and faster 4-level grayscale text. It keeps
-reading stats, WeRead, and standby faces. The old game and toy apps are not part
-of the firmware.
+reading stats, WeRead (Chinese SKUs), and standby faces. The old game and toy
+apps are not part of the firmware.
 
 Current firmware version: **1.4.8**
 
@@ -34,9 +34,9 @@ Vertical mode activates only for EPUBs whose language metadata is tagged
 Chinese, Japanese, or Korean. Other books stay horizontal even if the global
 setting is vertical.
 
-### Chinese firmware (Traditional and Simplified)
+### Localized CJK firmware (TC / SC / JA / KO)
 
-Two Chinese SKUs and Japanese / Korean SKUs ship alongside international:
+Four CJK SKUs ship alongside international:
 
 | Env | Locale | UI | OTA asset |
 | --- | --- | --- | --- |
@@ -45,20 +45,23 @@ Two Chinese SKUs and Japanese / Korean SKUs ship alongside international:
 | `gh_release_ja` | `ja-JP` | Japanese | `firmware-ja.bin` |
 | `gh_release_ko` | `ko-KR` | Korean | `firmware-ko.bin` |
 
-Chinese SKUs include English + Chinese UI, CJK line-breaking, WeRead, dual-slot OTA from
-`ryokun6/crossmux`, and embedded CJK bitmap fonts from GenSen Rounded TW
-(Traditional SKU stores TC-keyed bitmaps; Simplified SKU subsets the same OTF
-by SC codepoints so glyph shapes stay Simplified).
+**Chinese SKUs** include English + Chinese UI, CJK line-breaking, WeRead,
+dual-slot OTA from `ryokun6/crossmux`, and embedded CJK bitmap fonts from
+GenSen Rounded TW (Traditional SKU stores TC-keyed bitmaps; Simplified SKU
+subsets the same OTF by SC codepoints so glyph shapes stay Simplified).
 
-Japanese / Korean SKUs use GenSen Rounded 2 JP and Resource Han Rounded KR
-respectively, with **no** OpenCC Han conversion (see
-[docs/engineering/japanese-korean-build.md](docs/engineering/japanese-korean-build.md)).
+**Automatic text conversion while reading (Chinese SKUs only):** book
+codepoints are remapped at glyph lookup so you can open the same EPUB/TXT on
+either Chinese SKU. The Traditional build maps Simplified → Traditional
+bitmaps; the Simplified build maps Traditional → Simplified. UI strings are
+converted at build time — the SC SKU runs OpenCC `tw2sp` on the shared Taiwan
+YAML (e.g. 檔案 → 文件).
 
-**Automatic text conversion while reading (Chinese SKUs only):** book codepoints are remapped at
-glyph lookup so you can open the same EPUB/TXT on either Chinese SKU. The Traditional
-build maps Simplified → Traditional bitmaps; the Simplified build maps
-Traditional → Simplified. UI strings are converted at build time — the SC SKU
-runs OpenCC `tw2sp` on the shared Taiwan YAML (e.g. 檔案 → 文件).
+**Japanese / Korean SKUs** use GenSen Rounded 2 JP and Resource Han Rounded KR
+respectively, with **no** OpenCC Han conversion. WeRead and the Chinese
+calendar face are Chinese-SKU only. See
+[docs/engineering/japanese-korean-build.md](./docs/engineering/japanese-korean-build.md)
+and [docs/engineering/chinese-build.md](./docs/engineering/chinese-build.md).
 
 ### Better SD-card fonts
 
@@ -95,9 +98,9 @@ The firmware ships only reading-related apps:
 
 - OPDS Browser
 - Reading Stats, including history, heatmap, profile, and achievements
-- WeRead in the Chinese build
+- WeRead in the Chinese builds
 - Standby faces, including Sloppy Clock and AirPage, plus Chinese Calendar in
-  the Chinese build
+  the Chinese builds
 
 Sudoku, Gomoku, Minesweeper, 2048, Chinese Chess, Game of Life, and the avatar
 generator are intentionally excluded.
@@ -120,8 +123,9 @@ ryOS CrossMux keeps the main CrossPoint reader:
 Wireless tools include file transfer, the EPUB Optimizer, web settings, fast
 WebSocket uploads, WebDAV, Calibre wireless connection, OPDS browsing, and
 network OTA from the latest `ryokun6/crossmux` GitHub release. OTA selects
-`firmware.bin`, `firmware-tc.bin`, or `firmware-sc.bin` to match the installed build. Firmware can
-also be installed through USB, the web flasher, or `SD Card Firmware Update`.
+`firmware.bin`, `firmware-tc.bin`, `firmware-sc.bin`, `firmware-ja.bin`, or
+`firmware-ko.bin` to match the installed build. Firmware can also be installed
+through USB, the web flasher, or `SD Card Firmware Update`.
 
 ## X3 and X4 support
 
@@ -131,7 +135,7 @@ adapts the panel size, controls, battery source, and available peripherals.
 - X4: 800 x 480 SSD1677 display
 - X3: 792 x 528 UC81xx display, DS3231 clock, fuel gauge, and tilt page turn
 
-There is no separate X3 build. Build either language variant and flash the same
+There is no separate X3 build. Build any language variant and flash the same
 `firmware.bin` to the matching target in the web flasher. See
 [device variants](./docs/engineering/device-variants.md) for the detection and
 recovery details.
@@ -183,6 +187,12 @@ pio run -e gh_release_tc
 
 # Simplified Chinese (zh-CN)
 pio run -e gh_release_sc
+
+# Japanese (ja-JP)
+pio run -e gh_release_ja
+
+# Korean (ko-KR)
+pio run -e gh_release_ko
 ```
 
 Build outputs:
@@ -191,6 +201,8 @@ Build outputs:
 .pio/build/gh_release/firmware.bin
 .pio/build/gh_release_tc/firmware.bin
 .pio/build/gh_release_sc/firmware.bin
+.pio/build/gh_release_ja/firmware.bin
+.pio/build/gh_release_ko/firmware.bin
 ```
 
 ### Flash over USB
@@ -204,6 +216,12 @@ pio run -e gh_release_tc -t upload
 
 # Simplified Chinese
 pio run -e gh_release_sc -t upload
+
+# Japanese
+pio run -e gh_release_ja -t upload
+
+# Korean
+pio run -e gh_release_ko -t upload
 ```
 
 You can also open the
@@ -214,6 +232,12 @@ select a different firmware build.
 
 To return to official firmware, flash an official
 [CrossPoint release](https://github.com/crosspoint-reader/crosspoint-reader/releases).
+
+### Regenerate CJK fonts (optional)
+
+Only needed when changing character sets or refreshing embedded fonts. See
+[chinese-build.md](./docs/engineering/chinese-build.md) and
+[japanese-korean-build.md](./docs/engineering/japanese-korean-build.md).
 
 ## Install custom fonts
 
@@ -231,13 +255,14 @@ documented in [docs/sd-card-fonts.md](./docs/sd-card-fonts.md).
 
 ## Known limits
 
-- The built-in Chinese font is best at the default 14 pt Medium size. The 12 pt
-  Small font has a smaller ideograph set, while Large and Extra Large are
-  intended mainly for English books.
+- Built-in CJK coverage is best at the default 14 pt Medium size. Large and
+  Extra Large are intended mainly for English books / UI glyphs.
 - Built-in CJK text has one weight. Install an SD-card family for distinct bold
-  and italic Latin styles.
-- SC↔TC remapping covers the common pairs; rare characters outside the map or
-  the embedded subset can still render as □.
+  and italic styles.
+- SC↔TC remapping (Chinese SKUs only) covers common pairs; rare characters
+  outside the map or the embedded subset can still render as □.
+- Japanese and Korean SKUs do **not** convert Han orthography; Chinese books may
+  show □ for glyphs outside that SKU’s subset.
 - Vertical mode depends on correct `zh`, `ja`, or `ko` EPUB language metadata.
 - The desktop simulator currently models X4 geometry only. X3 display and
   peripheral testing needs real hardware.
@@ -252,6 +277,8 @@ pio check -e default
 pio run -e default
 pio run -e gh_release_tc
 pio run -e gh_release_sc
+pio run -e gh_release_ja
+pio run -e gh_release_ko
 ```
 
 The ESP32-C3 has about 380 KB of usable RAM. Reader caches live on the SD card
@@ -264,6 +291,7 @@ Start here:
 - [Development guide](./docs/contributing/README.md)
 - [Architecture](./docs/contributing/architecture.md)
 - [Chinese build](./docs/engineering/chinese-build.md)
+- [Japanese / Korean build](./docs/engineering/japanese-korean-build.md)
 - [Cache management](./docs/engineering/cache-management.md)
 - [Binary file formats](./docs/file-formats.md)
 - [Web server](./docs/webserver.md)
