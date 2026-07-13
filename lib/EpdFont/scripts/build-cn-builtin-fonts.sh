@@ -50,7 +50,7 @@ CHARSET_FILE="cn_common_chars.txt"
 # feature that needs CJK glyphs absent from both the 3500 SC pool and the
 # natural chinese.yaml STR_ values adds its own cn_<feature>_chars.txt here.
 # cn_almanac_chars.txt: ganzhi + lunar-row chars for ChineseCalendarFace.
-REQUIRE_FROM=(../../I18n/translations/chinese.yaml cn_almanac_chars.txt)
+REQUIRE_FROM=(../../I18n/translations/chinese.yaml cn_almanac_chars.txt cn_weread_chars.txt)
 TMP_DIR="instanced_fonts/GenSenRounded2TW"
 SUBSET_OTF="$TMP_DIR/GenSenRounded2TW-R.cncommon.otf"
 # Reader-default (14pt) subset: 7000 通用汉字 (Traditionalized) + symbols.

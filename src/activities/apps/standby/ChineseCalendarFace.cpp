@@ -103,8 +103,8 @@ void formatGanzhiYearLabel(const AlmanacDay& d, char* buf, size_t sz) {
 }
 
 void formatLunarFull(const AlmanacDay& d, char* buf, size_t sz) {
-  // "闰四月初三" or "四月初三"
-  const char* leapPrefix = d.lunarLeap ? "闰" : "";
+  // "閏四月初三" or "四月初三"
+  const char* leapPrefix = d.lunarLeap ? "閏" : "";
   std::snprintf(buf, sz, "%s%s%s", leapPrefix, chinese_almanac::kLunarMonthNames[(d.lunarMonth - 1) % 12],
                 chinese_almanac::kLunarDayNames[(d.lunarDay - 1) % 30]);
 }
@@ -115,7 +115,7 @@ void formatDayPillar(const AlmanacDay& d, char* buf, size_t sz) {
 }
 
 void formatClash(const AlmanacDay& d, char* buf, size_t sz) {
-  // "未羊"  (rendered with "冲" prefix at the call site)
+  // "未羊"  (rendered with "衝" prefix at the call site)
   std::snprintf(buf, sz, "%s%s", chinese_almanac::kBranchNames[d.clashBranchIdx],
                 chinese_almanac::kZodiacNames[d.clashBranchIdx]);
 }
@@ -261,7 +261,7 @@ void drawAlmanacPage(GfxRenderer& renderer, const Rect& viewport, const AlmanacD
                 chinese_almanac::kJiPool[day.jiIdx % 12]);
   }
 
-  // Footer:  hairline + "日柱 辛卯 · 冲未羊"
+  // Footer:  hairline + "日柱 辛卯 · 衝未羊"
   {
     const int footerLineY = viewport.y + vh - kFooterHairlineFromBottom;
     renderer.drawLine(viewport.x + 24, footerLineY, viewport.x + vw - 24, footerLineY, true);

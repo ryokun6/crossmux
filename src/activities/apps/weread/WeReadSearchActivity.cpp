@@ -55,7 +55,7 @@ void WeReadSearchActivity::loop() {
 
 void WeReadSearchActivity::buildRequest(JsonDocument& body) {
   body["keyword"] = keyword_;
-  body["scope"] = 10;  // e-books per skill doc default for "搜书"
+  body["scope"] = 10;  // e-books per skill doc default for "搜書"
 }
 
 void WeReadSearchActivity::buildResponseFilter(JsonDocument& filter) {
@@ -118,10 +118,10 @@ void WeReadSearchActivity::renderContent(Rect contentRect) {
       [this](int i) {
         const auto& r = rows_[i];
         if (r.newRating > 0) {
-          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 评分 %.1f · %d 在读", r.author.c_str(),
+          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 評分 %.1f · %d 在讀", r.author.c_str(),
                         r.newRating / 10.0, r.readingCount);
         } else {
-          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · %d 在读", r.author.c_str(), r.readingCount);
+          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · %d 在讀", r.author.c_str(), r.readingCount);
         }
         return std::string(subtitleBuf);
       });

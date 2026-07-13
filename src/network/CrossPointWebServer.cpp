@@ -1938,7 +1938,7 @@ void CrossPointWebServer::handlePostWeReadKey() {
   // the user-visible error strings are intentionally Chinese to match the
   // accompanying /weread page.
   if (!server->hasArg("plain")) {
-    server->send(400, "application/json", "{\"ok\":false,\"error\":\"\\u8bf7\\u6c42\\u4e0d\\u542b JSON \\u4f53\"}");
+    server->send(400, "application/json", "{\"ok\":false,\"error\":\"\\u8acb\\u6c42\\u4e0d\\u542b JSON \\u9ad4\"}");
     return;
   }
 
@@ -1947,21 +1947,21 @@ void CrossPointWebServer::handlePostWeReadKey() {
   const DeserializationError err = deserializeJson(doc, body);
   if (err) {
     server->send(400, "application/json",
-                 String("{\"ok\":false,\"error\":\"JSON \\u89e3\\u6790\\u5931\\u8d25: ") + err.c_str() + "\"}");
+                 String("{\"ok\":false,\"error\":\"JSON \\u89e3\\u6790\\u5931\\u6557: ") + err.c_str() + "\"}");
     return;
   }
 
   const std::string key = doc["key"].as<std::string>();
   if (!WeReadKeyStore::isWellFormed(key)) {
-    // "Key 必须以 wrk- 开头,长度 8-256"
+    // "Key 必須以 wrk- 開頭,長度 8-256"
     server->send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"Key \\u5fc5\\u987b\\u4ee5 wrk- \\u5f00\\u5934,\\u957f\\u5ea6 8-256\"}");
+                 "{\"ok\":false,\"error\":\"Key \\u5fc5\\u9808\\u4ee5 wrk- \\u958b\\u982d,\\u9577\\u5ea6 8-256\"}");
     return;
   }
 
   if (!WeReadKeyStore::save(key)) {
-    // "保存失败"
-    server->send(500, "application/json", "{\"ok\":false,\"error\":\"\\u4fdd\\u5b58\\u5931\\u8d25\"}");
+    // "保存失敗"
+    server->send(500, "application/json", "{\"ok\":false,\"error\":\"\\u4fdd\\u5b58\\u5931\\u6557\"}");
     LOG_ERR("WEB", "WeReadKeyStore::save() failed");
     return;
   }
