@@ -3,9 +3,12 @@
 # Generates per-size Japanese font headers for ENABLE_JAPANESE_VERSION.
 # Coverage tiers (no OpenCC / no Han conversion — Japanese orthography as-is):
 #
-#   8/10/12pt : 教育漢字 1026 ∪ kana ∪ i18n   (ja_common_chars.txt)
-#   14pt      : 常用漢字 2136 ∪ kana ∪ i18n + symbols (chars_joyo_2136.txt ∪ kana)
-#   16/18pt   : i18n + kana only              (ja_i18n_chars.txt)
+#   8/10/12pt : 常用漢字 2136 ∪ kana ∪ i18n              (ja_common_chars.txt)
+#   14pt      : JIS X 0208 Lv1+Lv2 6355 ∪ joyo ∪ kana ∪ i18n + symbols
+#   16/18pt   : i18n + kana only                         (ja_i18n_chars.txt)
+#
+# Joyo is unioned into the 14pt pool so MEDIUM is a strict superset of the
+# minimal set (JIS X 0208 omits 塡/頰 from the 2010 常用漢字表).
 #
 # Source face: GenSen Rounded 2 JP Regular
 #   https://github.com/ButTaiwan/gensen-font  (GenSenRounded2JP-R.otf)
@@ -23,11 +26,12 @@ CHARSET_FILE="ja_common_chars.txt"
 REQUIRE_FROM=(../../I18n/translations/japanese.yaml chars_ja_kana.txt)
 TMP_DIR="instanced_fonts/GenSenRounded2JP"
 SUBSET_OTF="$TMP_DIR/GenSenRounded2JP-R.jacommon.otf"
-LARGE_OTF="$TMP_DIR/GenSenRounded2JP-R.jajoyo.otf"
-LARGE_CHARSET_FILE="$TMP_DIR/ja_joyo_plus_kana.txt"
+LARGE_OTF="$TMP_DIR/GenSenRounded2JP-R.jajis.otf"
+LARGE_CHARSET_FILE="$TMP_DIR/ja_jis_plus_kana.txt"
 I18N_OTF="$TMP_DIR/GenSenRounded2JP-R.i18nonly.otf"
 I18N_CHARSET_FILE="ja_i18n_chars.txt"
 JOYO_FILE="chars_joyo_2136.txt"
+JIS_FILE="chars_jis_l1l2_6355.txt"
 KANA_FILE="chars_ja_kana.txt"
 
 JA_FONT_SIZES_SMALL=(8 10 12)
@@ -86,22 +90,22 @@ if [ ! -f "$CHARSET_FILE" ] || [ ! -f "$I18N_CHARSET_FILE" ]; then
   exit 1
 fi
 
-if [ ! -f "$JOYO_FILE" ] || [ ! -f "$KANA_FILE" ]; then
-  echo "Error: $JOYO_FILE or $KANA_FILE missing." >&2
+if [ ! -f "$JOYO_FILE" ] || [ ! -f "$JIS_FILE" ] || [ ! -f "$KANA_FILE" ]; then
+  echo "Error: $JOYO_FILE, $JIS_FILE, or $KANA_FILE missing." >&2
   exit 1
 fi
 
-# 14pt pool: 常用漢字 ∪ kana ∪ i18n (no Han conversion).
-echo "Building 14pt Joyo+kana charset..."
-"$PYTHON" - <<'PY' "$JOYO_FILE" "$KANA_FILE" "$I18N_CHARSET_FILE" "$LARGE_CHARSET_FILE"
+# 14pt pool: JIS Lv1+Lv2 ∪ 常用漢字 ∪ kana ∪ i18n (no Han conversion).
+echo "Building 14pt JIS+Joyo+kana charset..."
+"$PYTHON" - <<'PY' "$JIS_FILE" "$JOYO_FILE" "$KANA_FILE" "$I18N_CHARSET_FILE" "$LARGE_CHARSET_FILE"
 import sys
 from pathlib import Path
 parts = []
-for p in sys.argv[1:4]:
+for p in sys.argv[1:5]:
     parts.extend(c for c in Path(p).read_text(encoding="utf-8") if not c.isspace())
 out = sorted(set(parts))
-Path(sys.argv[4]).write_text("".join(out), encoding="utf-8")
-print(f"  {len(out)} chars → {sys.argv[4]}", file=sys.stderr)
+Path(sys.argv[5]).write_text("".join(out), encoding="utf-8")
+print(f"  {len(out)} chars → {sys.argv[5]}", file=sys.stderr)
 PY
 
 JA_UNICODEM="U+0020-007E,U+00A0-00FF,U+2010-2026,U+3000-303F,U+3040-309F,U+30A0-30FF,U+FE10-FE19,U+FE30-FE48,U+FF00-FFEF,U+FFFD"
@@ -118,7 +122,7 @@ echo "Subsetting $(basename "$SOURCE_OTF") → small..."
   --no-hinting \
   --drop-tables+=DSIG,GSUB,GPOS
 
-echo "Subsetting $(basename "$SOURCE_OTF") → large (Joyo)..."
+echo "Subsetting $(basename "$SOURCE_OTF") → large (JIS Lv1+Lv2)..."
 "$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
   --output-file="$LARGE_OTF" \
   --text-file="$LARGE_CHARSET_FILE" \

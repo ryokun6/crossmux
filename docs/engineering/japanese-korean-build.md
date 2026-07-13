@@ -21,12 +21,14 @@ Chinese-only features (WeRead, 农历, SC↔TC remap) stay behind
 
 | Tier | Sizes | Pool | Source |
 |---|---|---|---|
-| Small | 8/10/12 | 教育漢字 1026 ∪ kana ∪ i18n | MEXT 学年別漢字配当表 (2017) |
-| Large | 14 | 常用漢字 2136 ∪ kana ∪ i18n + symbols | 内閣告示 常用漢字表 (2010) |
+| Minimal (Small) | 8/10/12 | 常用漢字 2136 ∪ kana ∪ i18n | 内閣告示 常用漢字表 (2010) |
+| Base (MEDIUM) | 14 | JIS X 0208 Lv1+Lv2 6355 ∪ joyo ∪ kana ∪ i18n + symbols | JIS X 0208 (1990) rows 16–84 |
 | I18n | 16/18 | kana ∪ `japanese.yaml` | UI force-include |
 
 Hiragana + katakana always accompany every tier (via `chars_ja_kana.txt` and
 pyftsubset kana Unicode ranges). Ideographs are **not** remapped SC↔TC.
+The 14pt pool unions Joyo so MEDIUM stays a strict superset of the minimal set
+(JIS X 0208 omits 塡/頰 from the 2010 Joyo table).
 
 ### Korean
 
@@ -92,8 +94,8 @@ Use **separate build directories** per SKU — `gen_i18n.py` writes shared
 
 | Path | Role |
 |---|---|
-| `lib/EpdFont/scripts/chars_kyoiku_1026.txt` | 教育漢字 pool |
-| `lib/EpdFont/scripts/chars_joyo_2136.txt` | 常用漢字 pool |
+| `lib/EpdFont/scripts/chars_joyo_2136.txt` | 常用漢字 pool (minimal / 8–12pt) |
+| `lib/EpdFont/scripts/chars_jis_l1l2_6355.txt` | JIS X 0208 Level 1+2 kanji pool (14pt) |
 | `lib/EpdFont/scripts/chars_ja_kana.txt` | Hiragana + katakana |
 | `lib/EpdFont/scripts/build_ja_charset.py` | Emits `ja_common_chars.txt` / `ja_i18n_chars.txt` |
 | `lib/EpdFont/scripts/build-ja-builtin-fonts.sh` | GenSen JP → `notosans_ja_*.h` |
@@ -110,8 +112,8 @@ Use **separate build directories** per SKU — `gen_i18n.py` writes shared
 
 - No bold/italic CJK bitmaps (single Regular weight), same as Chinese.
 - JA 16/18pt and KO 8/10/12/16/18pt are i18n-only by design — use MEDIUM (14pt)
-  for full Joyo (JA large tier is also 14pt) or full modern Hangul + Hanja 1800
-  (KO) EPUB coverage.
+  for full JIS Lv1+Lv2 (JA) or full modern Hangul + Hanja 1800 (KO) EPUB
+  coverage. JA 8/10/12pt still cover Joyo for UI and lighter reading.
 - JA/KO do **not** convert Chinese characters (no `ScToTcRemap` /
   `TcToScRemap`); mixed SC/TC EPUB text may show □ for the unmapped form if
   that codepoint was not in the Japanese/Korean subset.
