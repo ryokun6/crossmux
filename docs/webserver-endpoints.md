@@ -459,11 +459,11 @@ Error responses:
 | Status | Body                                                  | Cause                                  |
 | ------ | ----------------------------------------------------- | -------------------------------------- |
 | 400    | `{"ok":false,"error":"请求不含 JSON 体"}`              | Missing request body                   |
-| 400    | `{"ok":false,"error":"JSON 解析失败: …"}`              | Malformed JSON                         |
-| 400    | `{"ok":false,"error":"Key 必须以 wrk- 开头,长度 8-256"}` | Failed `WeReadKeyStore::isWellFormed` |
-| 500    | `{"ok":false,"error":"保存失败"}`                       | SD card write error                    |
+| 400    | `{"ok":false,"error":"JSON 解析失敗: …"}`              | Malformed JSON                         |
+| 400    | `{"ok":false,"error":"Key 必須以 wrk- 開頭,長度 8-256"}` | Failed `WeReadKeyStore::isWellFormed` |
+| 500    | `{"ok":false,"error":"保存失敗"}`                       | SD card write error                    |
 
-Error strings are intentionally Chinese to match the locale of the only build
+Error strings are intentionally Traditional Chinese to match the locale of the only build
 that exposes this endpoint.
 
 ## WebSocket Upload

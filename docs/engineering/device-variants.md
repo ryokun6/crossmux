@@ -14,7 +14,7 @@ flash it — the device identifies itself:
 
 ```bash
 pio run -e gh_release        # international
-pio run -e gh_release_cn     # Simplified-Chinese (see chinese-build.md)
+pio run -e gh_release_cn     # Chinese (see chinese-build.md)
 pio run -t upload            # build + flash to whatever is plugged in
 ```
 
