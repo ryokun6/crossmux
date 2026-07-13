@@ -96,7 +96,7 @@ small standalone images while preserving full figures.
 
 The firmware ships only reading-related apps:
 
-- OPDS Browser
+- ryOS Books
 - Reading Stats, including history, heatmap, profile, and achievements
 - WeRead in the Chinese builds
 - Standby faces, including Sloppy Clock and AirPage, plus Chinese Calendar in
@@ -113,7 +113,7 @@ ryOS CrossMux keeps the main CrossPoint reader:
 - chapter navigation, footnotes, bookmarks, and go-to-percent
 - embedded styles, images, kerning, hyphenation, and focus reading
 - auto page turn, orientation control, screenshots, and QR display
-- KOReader progress sync
+- ryOS Cloud Sync (KOReader-compatible)
 - `.epub`, `.txt`, `.xtc`, `.xtch`, and `.bmp` files
 - recent books, folder browsing, cache management, and long-press delete
 - installable SD-card font families with regular, bold, italic, and bold-italic
@@ -121,7 +121,7 @@ ryOS CrossMux keeps the main CrossPoint reader:
 - international UI translations and RTL interface support
 
 Wireless tools include file transfer, the EPUB Optimizer, web settings, fast
-WebSocket uploads, WebDAV, Calibre wireless connection, OPDS browsing, and
+WebSocket uploads, WebDAV, Calibre wireless connection, ryOS Books, and
 network OTA from the latest `ryokun6/crossmux` GitHub release. OTA selects
 `firmware.bin`, `firmware-tc.bin`, `firmware-sc.bin`, `firmware-ja.bin`, or
 `firmware-ko.bin` to match the installed build. Firmware can also be installed

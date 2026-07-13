@@ -311,11 +311,12 @@ Successful response:
 {"ok":true}
 ```
 
-## OPDS Server API
+## ryOS Books (OPDS) Server API
 
 ### `GET /api/opds`
 
-Lists saved OPDS servers. Passwords are never returned.
+Lists saved book catalog servers. Passwords are never returned.
+Fresh installs are prefilled with the ryOS Books catalog at `https://os.ryo.lu/api/opds`.
 
 ```bash
 curl http://crosspoint.local/api/opds
@@ -327,29 +328,29 @@ Response:
 [
   {
     "index": 0,
-    "name": "My Catalog",
-    "url": "http://calibre.local:8080/opds",
-    "username": "reader",
-    "hasPassword": true
+    "name": "ryOS Books",
+    "url": "https://os.ryo.lu/api/opds",
+    "username": "",
+    "hasPassword": false
   }
 ]
 ```
 
 ### `POST /api/opds`
 
-Adds or updates an OPDS server. Include `index` to update an existing entry.
+Adds or updates a book catalog server. Include `index` to update an existing entry.
 If `password` is omitted during an update, the existing password is preserved.
 
 ```bash
 curl -X POST \
   -H "Content-Type: application/json" \
-  -d '{"name":"My Catalog","url":"http://calibre.local:8080/opds","username":"reader","password":"secret"}' \
+  -d '{"name":"Home Calibre","url":"http://calibre.local:8080/opds","username":"reader","password":"secret"}' \
   http://crosspoint.local/api/opds
 ```
 
 ### `POST /api/opds/delete`
 
-Deletes an OPDS server by index.
+Deletes a book catalog server by index.
 
 ```bash
 curl -X POST \

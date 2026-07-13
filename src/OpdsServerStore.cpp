@@ -12,11 +12,32 @@ OpdsServerStore OpdsServerStore::instance;
 
 namespace {
 constexpr char OPDS_FILE_JSON[] = "/.crosspoint/opds.json";
+constexpr char DEFAULT_OPDS_NAME[] = "ryOS Books";
+constexpr char DEFAULT_OPDS_URL[] = "https://os.ryo.lu/api/opds";
 }  // namespace
 
 bool OpdsServerStore::saveToFile() const {
   Storage.mkdir("/.crosspoint");
   return JsonSettingsIO::saveOpds(*this, OPDS_FILE_JSON);
+}
+
+bool OpdsServerStore::seedDefaultServer() {
+  if (!servers.empty()) {
+    return false;
+  }
+
+  OpdsServer server;
+  server.name = DEFAULT_OPDS_NAME;
+  server.url = DEFAULT_OPDS_URL;
+  servers.push_back(std::move(server));
+
+  if (saveToFile()) {
+    LOG_DBG("OPS", "Seeded default ryOS Books catalog");
+    return true;
+  }
+
+  servers.clear();
+  return false;
 }
 
 bool OpdsServerStore::loadFromFile() {
@@ -41,7 +62,8 @@ bool OpdsServerStore::loadFromFile() {
     return true;
   }
 
-  return false;
+  // Fresh install / empty config: prefill the ryOS Books catalog
+  return seedDefaultServer();
 }
 
 bool OpdsServerStore::migrateFromSettings() {

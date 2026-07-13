@@ -20,8 +20,8 @@ constexpr char KOREADER_FILE_BIN[] = "/.crosspoint/koreader.bin";
 constexpr char KOREADER_FILE_JSON[] = "/.crosspoint/koreader.json";
 constexpr char KOREADER_FILE_BAK[] = "/.crosspoint/koreader.bin.bak";
 
-// Default sync server URL
-constexpr char DEFAULT_SERVER_URL[] = "https://sync.koreader.rocks:443";
+// Default ryOS Cloud Sync server
+constexpr char DEFAULT_SERVER_URL[] = "https://os.ryo.lu/api/kosync";
 
 // Legacy obfuscation key - "KOReader" in ASCII (only used for binary migration)
 constexpr uint8_t LEGACY_OBFUSCATION_KEY[] = {0x4B, 0x4F, 0x52, 0x65, 0x61, 0x64, 0x65, 0x72};
@@ -149,6 +149,8 @@ void KOReaderCredentialStore::setServerUrl(const std::string& url) {
   serverUrl = url;
   LOG_DBG("KRS", "Set server URL: %s", url.empty() ? "(default)" : url.c_str());
 }
+
+const char* KOReaderCredentialStore::getDefaultServerUrl() { return DEFAULT_SERVER_URL; }
 
 std::string KOReaderCredentialStore::getBaseUrl() const {
   std::string url;

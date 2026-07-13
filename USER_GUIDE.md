@@ -20,9 +20,9 @@ Welcome to the **ryOS CrossMux** firmware. This guide outlines the hardware cont
       - [3.6.2 Reader](#362-reader)
       - [3.6.3 Controls](#363-controls)
       - [3.6.4 System](#364-system)
-      - [3.6.5 OPDS Servers (Multiple Libraries)](#365-opds-servers-multiple-libraries)
-      - [3.6.6 Web Settings (Wi-Fi + OPDS)](#366-web-settings-wi-fi--opds)
-      - [3.6.7 KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)
+      - [3.6.5 ryOS Books (Multiple Libraries)](#365-ryos-books-multiple-libraries)
+      - [3.6.6 Web Settings (Wi-Fi + ryOS Books)](#366-web-settings-wi-fi--ryos-books)
+      - [3.6.7 ryOS Cloud Sync Quick Setup](#367-ryos-cloud-sync-quick-setup)
     - [3.7 Sleep Screen](#37-sleep-screen)
     - [3.8 Custom Fonts (SD Card)](#38-custom-fonts-sd-card)
   - [4. Reading Mode](#4-reading-mode)
@@ -267,7 +267,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Page Scroll" - Long-pressing scrolls a page up/down
 - **Long-press Menu**: Selects the function bound to holding the menu button (Confirm) while reading an EPUB. **Cycles through the available functions** each time the setting is selected — additional functions may be added in future releases, so this is not a binary on/off toggle. A short press of Confirm always opens the reader menu as normal:
   - "Bookmark" (default) - Hold Confirm (~0.4 second) to drop a bookmark at the current page.
-  - "KOSync" - Hold Confirm (~1 second) to launch KOReader sync directly.
+  - "Cloud Sync" - Hold Confirm (~1 second) to launch ryOS Cloud Sync directly.
   - "Disabled" - Long-press is ignored; only short-press opens the reader menu.
 
 - **Short Power Button Click**: Controls the effect of a short click of the power button:
@@ -287,9 +287,9 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Wi-Fi Networks**: Connect to Wi-Fi networks for file transfers, online library services, and firmware updates.
 
-- **KOReader Sync**: Options for setting up KOReader for syncing book progress.
+- **ryOS Cloud Sync**: Set up account credentials for syncing reading progress across devices (KOReader-compatible).
 
-- **OPDS Servers**: Manage one or more OPDS [(Open Publication Distribution System)](https://en.wikipedia.org/wiki/Open_Publication_Distribution_System) libraries for browsing and downloading books. See [OPDS Servers (Multiple Libraries)](#365-opds-servers-multiple-libraries) below.
+- **ryOS Books**: Browse and download books from online catalogs. A ryOS Books catalog is prefilled; you can edit it or add more servers (including Calibre OPDS). See [ryOS Books (Multiple Libraries)](#365-ryos-books-multiple-libraries) below.
 
 - **Clear Reading Cache**: Clear the internal SD card cache.
 
@@ -301,19 +301,19 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Manage Fonts**: Browse, download, and manage custom font families installed from the SD card. See [Custom Fonts (SD Card)](#38-custom-fonts-sd-card) for more information.
 
-#### 3.6.5 OPDS Servers (Multiple Libraries)
+#### 3.6.5 ryOS Books (Multiple Libraries)
 
-ryOS CrossMux supports saving multiple OPDS servers and switching between them when browsing catalogs.
+ryOS CrossMux supports browsing online book catalogs (OPDS). **ryOS Books** (`https://os.ryo.lu/api/opds`) is prefilled by default. You can edit that entry or add more catalogs (for example a home Calibre library).
 
-1. Open **Settings -> System -> OPDS Servers**.
+1. Open **Settings -> System -> ryOS Books**.
 
 2. Select **Add Server** to create a new entry, or select an existing server to edit it.
 
 3. Configure these fields:
    
-   - **Server Name**: Optional display name (for example, "Home Calibre" or "Public Catalog").
+   - **Server Name**: Optional display name (for example, "ryOS Books" or "Home Calibre").
    
-   - **OPDS Server URL**: Full catalog root URL (for Calibre Content Server, usually ends with `/opds`).
+   - **Server URL**: Full catalog root URL (for Calibre Content Server, usually ends with `/opds`).
    
    - **Username / Password**: Optional credentials for authenticated servers.
 
@@ -321,25 +321,25 @@ ryOS CrossMux supports saving multiple OPDS servers and switching between them w
 
 Behavior notes:
 
-- You can store up to 8 OPDS servers.
-- OPDS authentication supports HTTP Basic auth. If you use Calibre Content Server with authentication enabled, set it to Basic (not Digest).
+- You can store up to 8 book servers.
+- Authentication supports HTTP Basic auth. If you use Calibre Content Server with authentication enabled, set it to Basic (not Digest).
 
-You can also manage OPDS servers from the web interface while in File Transfer mode:
+You can also manage book servers from the web interface while in File Transfer mode:
 
 1. Connect to the device web UI.
 2. Open `http://<device-ip>/settings`.
-3. Use the **OPDS Servers** card to add, edit, or delete entries.
+3. Use the **ryOS Books** card to add, edit, or delete entries.
 
-For web-based Wi-Fi network management, see [Web Settings (Wi-Fi + OPDS)](#366-web-settings-wi-fi--opds).
+For web-based Wi-Fi network management, see [Web Settings (Wi-Fi + ryOS Books)](#366-web-settings-wi-fi--ryos-books).
 
-#### 3.6.6 Web Settings (Wi-Fi + OPDS)
+#### 3.6.6 Web Settings (Wi-Fi + ryOS Books)
 
-While in **File Transfer** mode, the web settings page includes management cards for both **Wi-Fi Networks** and **OPDS Servers**.
+While in **File Transfer** mode, the web settings page includes management cards for both **Wi-Fi Networks** and **ryOS Books**.
 
 1. On device: open **File Transfer** and connect through **Join a Network** or **Create Hotspot**.
 2. In a browser, open `http://<device-ip>/settings` or `http://crosspoint.local`.
 3. In **Wi-Fi Networks**, add, edit, or delete saved network entries (SSID + optional password).
-4. In **OPDS Servers**, add, edit, or delete OPDS catalogs.
+4. In **ryOS Books**, add, edit, or delete book catalogs.
 
 Behavior notes:
 
@@ -347,37 +347,21 @@ Behavior notes:
 - Leaving Password blank while editing keeps the existing saved password unchanged.
 - The web UI can save hidden-network SSIDs, but connecting to hidden networks still depends on the device-side Wi-Fi connection flow.
 
-#### 3.6.7 KOReader Sync Quick Setup
+#### 3.6.7 ryOS Cloud Sync Quick Setup
 
-ryOS CrossMux can sync reading progress with KOReader-compatible sync servers.
-It also interoperates with KOReader apps/devices when they use the same server and credentials.
+ryOS CrossMux syncs reading progress with **ryOS Cloud Sync** by default (`https://os.ryo.lu/api/kosync`). The protocol is KOReader-compatible, so the same credentials also work with KOReader apps/devices and other kosync servers.
 
-##### Option A: Free Public Server (`sync.koreader.rocks`)
+##### Option A: ryOS Cloud Sync (default)
 
-1. Register a user once (only if needed):
-
-```bash
-USERNAME="user"
-PASSWORD="pass"
-PASSWORD_MD5="$(printf '%s' "$PASSWORD" | openssl md5 | awk '{print $2}')"
-
-curl -i "https://sync.koreader.rocks/users/create" \
-  -H "Accept: application/vnd.koreader.v1+json" \
-  -H "Content-Type: application/json" \
-  --data "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD_MD5\"}"
-```
-
-Already have KOReader Sync credentials? Skip registration; basic sync only requires using the same existing username/password on all devices.
-
-When this returns `HTTP 402` with `{"code":2002,"message":"Username is already registered."}`, pick a different username or use that existing account.
+1. Create a ryOS Cloud Sync account (if you do not already have one) at [https://os.ryo.lu](https://os.ryo.lu), or use credentials you already share with KOReader on the same server.
 
 2. On each ryOS CrossMux device:
    
-   - Go to **Settings -> System -> KOReader Sync**.
+   - Go to **Settings -> System -> ryOS Cloud Sync**.
    
    - Set **Username** and **Password** (enter the plain password; ryOS CrossMux computes MD5 internally, and use the same values on all devices).
    
-   - Set **Sync Server URL** to `https://sync.koreader.rocks`, or leave it empty (both use the same default KOReader sync server).
+   - Confirm **Sync Server URL** is `https://os.ryo.lu/api/kosync` (prefilled; leave as-is unless you use a custom server).
    
    - Run **Authenticate**.
 
@@ -427,7 +411,7 @@ curl -H "Accept: application/vnd.koreader.v1+json" "http://<server-ip>:17200/hea
 ```
 
 3. Register a user once.
-   ryOS CrossMux authenticates against KOReader Sync (`koreader/kosync`) using an MD5 key, so register using the MD5 of your password:
+   ryOS CrossMux authenticates against KOReader-compatible sync (`koreader/kosync`) using an MD5 key, so register using the MD5 of your password:
 
 > [!WARNING]
 > Sending a reusable MD5-derived password over plain HTTP is insecure.
@@ -450,7 +434,7 @@ If this returns `HTTP 402` with `{"code":2002,"message":"Username is already reg
 
 4. On each ryOS CrossMux device:
    
-   - Go to **Settings -> System -> KOReader Sync**.
+   - Go to **Settings -> System -> ryOS Cloud Sync**.
    
    - Set **Username** and **Password** (enter the plain password; ryOS CrossMux computes MD5 internally, and use the same values on all devices).
    
@@ -562,7 +546,7 @@ If the device goes to sleep or you close the book while viewing a footnote, the 
 * **Return to Home:** Press the **Back** button to close the book and return to the **[Home](#31-home-screen)** screen.
 * **Return to Browse Files:** Press and hold the **Back** button to close the book and return to the **[Browse Files](#33-browse-files-screen)** screen.
 * **Reader Menu:** Press **Confirm** to open the **[Reader Menu](#5-reader-menu)**, which includes chapter navigation, reading options, and more.
-* **Long-press Confirm (configurable):** Holding **Confirm** runs the function chosen by the **Long-press Menu** setting in **[Controls Settings](#363-controls)** — "Bookmark" (default) drops a bookmark, "KOSync" launches KOReader Sync, "Disabled" does nothing. A short press always opens the Reader Menu.
+* **Long-press Confirm (configurable):** Holding **Confirm** runs the function chosen by the **Long-press Menu** setting in **[Controls Settings](#363-controls)** — "Bookmark" (default) drops a bookmark, "Cloud Sync" launches ryOS Cloud Sync, "Disabled" does nothing. A short press always opens the Reader Menu.
 
 ### Supported Languages
 
@@ -590,7 +574,7 @@ Available options include:
 - **Take screenshot** – Save a screenshot of the current page to the `screenshots/` folder.
 - **Show page as QR** – Display a QR code encoding the current reading position.
 - **Go Home** – Close the book and return to the Home screen.
-- **Sync Progress** – Push or pull reading progress with a KOReader sync server (see [KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)).
+- **Sync Progress** – Push or pull reading progress with ryOS Cloud Sync (see [ryOS Cloud Sync Quick Setup](#367-ryos-cloud-sync-quick-setup)).
 - **Delete Book Cache** – Clear the cached layout data for the current book, forcing a re-index on next open.
 
 Press **Back** at any time to close the menu and return to your current page.

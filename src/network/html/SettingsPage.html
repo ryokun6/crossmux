@@ -711,8 +711,8 @@
     }
   }
 
-  // --- OPDS Server Management ---
-  // Dynamically renders an editable list of OPDS servers, communicating with the
+  // --- ryOS Books (OPDS) Server Management ---
+  // Dynamically renders an editable list of book catalog servers, communicating with the
   // /api/opds REST endpoints. Password fields are never pre-filled for security;
   // the "(unchanged)" placeholder indicates an existing password is preserved on save.
   let opdsServers = [];
@@ -746,10 +746,10 @@
 
   function renderOpdsSection() {
     const container = document.getElementById('opds-container');
-    let html = '<div class="card"><h2>OPDS Servers</h2>';
+    let html = '<div class="card"><h2>ryOS Books</h2>';
 
     if (opdsServers.length === 0) {
-      html += '<p style="color:var(--label-color);text-align:center;">No OPDS servers configured</p>';
+      html += '<p style="color:var(--label-color);text-align:center;">No book servers configured</p>';
     } else {
       opdsServers.forEach(function(srv, idx) {
         html += renderOpdsServer(srv, idx);
@@ -802,7 +802,7 @@
         body: JSON.stringify(data)
       });
       if (!resp.ok) throw new Error(await resp.text());
-      showMessage('OPDS server saved!', false);
+      showMessage('Book server saved!', false);
       await loadOpdsServers();
     } catch (e) {
       showMessage('Error: ' + e.message, true);
@@ -810,7 +810,7 @@
   }
 
   async function deleteOpdsServer(idx) {
-    if (!confirm('Delete this OPDS server?')) return;
+    if (!confirm('Delete this book server?')) return;
     try {
       const resp = await fetch('/api/opds/delete', {
         method: 'POST',
@@ -818,7 +818,7 @@
         body: JSON.stringify({index: idx})
       });
       if (!resp.ok) throw new Error(await resp.text());
-      showMessage('OPDS server deleted', false);
+      showMessage('Book server deleted', false);
       await loadOpdsServers();
     } catch (e) {
       showMessage('Error: ' + e.message, true);

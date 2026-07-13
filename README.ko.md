@@ -78,7 +78,7 @@
 
 펌웨어에는 읽기 관련 앱만 내장되어 있습니다:
 
-- OPDS 브라우저
+- ryOS 서재
 - 읽기 통계 (기록·히트맵·프로필·업적)
 - 위챗 독서 (중국어 빌드만)
 - 대기 화면 (Sloppy Clock, AirPage 등. 중국 전통 달력은 중국어 빌드만)
@@ -93,13 +93,13 @@ ryOS CrossMux는 업스트림 CrossPoint의 주요 기능을 유지합니다:
 - 챕터 탐색, 각주, 책갈피, 퍼센트 이동
 - 내장 스타일, 이미지, 커닝, 하이픈 연결, 집중 읽기
 - 자동 페이지 넘김, 화면 방향 제어, 스크린샷, QR 표시
-- KOReader 진행률 동기화
+- ryOS 클라우드 동기화 (KOReader 호환)
 - `.epub` / `.txt` / `.xtc` / `.xtch` / `.bmp`
 - 최근 책, 폴더 탐색, 캐시 관리, 길게 눌러 삭제
 - 설치 가능한 SD 카드 글꼴 패밀리 (Regular / Bold / Italic / Bold-Italic)
 - 국제화 UI 번역과 RTL 인터페이스
 
-무선 기능으로는 파일 전송, EPUB Optimizer, 웹 설정, WebSocket 업로드, WebDAV, Calibre 무선 연결, OPDS, 그리고 최신 `ryokun6/crossmux` GitHub Release에서의 네트워크 OTA가 있습니다. OTA는 설치된 빌드에 맞춰 `firmware.bin` / `firmware-tc.bin` / `firmware-sc.bin` / `firmware-ja.bin` / `firmware-ko.bin`를 자동 선택합니다. USB, 웹 플래셔, 'SD 카드 펌웨어 업데이트'로도 설치할 수 있습니다.
+무선 기능으로는 파일 전송, EPUB Optimizer, 웹 설정, WebSocket 업로드, WebDAV, Calibre 무선 연결, ryOS 서재, 그리고 최신 `ryokun6/crossmux` GitHub Release에서의 네트워크 OTA가 있습니다. OTA는 설치된 빌드에 맞춰 `firmware.bin` / `firmware-tc.bin` / `firmware-sc.bin` / `firmware-ja.bin` / `firmware-ko.bin`를 자동 선택합니다. USB, 웹 플래셔, 'SD 카드 펌웨어 업데이트'로도 설치할 수 있습니다.
 
 ## X3 / X4 지원
 

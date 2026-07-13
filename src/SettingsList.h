@@ -209,7 +209,7 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Toggle(StrId::STR_ACHIEVEMENT_POPUPS, &CrossPointSettings::achievementPopups, "achievementPopups",
                             StrId::STR_CAT_SYSTEM),
 
-        // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
+        // --- ryOS Cloud Sync (web-only, uses KOReaderCredentialStore) ---
         SettingInfo::DynamicString(
             StrId::STR_KOREADER_USERNAME, [] { return KOREADER_STORE.getUsername(); },
             [](const std::string& v) {
@@ -225,7 +225,11 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
             },
             "koPassword", StrId::STR_KOREADER_SYNC),
         SettingInfo::DynamicString(
-            StrId::STR_SYNC_SERVER_URL, [] { return KOREADER_STORE.getServerUrl(); },
+            StrId::STR_SYNC_SERVER_URL,
+            [] {
+              const auto& url = KOREADER_STORE.getServerUrl();
+              return url.empty() ? std::string(KOReaderCredentialStore::getDefaultServerUrl()) : url;
+            },
             [](const std::string& v) {
               KOREADER_STORE.setServerUrl(v);
               KOREADER_STORE.saveToFile();

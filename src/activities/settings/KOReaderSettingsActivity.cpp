@@ -75,9 +75,9 @@ void KOReaderSettingsActivity::handleSelection() {
           }
         });
   } else if (selectedIndex == 2) {
-    // Sync Server URL - prefill with https:// if empty to save typing
+    // Sync Server URL — prefill with the ryOS Cloud Sync default when unset
     const std::string currentUrl = KOREADER_STORE.getServerUrl();
-    const std::string prefillUrl = currentUrl.empty() ? "https://" : currentUrl;
+    const std::string prefillUrl = currentUrl.empty() ? KOReaderCredentialStore::getDefaultServerUrl() : currentUrl;
     startActivityForResult(std::make_unique<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_SYNC_SERVER_URL),
                                                                    prefillUrl, 128, InputType::Url),
                            [this](const ActivityResult& result) {
@@ -131,7 +131,7 @@ void KOReaderSettingsActivity::render(RenderLock&&) {
           return KOREADER_STORE.getPassword().empty() ? std::string(tr(STR_NOT_SET)) : std::string("******");
         } else if (index == 2) {
           auto serverUrl = KOREADER_STORE.getServerUrl();
-          return serverUrl.empty() ? std::string(tr(STR_DEFAULT_VALUE)) : serverUrl;
+          return serverUrl.empty() ? std::string(KOReaderCredentialStore::getDefaultServerUrl()) : serverUrl;
         } else if (index == 3) {
           return KOREADER_STORE.getMatchMethod() == DocumentMatchMethod::FILENAME ? std::string(tr(STR_FILENAME))
                                                                                   : std::string(tr(STR_BINARY));

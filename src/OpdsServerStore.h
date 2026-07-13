@@ -55,6 +55,11 @@ class OpdsServerStore {
    * Called once during first load if no opds.json exists.
    */
   bool migrateFromSettings();
+
+  /**
+   * Prefill the built-in ryOS Books catalog when no servers are configured.
+   */
+  bool seedDefaultServer();
 };
 
 #define OPDS_STORE OpdsServerStore::getInstance()

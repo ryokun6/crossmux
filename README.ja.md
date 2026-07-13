@@ -77,7 +77,7 @@
 
 ファームウェアには読書関連アプリのみを内蔵しています:
 
-- OPDS ブラウザー
+- ryOS 書庫
 - 読書統計（履歴・ヒートマップ・プロフィール・実績）
 - 微信読書（中国語ビルドのみ）
 - スタンバイ表示（Sloppy Clock、AirPage など。中国伝統暦は中国語ビルドのみ）
@@ -92,13 +92,13 @@ ryOS CrossMux は上流 CrossPoint の主要機能を維持しています:
 - 章ナビゲーション、脚注、しおり、パーセント移動
 - 埋め込みスタイル、画像、カーニング、ハイフネーション、集中読書
 - 自動ページめくり、画面向き制御、スクリーンショット、QR 表示
-- KOReader 進捗同期
+- ryOS クラウド同期（KOReader 互換）
 - `.epub` / `.txt` / `.xtc` / `.xtch` / `.bmp`
 - 最近の本、フォルダ閲覧、キャッシュ管理、長押し削除
 - インストール可能な SD カードフォント（Regular / Bold / Italic / Bold-Italic）
 - 国際化 UI 翻訳と RTL インターフェース
 
-ワイヤレス機能はファイル転送、EPUB Optimizer、Web 設定、WebSocket アップロード、WebDAV、Calibre ワイヤレス接続、OPDS、そして最新の `ryokun6/crossmux` GitHub Release からのネットワーク OTA を含みます。OTA はインストール済みビルドに合わせて `firmware.bin` / `firmware-tc.bin` / `firmware-sc.bin` / `firmware-ja.bin` / `firmware-ko.bin` を自動選択します。USB・Web フラッシャー・「SD カードファームウェア更新」からのインストールも可能です。
+ワイヤレス機能はファイル転送、EPUB Optimizer、Web 設定、WebSocket アップロード、WebDAV、Calibre ワイヤレス接続、ryOS 書庫、そして最新の `ryokun6/crossmux` GitHub Release からのネットワーク OTA を含みます。OTA はインストール済みビルドに合わせて `firmware.bin` / `firmware-tc.bin` / `firmware-sc.bin` / `firmware-ja.bin` / `firmware-ko.bin` を自動選択します。USB・Web フラッシャー・「SD カードファームウェア更新」からのインストールも可能です。
 
 ## X3 / X4 対応
 

@@ -14,9 +14,9 @@ struct KOReaderProgress {
 };
 
 /**
- * HTTP client for KOReader sync API.
+ * HTTP client for KOReader-compatible sync API (ryOS Cloud Sync).
  *
- * Base URL: https://sync.koreader.rocks:443/
+ * Default base URL: https://os.ryo.lu/api/kosync
  *
  * API Endpoints:
  *   GET /users/auth - Authenticate (validate credentials)

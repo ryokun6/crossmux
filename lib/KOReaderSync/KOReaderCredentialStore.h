@@ -57,6 +57,9 @@ class KOReaderCredentialStore {
   void setServerUrl(const std::string& url);
   const std::string& getServerUrl() const { return serverUrl; }
 
+  // Default ryOS Cloud Sync server (used when serverUrl is empty)
+  static const char* getDefaultServerUrl();
+
   // Get base URL for API calls (with http:// normalization if no protocol, falls back to default)
   std::string getBaseUrl() const;
 

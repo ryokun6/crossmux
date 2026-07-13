@@ -4,7 +4,7 @@
 #include "util/ButtonNavigator.h"
 
 /**
- * Submenu for KOReader Sync settings.
+ * Submenu for ryOS Cloud Sync settings.
  * Shows username, password, and authenticate options.
  */
 class KOReaderSettingsActivity final : public Activity {

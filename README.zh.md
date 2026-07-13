@@ -73,7 +73,7 @@
 
 固件僅內建與閱讀相關的應用：
 
-- OPDS 瀏覽器
+- ryOS 書庫
 - 閱讀統計（歷史、熱力圖、檔案與成就）
 - 中文版的微信讀書
 - 待機表盤（含潦草時鐘、AirPage，以及中文版的傳統日曆）
@@ -88,13 +88,13 @@ ryOS CrossMux 保留上游 CrossPoint 的主要閱讀能力：
 - 章節導覽、腳註、書籤、跳轉百分比
 - 內嵌樣式、圖片、字距、連字符、專注閱讀
 - 自動翻頁、方向控制、螢幕截圖、QR 顯示
-- KOReader 進度同步
+- ryOS 雲端同步（相容 KOReader）
 - `.epub`／`.txt`／`.xtc`／`.xtch`／`.bmp`
 - 最近書籍、資料夾瀏覽、快取管理、長按刪除
 - 可安裝的 SD 卡字族（Regular／Bold／Italic／Bold-Italic）
 - 國際化 UI 翻譯與 RTL 介面
 
-無線工具包含檔案傳輸、EPUB Optimizer、網頁設定、WebSocket 上傳、WebDAV、Calibre 無線連線、OPDS，以及從最新 `ryokun6/crossmux` GitHub Release 進行網路 OTA。OTA 會依目前安裝的版本選擇 `firmware.bin`、`firmware-tc.bin`、`firmware-sc.bin`、`firmware-ja.bin` 或 `firmware-ko.bin`。也可透過 USB、網頁刷機器或「SD 卡固件更新」安裝。
+無線工具包含檔案傳輸、EPUB Optimizer、網頁設定、WebSocket 上傳、WebDAV、Calibre 無線連線、ryOS 書庫，以及從最新 `ryokun6/crossmux` GitHub Release 進行網路 OTA。OTA 會依目前安裝的版本選擇 `firmware.bin`、`firmware-tc.bin`、`firmware-sc.bin`、`firmware-ja.bin` 或 `firmware-ko.bin`。也可透過 USB、網頁刷機器或「SD 卡固件更新」安裝。
 
 ## X3 與 X4 支援
 
