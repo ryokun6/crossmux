@@ -1,6 +1,6 @@
 # ryOS CrossMux
 
-[English](./README.en.md) | [中文](./README.md) | [日本語](./README.ja.md) | **한국어**
+[English](./README.md) | [中文](./README.zh.md) | [日本語](./README.ja.md) | **한국어**
 
 **ryOS CrossMux**는 Xteink X3 / X4를 위한 '읽기 우선' 펌웨어입니다.
 [CrossMux](https://github.com/0x1abin/crossmux)의 포크이며,
