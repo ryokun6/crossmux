@@ -5,16 +5,25 @@
 #include <algorithm>
 
 #ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+#include "TcToScRemap.h"
+#else
 #include "ScToTcRemap.h"
+#endif
 #endif
 
 namespace {
 
 uint32_t resolveCnCodepoint(uint32_t cp) {
 #ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+  // SC fonts store Simplified glyphs; Traditional EPUB codepoints remap here.
+  return mapTraditionalToSimplified(cp);
+#else
   // Builtin CJK fonts store Traditional glyphs only; UI/EPUB may still pass
   // Simplified codepoints. Remap without duplicating bitmaps.
   return mapSimplifiedToTraditional(cp);
+#endif
 #else
   return cp;
 #endif

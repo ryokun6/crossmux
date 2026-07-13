@@ -20,7 +20,11 @@ namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/ryokun6/crossmux/releases/latest";
 constexpr char firmwareAssetName[] =
 #ifdef ENABLE_CHINESE_VERSION
-    "firmware-cn.bin";
+#ifdef CHINESE_UI_SIMPLIFIED
+    "firmware-sc.bin";
+#else
+    "firmware-tc.bin";
+#endif
 #else
     "firmware.bin";
 #endif

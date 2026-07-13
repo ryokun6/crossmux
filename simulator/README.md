@@ -82,7 +82,7 @@ SDL texture; JavaScript events instead of SDL keys), and `shims/esp_http_client.
 curl-free offline stub under the same guard. The WASM build sets **ENABLE_CHINESE_VERSION**
 (CJK fonts + WeRead/中国象棋/农历/CJK typography — same as native) and preloads a small
 public-domain book from `sd_root_demo/` into MEMFS at `/sd`. The startup UI language follows the
-browser: `index.html` maps `navigator.language` to a `--lang ZH|EN` arg that
+browser: `index.html` maps `navigator.language` to a `--lang zh-TW|zh-CN|EN` arg that
 `simulator_main_wasm.cpp` applies before first render. FreeRTOS tasks run on Web Worker threads
 (pthreads), so the page must be cross-origin isolated (COOP/COEP).
 

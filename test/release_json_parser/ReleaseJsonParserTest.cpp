@@ -184,23 +184,44 @@ TEST(ReleaseJsonParser, FirmwareNotFirstAsset) {
   EXPECT_EQ(p.getFirmwareSize(), 987654u);
 }
 
-TEST(ReleaseJsonParser, SelectsRequestedChineseFirmwareAsset) {
+TEST(ReleaseJsonParser, SelectsRequestedTraditionalChineseFirmwareAsset) {
   const char* json = R"({
       "tag_name": "1.4.3",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
-        {"name": "firmware-cn.bin", "browser_download_url": "https://example.com/firmware-cn.bin", "size": 6000000}
+        {"name": "firmware-tc.bin", "browser_download_url": "https://example.com/firmware-tc.bin", "size": 6000000},
+        {"name": "firmware-sc.bin", "browser_download_url": "https://example.com/firmware-sc.bin", "size": 6100000}
       ]
     })";
 
-  ReleaseJsonParser p("firmware-cn.bin");
+  ReleaseJsonParser p("firmware-tc.bin");
   p.feed(json, strlen(json));
 
   EXPECT_TRUE(p.foundTag());
   EXPECT_TRUE(p.foundFirmware());
   EXPECT_STREQ(p.getTagName(), "1.4.3");
-  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-cn.bin");
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-tc.bin");
   EXPECT_EQ(p.getFirmwareSize(), 6000000u);
+}
+
+TEST(ReleaseJsonParser, SelectsRequestedSimplifiedChineseFirmwareAsset) {
+  const char* json = R"({
+      "tag_name": "1.4.3",
+      "assets": [
+        {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
+        {"name": "firmware-tc.bin", "browser_download_url": "https://example.com/firmware-tc.bin", "size": 6000000},
+        {"name": "firmware-sc.bin", "browser_download_url": "https://example.com/firmware-sc.bin", "size": 6100000}
+      ]
+    })";
+
+  ReleaseJsonParser p("firmware-sc.bin");
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundTag());
+  EXPECT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getTagName(), "1.4.3");
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-sc.bin");
+  EXPECT_EQ(p.getFirmwareSize(), 6100000u);
 }
 
 TEST(ReleaseJsonParser, FieldOrderUrlBeforeName) {

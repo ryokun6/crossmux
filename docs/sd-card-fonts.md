@@ -125,7 +125,7 @@ To list all presets with codepoint counts:
 
 ### CJK subset fonts (lighter `.cpfont`s)
 
-Full-range `--intervals cjk` on a complete CJK OTF can produce **15–30 MB** per size and is slow on-device because SD fonts load glyphs on demand. For Chinese reading on `gh_release_cn`, prefer a **subset** matching the builtin reader tier:
+Full-range `--intervals cjk` on a complete CJK OTF can produce **15–30 MB** per size and is slow on-device because SD fonts load glyphs on demand. For Chinese reading on `gh_release_tc`, prefer a **subset** matching the builtin reader tier:
 
 - ~7000 通用汉字 converted Simplified→Traditional (OpenCC `s2t`)
 - Extended symbol blocks for EPUB (arrows, box drawing, dingbats, etc.)
@@ -165,7 +165,7 @@ italic Han still falls back to regular at runtime. Latin always comes from EB Ga
 
 If the selected SD font lacks a codepoint (typical: Latin family + Chinese EPUB),
 the reader uses the **builtin system font** at the current size for that glyph —
-layout advances and bitmaps both. On `gh_release_cn` the builtins carry CJK; on
+layout advances and bitmaps both. On `gh_release_tc` the builtins carry CJK; on
 the global build they are Latin-only, so missing glyphs remain blank/tofu.
 
 This also avoids an indexing hang: absent codepoints are no longer mapped onto

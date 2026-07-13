@@ -130,6 +130,18 @@ def main() -> None:
         "and dedupe before writing. Used by the GenSen Rounded TW CN font build.",
     )
     parser.add_argument(
+        "--output",
+        type=Path,
+        default=OUTPUT_FILE,
+        help=f"Common charset output path (default: {OUTPUT_FILE.name})",
+    )
+    parser.add_argument(
+        "--i18n-output",
+        type=Path,
+        default=I18N_OUTPUT_FILE,
+        help=f"I18n-only charset output path (default: {I18N_OUTPUT_FILE.name})",
+    )
+    parser.add_argument(
         "--review",
         type=int,
         default=50,
@@ -194,18 +206,23 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    OUTPUT_FILE.write_text("".join(kept_chars), encoding="utf-8")
+    output_file = args.output if args.output.is_absolute() else SCRIPT_DIR / args.output
+    i18n_output_file = (
+        args.i18n_output if args.i18n_output.is_absolute() else SCRIPT_DIR / args.i18n_output
+    )
+
+    output_file.write_text("".join(kept_chars), encoding="utf-8")
 
     print(
-        f"Wrote {len(kept_chars)} characters to {OUTPUT_FILE.relative_to(SCRIPT_DIR.parent.parent)}",
+        f"Wrote {len(kept_chars)} characters to {output_file.relative_to(SCRIPT_DIR.parent.parent)}",
         file=sys.stderr,
     )
 
     if i18n_chars:
-        I18N_OUTPUT_FILE.write_text("".join(i18n_chars), encoding="utf-8")
+        i18n_output_file.write_text("".join(i18n_chars), encoding="utf-8")
         print(
             f"Wrote {len(i18n_chars)} i18n-only characters to "
-            f"{I18N_OUTPUT_FILE.relative_to(SCRIPT_DIR.parent.parent)}",
+            f"{i18n_output_file.relative_to(SCRIPT_DIR.parent.parent)}",
             file=sys.stderr,
         )
     print(

@@ -14,7 +14,8 @@ flash it — the device identifies itself:
 
 ```bash
 pio run -e gh_release        # international
-pio run -e gh_release_cn     # Chinese (see chinese-build.md)
+pio run -e gh_release_tc     # Traditional Chinese zh-TW
+pio run -e gh_release_sc     # Simplified Chinese zh-CN
 pio run -t upload            # build + flash to whatever is plugged in
 ```
 
@@ -113,7 +114,7 @@ this is why X3 "just works" without per-screen code (see
 ## Build & flash for X3
 
 Same envs as X4 (`platformio.ini`): `default`, `gh_release`, `gh_release_rc`,
-`slim`, `gh_release_cn`, `gh_release_cn_rc`. Flash any of them to an X3:
+`slim`, `gh_release_tc`, `gh_release_tc_rc`, `gh_release_sc`, `gh_release_sc_rc`. Flash any of them to an X3:
 
 ```bash
 pio run -e gh_release -t upload

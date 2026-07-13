@@ -407,7 +407,7 @@ curl -X POST \
 
 ## WeRead API (Chinese build only)
 
-These endpoints are available **only in the `gh_release_cn` build** (the same
+These endpoints are available **only in the `gh_release_tc` build** (the same
 build that ships the WeRead Companion feature).
 
 ### `GET /weread`

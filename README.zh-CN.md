@@ -30,7 +30,7 @@
 
 ### 中文固件
 
-`gh_release_cn` 環境會產出以中文爲優先的固件，包含：
+`gh_release_tc` 環境會產出以中文爲優先的固件，包含：
 
 - 首次開機預設語言爲中文
 - 英文與中文 UI 字串（中文 UI 爲繁體）
@@ -67,7 +67,7 @@
 
 ryOS CrossMux 保留上游 CrossPoint 的主要閱讀能力：EPUB 2/3、章節導覽、腳註、書籤、跳轉百分比、內嵌樣式、圖片、字距、連字符、專注閱讀、自動翻頁、方向控制、螢幕截圖、QR、KOReader 進度同步，以及 `.epub` / `.txt` / `.xtc` / `.xtch` / `.bmp` 等格式。
 
-無線工具包含檔案傳輸、EPUB Optimizer、網頁設定、WebSocket 上傳、WebDAV、Calibre 無線連線、OPDS，以及從最新 `ryokun6/crossmux` GitHub Release 進行網路 OTA。OTA 會依目前安裝的版本選擇 `firmware.bin` 或 `firmware-cn.bin`。也可透過 USB、網頁刷機器或「SD 卡固件更新」安裝。
+無線工具包含檔案傳輸、EPUB Optimizer、網頁設定、WebSocket 上傳、WebDAV、Calibre 無線連線、OPDS，以及從最新 `ryokun6/crossmux` GitHub Release 進行網路 OTA。OTA 會依目前安裝的版本選擇 `firmware.bin` 或 `firmware-tc.bin`。也可透過 USB、網頁刷機器或「SD 卡固件更新」安裝。
 
 ## X3 與 X4 支援
 
@@ -108,10 +108,10 @@ git submodule update --init --recursive
 pio run -e gh_release
 
 # 中文固件
-pio run -e gh_release_cn
+pio run -e gh_release_tc
 
 # 建置並燒錄
-pio run -e gh_release_cn -t upload
+pio run -e gh_release_tc -t upload
 ```
 
 產物位於 `.pio/build/<env>/firmware.bin`。

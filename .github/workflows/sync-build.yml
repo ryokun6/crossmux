@@ -1,7 +1,7 @@
 name: Sync PR build verify
 
 # Gate every upstream-sync PR with the release env set (gh_release +
-# gh_release_cn). Lives next to sync-upstream.yml (merge orchestration)
+# gh_release_tc + gh_release_sc). Lives next to sync-upstream.yml (merge orchestration)
 # but kept as its own file so the two concerns don't entangle:
 #   sync-upstream.yml -> maintain the standing chore/sync-upstream PR
 #   sync-build.yml    -> "would this PR actually ship?" build check
@@ -56,7 +56,7 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
-      - name: Build gh_release + gh_release_cn
+      - name: Build gh_release + gh_release_tc + gh_release_sc
         run: |
           set -euo pipefail
-          pio run -e gh_release -e gh_release_cn
+          pio run -e gh_release -e gh_release_tc -e gh_release_sc

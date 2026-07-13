@@ -297,7 +297,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **SD Card Firmware Update**: Install a selected `.bin` firmware image from the SD card.
 
-- **Language**: Set the UI language. ryOS CrossMux supports English, Spanish, French, German, Czech, Brazilian Portuguese, Russian, Swedish, Romanian, Catalan, Ukrainian, Belarusian, Italian, Polish, Finnish, Danish, Dutch, Turkish, Kazakh, Hungarian, Lithuanian, Slovenian, Valencian, Hebrew, and Chinese (`中文`, Traditional UI strings). The Chinese firmware build (`gh_release_cn`) defaults to Chinese and embeds CJK fonts; the international build lists Chinese only when CJK glyphs are available.
+- **Language**: Set the UI language. ryOS CrossMux supports English, Spanish, French, German, Czech, Brazilian Portuguese, Russian, Swedish, Romanian, Catalan, Ukrainian, Belarusian, Italian, Polish, Finnish, Danish, Dutch, Turkish, Kazakh, Hungarian, Lithuanian, Slovenian, Valencian, Hebrew, and Chinese (`中文`, Traditional UI strings). The Chinese firmware build (`gh_release_tc`) defaults to Chinese and embeds CJK fonts; the international build lists Chinese only when CJK glyphs are available.
 
 - **Manage Fonts**: Browse, download, and manage custom font families installed from the SD card. See [Custom Fonts (SD Card)](#38-custom-fonts-sd-card) for more information.
 
@@ -572,7 +572,7 @@ ryOS CrossMux renders text using the following Unicode character blocks, enablin
 * **Cyrillic Script (Standard and Extended):** Covers Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian, Kazakh, Kyrgyz, Mongolian, and others.
 * **Vietnamese:** Supported via extended Latin glyph coverage in the built-in reader fonts.
 
-On the **international** build, built-in reader fonts do not cover Chinese, Japanese, Korean, Arabic, Greek, Hebrew, or Farsi — install custom SD card fonts for those scripts (see [Custom Fonts (SD Card)](#38-custom-fonts-sd-card)). The **Chinese** build (`gh_release_cn`) embeds Traditional CJK bitmap fonts and remaps Simplified codepoints at lookup time; its UI language `中文` uses Traditional Chinese strings.
+On the **international** build, built-in reader fonts do not cover Chinese, Japanese, Korean, Arabic, Greek, Hebrew, or Farsi — install custom SD card fonts for those scripts (see [Custom Fonts (SD Card)](#38-custom-fonts-sd-card)). The **Chinese** build (`gh_release_tc`) embeds Traditional CJK bitmap fonts and remaps Simplified codepoints at lookup time; its UI language `中文` uses Traditional Chinese strings.
 
 ---
 

@@ -110,23 +110,52 @@ def parse_yaml_file(filepath: str) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 
 
+def _opencc_t2s_convert(text: str) -> str:
+    """Traditional→Simplified via OpenCC (lazy import)."""
+    try:
+        from opencc import OpenCC
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError(
+            "OpenCC is required to synthesize ZH_CN from Traditional chinese.yaml. "
+            "Install with: pip install OpenCC"
+        ) from exc
+    return OpenCC("t2s").convert(text)
+
+
+def _synthesize_zh_cn_from_zh_tw(tw_data: Dict[str, str]) -> Dict[str, str]:
+    """Clone Traditional Chinese YAML metadata/strings as Simplified ZH_CN."""
+    out: Dict[str, str] = {
+        "_language_code": "ZH_CN",
+        "_locale": "zh-CN",
+        "_language_name": "简体中文",
+        "_order": tw_data.get("_order", "24"),
+    }
+    for key, value in tw_data.items():
+        if key.startswith("_"):
+            continue
+        out[key] = _opencc_t2s_convert(value)
+    return out
+
+
 def load_translations(
     translations_dir: str,
     verbose: bool = False,
     only_languages: Optional[Set[str]] = None,
-) -> Tuple[List[str], List[str], List[str], Dict[str, List[str]], List[Set[str]]]:
+) -> Tuple[List[str], List[str], List[str], List[str], Dict[str, List[str]], List[Set[str]]]:
     """
     Read every YAML file in *translations_dir* and return:
-        language_codes   e.g. ["EN", "ES", ...]
-        language_names   e.g. ["English", "Español", ...]
-        string_keys      ordered list of STR_* keys (from English)
-        translations     {key: [translation_per_language]}
+        language_codes    e.g. ["EN", "ES", ...]  (C++ enum identifiers)
+        language_locales  e.g. ["EN", "zh-TW", ...]  (settings.json LANGUAGE_CODES)
+        language_names    e.g. ["English", "Español", ...]
+        string_keys       ordered list of STR_* keys (from English)
+        translations      {key: [translation_per_language]}
 
-    English is always first;
+    English is always first.
 
     When *only_languages* is provided, keep only files whose _language_code
     appears in the set (case-insensitive). English is always retained as the
-    fallback source.
+    fallback source. Requesting ZH_CN when only Traditional chinese.yaml
+    (ZH_TW) exists synthesizes Simplified strings via OpenCC t2s.
     """
     yaml_dir = Path(translations_dir)
     if not yaml_dir.is_dir():
@@ -150,6 +179,21 @@ def load_translations(
             if code in wanted:
                 filtered[name] = data
         missing = wanted - {data.get("_language_code", "").upper() for data in filtered.values()}
+        # Synthesize ZH_CN from ZH_TW Traditional source when SC SKU is requested.
+        if "ZH_CN" in missing:
+            tw_data = None
+            tw_name = None
+            for name, data in parsed.items():
+                if data.get("_language_code", "").upper() == "ZH_TW":
+                    tw_data = data
+                    tw_name = name
+                    break
+            if tw_data is not None:
+                print(
+                    f"[gen_i18n] Synthesizing ZH_CN (简体中文) from {tw_name} via OpenCC t2s"
+                )
+                filtered["__zh_cn_synthesized__.yaml"] = _synthesize_zh_cn_from_zh_tw(tw_data)
+                missing.discard("ZH_CN")
         if missing:
             raise ValueError(
                 f"--only-languages requested codes {sorted(missing)} but no matching YAML file found"
@@ -207,6 +251,7 @@ def load_translations(
 
     # Extract metadata
     language_codes: List[str] = []
+    language_locales: List[str] = []
     language_names: List[str] = []
     for fname in ordered_files:
         data = parsed[fname]
@@ -214,7 +259,10 @@ def load_translations(
         name = data.get("_language_name")
         if not code or not name:
             raise ValueError(f"{fname}: missing _language_code or _language_name")
+        # Optional _locale (e.g. zh-TW) is what settings.json persists.
+        locale = data.get("_locale") or code
         language_codes.append(code)
+        language_locales.append(locale)
         language_names.append(name)
 
     # String keys come from English (order matters)
@@ -259,7 +307,14 @@ def load_translations(
 
     if verbose:
         print(f"Loaded {len(language_codes)} languages, {len(string_keys)} string keys")
-    return language_codes, language_names, string_keys, translations, inherited_sets
+    return (
+        language_codes,
+        language_locales,
+        language_names,
+        string_keys,
+        translations,
+        inherited_sets,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -572,7 +627,7 @@ def generate_keys_header(
     # V1 language.bin migration table -- frozen enum order from commit 2f969a9.
     # Maps the old uint8_t index stored on disk to the current Language enum.
     # When a build excludes some languages (e.g. ENABLE_CHINESE_VERSION strips
-    # everything except EN/ZH), absent codes fall back to Language::EN so the
+    # everything except EN/ZH_TW or EN/ZH_CN), absent codes fall back to Language::EN so the
     # table still compiles. On-device, a user whose stored language is no longer
     # available simply lands back on English.
     v1_codes = [
@@ -629,6 +684,7 @@ def generate_strings_cpp(
     translations: Dict[str, List[str]],
     output_path: str,
     verbose: bool = False,
+    language_locales: Optional[List[str]] = None,
 ) -> None:
     """Generate I18nStrings.cpp."""
     lines: List[str] = [
@@ -640,11 +696,12 @@ def generate_strings_cpp(
         "",
     ]
 
-    # LANGUAGE_CODES array
-    lines.append("// Language codes")
+    # LANGUAGE_CODES array (BCP47/_locale when provided; else enum code)
+    locales = language_locales if language_locales is not None else languages
+    lines.append("// Language codes (persisted in settings.json)")
     lines.append("const char* const LANGUAGE_CODES[] = {")
-    for code in languages:
-        _append_string_entry(lines, code)
+    for locale in locales:
+        _append_string_entry(lines, locale)
     lines.append("};")
     lines.append("")
 
@@ -884,9 +941,14 @@ def main(
             print(
                 f"Restricting build to languages: {', '.join(sorted(only_languages))} (plus EN fallback)"
             )
-        languages, language_names, string_keys, translations, inherited_sets = (
-            load_translations(translations_dir, verbose, only_languages)
-        )
+        (
+            languages,
+            language_locales,
+            language_names,
+            string_keys,
+            translations,
+            inherited_sets,
+        ) = load_translations(translations_dir, verbose, only_languages)
 
         # --- Unused-string detection ---
         scan_dirs = [d for d in src_dirs if os.path.isdir(d)]
@@ -963,6 +1025,7 @@ def main(
             translations,
             str(out / "I18nStrings.cpp"),
             verbose,
+            language_locales=language_locales,
         )
 
         print()
@@ -1078,11 +1141,19 @@ else:
             }
 
             if _build_flags_has(flag, expanded) or flag in define_names:
-                only = {"ZH"}
-                print(
-                    f"[gen_i18n] {flag} detected (env={env_name}); "
-                    f"restricting i18n tables to EN + ZH"
-                )
+                sc_flag = "CHINESE_UI_SIMPLIFIED"
+                if _build_flags_has(sc_flag, expanded) or sc_flag in define_names:
+                    only = {"ZH_CN"}
+                    print(
+                        f"[gen_i18n] {flag}+{sc_flag} detected (env={env_name}); "
+                        f"restricting i18n tables to EN + ZH_CN (t2s from ZH_TW)"
+                    )
+                else:
+                    only = {"ZH_TW"}
+                    print(
+                        f"[gen_i18n] {flag} detected (env={env_name}); "
+                        f"restricting i18n tables to EN + ZH_TW"
+                    )
             else:
                 print(f"[gen_i18n] {flag} not set (env={env_name}); building full i18n")
         except Exception as exc:  # noqa: BLE001

@@ -1,5 +1,6 @@
-_language_name: "中文"
-_language_code: "ZH"
+_language_name: "繁體中文"
+_language_code: "ZH_TW"
+_locale: "zh-TW"
 _order: "23"
 
 STR_CROSSPOINT: "ryOS CrossMux"

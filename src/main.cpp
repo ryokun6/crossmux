@@ -46,12 +46,11 @@ static unsigned long allowSleepAt = 0;
 
 // Fonts
 #ifdef ENABLE_CHINESE_VERSION
-// Chinese build: each Latin EpdFont global aliases the matching-size CJK
-// header (notosans_cjk_{8,10,12,14,16,18} from GenSen Rounded 2 TW, raw
-// 2-bit Traditional bitmaps). Bold / italic / bolditalic variants share
-// the single Regular face — style variants are not available for built-in
-// CJK glyphs. Simplified UI/EPUB codepoints remap to Traditional at
-// glyph lookup (ScToTcRemap.h). SD-card fonts still provide styles when loaded.
+// Chinese builds: each Latin EpdFont global aliases the matching-size CJK
+// header symbol notosans_cjk_{8,10,12,14,16,18}. Traditional SKUs include
+// GenSen TW headers; Simplified SKUs include Source Han Sans CN headers
+// (notosans_sc_*.h) that define the same symbols. Remap at glyph lookup:
+// ScToTcRemap (TW) or TcToScRemap (SC). Bold/italic share Regular.
 //
 // CJK character coverage is non-uniform across sizes (see
 // build-cn-builtin-fonts.sh):

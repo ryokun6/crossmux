@@ -36,8 +36,8 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
-      - name: Build ryOS CrossMux (international + Chinese)
-        run: pio run -e gh_release -e gh_release_cn
+      - name: Build ryOS CrossMux (international + TC + SC)
+        run: pio run -e gh_release -e gh_release_tc -e gh_release_sc
 
       - name: Stage release assets
         run: |
@@ -45,7 +45,8 @@ jobs:
           cp .pio/build/gh_release/firmware.bin     dist/firmware.bin
           cp .pio/build/gh_release/bootloader.bin   dist/bootloader.bin
           cp .pio/build/gh_release/partitions.bin   dist/partitions.bin
-          cp .pio/build/gh_release_cn/firmware.bin  dist/firmware-cn.bin
+          cp .pio/build/gh_release_tc/firmware.bin  dist/firmware-tc.bin
+          cp .pio/build/gh_release_sc/firmware.bin  dist/firmware-sc.bin
 
       # Build a complete commit-level changelog. GitHub's built-in
       # generate_release_notes only lists PR merges, so any commit pushed
@@ -97,7 +98,7 @@ jobs:
             "false" \
             "${{ github.sha }}" \
             "release-body.md" \
-            dist/firmware.bin dist/firmware-cn.bin dist/bootloader.bin dist/partitions.bin
+            dist/firmware.bin dist/firmware-tc.bin dist/firmware-sc.bin dist/bootloader.bin dist/partitions.bin
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
@@ -109,4 +110,5 @@ jobs:
             .pio/build/gh_release/firmware.elf
             .pio/build/gh_release/firmware.map
             .pio/build/gh_release/partitions.bin
-            .pio/build/gh_release_cn/firmware.bin
+            .pio/build/gh_release_tc/firmware.bin
+            .pio/build/gh_release_sc/firmware.bin
