@@ -249,6 +249,24 @@
     .btn-save-server:hover {
       background-color: #219a52;
     }
+    .signup-banner {
+      display: block;
+      margin: 0 0 14px;
+      padding: 12px 14px;
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--accent-color) 14%, var(--card-bg));
+      border: 1px solid color-mix(in srgb, var(--accent-color) 35%, var(--border-color));
+      color: var(--title-color);
+      text-decoration: none;
+      line-height: 1.45;
+      font-weight: 500;
+    }
+    .signup-banner:hover {
+      background: color-mix(in srgb, var(--accent-color) 22%, var(--card-bg));
+    }
+    .signup-banner strong {
+      color: var(--accent-color);
+    }
     @media (max-width: 600px) {
       body {
         padding: 10px;
@@ -302,6 +320,7 @@
 
   <div id="wifi-container"></div>
   <div id="opds-container"></div>
+  <div id="sync-container"></div>
 
   <div class="card">
     <p style="text-align: center; color: #95a5a6; margin: 0;">
@@ -746,7 +765,10 @@
 
   function renderOpdsSection() {
     const container = document.getElementById('opds-container');
-    let html = '<div class="card"><h2>ryOS Books</h2>';
+    let html = '<div class="card"><h2>ryOS Books</h2>' +
+      '<a class="signup-banner" href="https://os.ryo.lu" target="_blank" rel="noopener">' +
+        'Sign up for <strong>ryOS Account</strong> at https://os.ryo.lu' +
+      '</a>';
 
     if (opdsServers.length === 0) {
       html += '<p style="color:var(--label-color);text-align:center;">No book servers configured</p>';
@@ -760,6 +782,20 @@
       '<button class="btn-small btn-add" onclick="addOpdsServer()">+ Add Server</button>' +
     '</div></div>';
     container.innerHTML = html;
+  }
+
+  function renderSyncSection() {
+    const container = document.getElementById('sync-container');
+    container.innerHTML =
+      '<div class="card"><h2>ryOS Cloud Sync</h2>' +
+        '<a class="signup-banner" href="https://os.ryo.lu" target="_blank" rel="noopener">' +
+          'Sign up for <strong>ryOS Account</strong> at https://os.ryo.lu' +
+        '</a>' +
+        '<p style="color:var(--label-color);margin:0;line-height:1.5;">' +
+          'Create an account, then enter the same username and password on the device under ' +
+          '<strong>Settings → System → ryOS Cloud Sync</strong>.' +
+        '</p>' +
+      '</div>';
   }
 
   async function loadOpdsServers() {
@@ -827,6 +863,7 @@
 
   loadWifiNetworks();
   loadOpdsServers();
+  renderSyncSection();
 </script>
 </body>
 </html>

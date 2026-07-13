@@ -80,6 +80,16 @@
 
 數獨、五子棋、踩地雷、2048、中國象棋、生命遊戲與頭像產生器已刻意排除。
 
+### ryOS 雲端同步與書庫
+
+請至 [https://os.ryo.lu](https://os.ryo.lu) 註冊，再於裝置上使用相同的 **ryOS 帳號**
+使用者名稱與密碼：
+
+- **ryOS 雲端同步**（`設定 → 系統 → ryOS 雲端同步`）— 跨裝置同步閱讀進度。協定相容
+  KOReader，因此同一組憑證也可在指向同一伺服器的 KOReader 應用上使用。
+- **ryOS 書庫**（應用 → ryOS 書庫，或 `設定 → 系統 → ryOS 書庫`）— 瀏覽並下載帳號書庫中的書籍。
+  裝置預設已填入 ryOS 書庫目錄；你也可以另外加入其他 OPDS 伺服器（例如家用 Calibre）。
+
 ## 閱讀功能
 
 ryOS CrossMux 保留上游 CrossPoint 的主要閱讀能力：
@@ -88,7 +98,7 @@ ryOS CrossMux 保留上游 CrossPoint 的主要閱讀能力：
 - 章節導覽、腳註、書籤、跳轉百分比
 - 內嵌樣式、圖片、字距、連字符、專注閱讀
 - 自動翻頁、方向控制、螢幕截圖、QR 顯示
-- ryOS 雲端同步（相容 KOReader）
+- 以 ryOS 帳號進行 ryOS 雲端同步（相容 KOReader）
 - `.epub`／`.txt`／`.xtc`／`.xtch`／`.bmp`
 - 最近書籍、資料夾瀏覽、快取管理、長按刪除
 - 可安裝的 SD 卡字族（Regular／Bold／Italic／Bold-Italic）

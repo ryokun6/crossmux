@@ -97,7 +97,13 @@ void OpdsServerListActivity::render(RenderLock&&) {
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_OPDS_SERVERS));
 
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
+  const int subHeaderHeight = pickerMode ? 0 : metrics.tabBarHeight;
+  if (!pickerMode) {
+    GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
+                      tr(STR_RYOS_ACCOUNT_HINT));
+  }
+
+  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing + subHeaderHeight;
   const int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
   const int itemCount = getItemCount();
 

@@ -210,9 +210,6 @@ STUB_ACTIVITY_BASE(FontDownloadActivity)
 #include "activities/settings/KOReaderAuthActivity.h"
 STUB_ACTIVITY_BASE(KOReaderAuthActivity)
 
-#include "activities/settings/KOReaderSettingsActivity.h"
-STUB_ACTIVITY_BASE(KOReaderSettingsActivity)
-
 #include "activities/reader/KOReaderSyncActivity.h"
 STUB_ACTIVITY_BASE(KOReaderSyncActivity)
 

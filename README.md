@@ -105,6 +105,19 @@ The firmware ships only reading-related apps:
 Sudoku, Gomoku, Minesweeper, 2048, Chinese Chess, Game of Life, and the avatar
 generator are intentionally excluded.
 
+### ryOS Cloud Sync and Books
+
+Sign up at [https://os.ryo.lu](https://os.ryo.lu), then use the same **ryOS Account**
+username and password on the device:
+
+- **ryOS Cloud Sync** (`Settings → System → ryOS Cloud Sync`) — sync reading
+  progress across devices. The protocol is KOReader-compatible, so the same
+  credentials also work with KOReader apps when pointed at the same server.
+- **ryOS Books** (Apps → ryOS Books, or `Settings → System → ryOS Books`) —
+  browse and download books from the catalog linked to your account. A default
+  ryOS Books catalog is prefilled; you can add other OPDS servers (for example
+  a home Calibre library) alongside it.
+
 ## Reader features
 
 ryOS CrossMux keeps the main CrossPoint reader:
@@ -113,7 +126,7 @@ ryOS CrossMux keeps the main CrossPoint reader:
 - chapter navigation, footnotes, bookmarks, and go-to-percent
 - embedded styles, images, kerning, hyphenation, and focus reading
 - auto page turn, orientation control, screenshots, and QR display
-- ryOS Cloud Sync (KOReader-compatible)
+- ryOS Cloud Sync with your ryOS Account (KOReader-compatible)
 - `.epub`, `.txt`, `.xtc`, `.xtch`, and `.bmp` files
 - recent books, folder browsing, cache management, and long-press delete
 - installable SD-card font families with regular, bold, italic, and bold-italic
