@@ -186,7 +186,7 @@ TEST(ReleaseJsonParser, FirmwareNotFirstAsset) {
 
 TEST(ReleaseJsonParser, SelectsRequestedTraditionalChineseFirmwareAsset) {
   const char* json = R"({
-      "tag_name": "1.4.6",
+      "tag_name": "1.4.7",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
         {"name": "firmware-tc.bin", "browser_download_url": "https://example.com/firmware-tc.bin", "size": 6000000},
@@ -199,14 +199,14 @@ TEST(ReleaseJsonParser, SelectsRequestedTraditionalChineseFirmwareAsset) {
 
   EXPECT_TRUE(p.foundTag());
   EXPECT_TRUE(p.foundFirmware());
-  EXPECT_STREQ(p.getTagName(), "1.4.6");
+  EXPECT_STREQ(p.getTagName(), "1.4.7");
   EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-tc.bin");
   EXPECT_EQ(p.getFirmwareSize(), 6000000u);
 }
 
 TEST(ReleaseJsonParser, SelectsRequestedSimplifiedChineseFirmwareAsset) {
   const char* json = R"({
-      "tag_name": "1.4.6",
+      "tag_name": "1.4.7",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
         {"name": "firmware-tc.bin", "browser_download_url": "https://example.com/firmware-tc.bin", "size": 6000000},
@@ -219,7 +219,7 @@ TEST(ReleaseJsonParser, SelectsRequestedSimplifiedChineseFirmwareAsset) {
 
   EXPECT_TRUE(p.foundTag());
   EXPECT_TRUE(p.foundFirmware());
-  EXPECT_STREQ(p.getTagName(), "1.4.6");
+  EXPECT_STREQ(p.getTagName(), "1.4.7");
   EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-sc.bin");
   EXPECT_EQ(p.getFirmwareSize(), 6100000u);
 }

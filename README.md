@@ -8,7 +8,7 @@
 
 本 fork 專注於中文與 CJK 書籍：直排 EPUB、更廣的字體覆蓋、可靠的 SD 卡字體，以及更快的 4 級灰階文字。閱讀統計、微信讀書與待機表盤予以保留；舊有的遊戲與玩具類應用不在固件中。
 
-**當前固件版本：** 1.4.6
+**當前固件版本：** 1.4.7
 
 ![ryOS CrossMux 運行在 Xteink 設備上](./docs/images/xteink-vertical-reading.jpg)
 
