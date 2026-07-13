@@ -17,7 +17,7 @@
 // file that includes CrossPointSettings.h.
 uint8_t CrossPointSettings::defaultLanguageIndex() {
 #ifdef ENABLE_CHINESE_VERSION
-  return static_cast<uint8_t>(Language::ZH_CN);
+  return static_cast<uint8_t>(Language::ZH);
 #else
   return static_cast<uint8_t>(Language::EN);
 #endif

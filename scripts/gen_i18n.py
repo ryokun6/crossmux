@@ -572,7 +572,7 @@ def generate_keys_header(
     # V1 language.bin migration table -- frozen enum order from commit 2f969a9.
     # Maps the old uint8_t index stored on disk to the current Language enum.
     # When a build excludes some languages (e.g. ENABLE_CHINESE_VERSION strips
-    # everything except EN/ZH_CN), absent codes fall back to Language::EN so the
+    # everything except EN/ZH), absent codes fall back to Language::EN so the
     # table still compiles. On-device, a user whose stored language is no longer
     # available simply lands back on English.
     v1_codes = [
@@ -1078,10 +1078,10 @@ else:
             }
 
             if _build_flags_has(flag, expanded) or flag in define_names:
-                only = {"ZH_CN"}
+                only = {"ZH"}
                 print(
                     f"[gen_i18n] {flag} detected (env={env_name}); "
-                    f"restricting i18n tables to EN + ZH_CN"
+                    f"restricting i18n tables to EN + ZH"
                 )
             else:
                 print(f"[gen_i18n] {flag} not set (env={env_name}); building full i18n")

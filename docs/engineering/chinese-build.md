@@ -10,12 +10,12 @@ gates every CN-only resource:
 
 | Resource | Behavior under ENABLE_CHINESE_VERSION |
 |---|---|
-| i18n string table (`gen_i18n.py`) | Pre-script auto-detects the flag via `env.subst("$BUILD_FLAGS")` and emits **only EN + ZH_CN** into `I18nStrings.cpp` (saves ~144 KB vs the full 23-language table). Detection logs `[gen_i18n] ENABLE_CHINESE_VERSION detected …` during the build. |
+| i18n string table (`gen_i18n.py`) | Pre-script auto-detects the flag via `env.subst("$BUILD_FLAGS")` and emits **only EN + ZH** into `I18nStrings.cpp` (saves ~144 KB vs the full 23-language table). Detection logs `[gen_i18n] ENABLE_CHINESE_VERSION detected …` during the build. |
 | Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers are skipped. Six per-size CJK headers (`notosans_cjk_{8,10,12,14,16,18}.h`) replace them — raw 2-bit bitmaps. **Character coverage is tiered by point size**: 8/10/12pt carry the small UI subset (~3500 chars from `cn_common_chars.txt` + i18n require-from + ASCII + Latin-1 + CJK punctuation); **14pt carries the large reader-default subset (7000 通用汉字 from `chars_7000_common.txt` + extended symbol ranges — number forms / enclosed alphanumerics / box drawing / block elements / geometric shapes / misc symbols / dingbats — plus the standard ASCII/Latin/punct base)**; 16pt/18pt carry only the i18n require-from CJK subset (~700 chars from `chinese.yaml` + ASCII + Latin-1 + CJK punctuation). The 16/18pt sizes are tuned for reader LARGE/EXTRA_LARGE (intended for English EPUB) while still rendering UI strings; Chinese EPUB text at 16/18pt shows blank for chars outside the i18n subset. |
 | `src/main.cpp` font globals | Each Latin `EpdFont`/`EpdFontFamily` global is aliased to the matching-size CJK header. Bold/italic variants all point at the Regular OTF (no style data in the subset). SD-card fonts still provide style variants when the user loads them. |
 | EPUB layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp)) | CJK punctuation rules are active: line-head prohibition (禁则) glues trailing punctuation back onto the previous line; full-width punctuation gets width-padded so it occupies a full CJK cell. Both are zero-cost in non-CN builds (gated by `#ifdef`). |
 | Activities (`src/activities/apps/weread/`) | Compiled in (also gated by `build_src_filter +<activities/apps/weread/>`). Game apps (sudoku, chess, etc.) are excluded from all builds. |
-| First-boot default language (`src/CrossPointSettings.h`) | `language` is initialized to `Language::ZH_CN` so a fresh device boots straight into Chinese UI; non-CN builds still default to `Language::EN`. |
+| First-boot default language (`src/CrossPointSettings.h`) | `language` is initialized to `Language::ZH` so a fresh device boots straight into Chinese UI; non-CN builds still default to `Language::EN`. |
 
 **Flash budget** (default `partitions.csv`, dual A/B app slot = 6.25 MB):
 
@@ -25,7 +25,7 @@ gates every CN-only resource:
 | 3 CJK font headers 8/10/12pt (~3250 Traditional UI/common + ASCII/Latin/CJK-punct) | ~1.1 MB |
 | 1 CJK font header 14pt (7000 通用汉字 + extended symbols) | ~1.43 MB |
 | 2 CJK font headers 16/18pt (i18n-only ~700 chars + ASCII/Latin/CJK-punct) | ~400 KB |
-| i18n strings (EN + ZH_CN only) | ~16 KB |
+| i18n strings (EN + ZH only) | ~16 KB |
 | **Total** | **~6.05 MB / 6.25 MB (~92.3%)**, ~500 KB headroom |
 
 A/B OTA rollback works exactly like the Latin build — the firmware fits in
@@ -188,7 +188,7 @@ shrinks proportionally.
 - **Rare characters render as □ in reader at SMALL**: the SMALL (12pt) bitmap uses the 3500-char pool, which covers all of modern SC but omits classical / scientific rarities, Traditional Chinese variants, and most niche surnames/place names. MEDIUM (14pt, reader default) now uses the 7000 通用汉字 pool and covers most modern names, place names, and regulated chars from the 2013 通用规范汉字表. Expand SMALL by adding a feature-scoped `cn_<feature>_chars.txt` or by enlarging the pool — see "Expanding character coverage" above. Bumping `--top` alone does nothing.
 - **CJK in reader at LARGE/EXTRA_LARGE shows blank** for chars outside the i18n subset — by design, since 16/18pt reader sizes are tuned for English EPUB. Switch to MEDIUM to read Chinese.
 - **`FontDecompressor` is bypassed for CJK** by design — bitmaps are stored raw because compressing 6 fonts × ~50 KB groups fragments the heap on boot.
-- **UI language code remains `ZH_CN`**: the settings enum / `settings.json` code is unchanged for migration; the display name is `中文` and UI strings are Traditional.
+- **UI language code is `ZH`**: the settings enum / `settings.json` code (legacy `ZH_CN` is accepted and rewritten); the display name is `中文` and UI strings are Traditional.
 
 ## Files
 
@@ -205,7 +205,7 @@ shrinks proportionally.
 | `lib/EpdFont/builtinFonts/notosans_cjk_{8,10,12,14,16,18}.h` | Generated bitmap headers (committed). Should always match `cn_common_chars.txt` (8/10/12pt), `chars_7000_common.txt` (14pt), and `cn_i18n_chars.txt` (16/18pt) — see consistency check below. |
 | `lib/EpdFont/builtinFonts/source/GenSenRounded2TW/` | OTF source dir (gitignored). Drop `GenSenRounded2TW-R.otf` here. |
 | `lib/EpdFont/ScToTcRemap.h` | Committed SC→TC lookup (~2600 pairs). Regenerated by `build_sc_to_tc_remap.py`. |
-| `lib/I18n/translations/chinese.yaml` | Traditional Chinese UI translations (`_language_name: 中文`, `_language_code: ZH_CN`); also fed to `--require-from` so every CJK char in `STR_*: "value"` lines is forced into both subsets. Do **not** hide font-only chars in `#` comments — use a `cn_<feature>_chars.txt` file instead. |
+| `lib/I18n/translations/chinese.yaml` | Traditional Chinese UI translations (`_language_name: 中文`, `_language_code: ZH`); also fed to `--require-from` so every CJK char in `STR_*: "value"` lines is forced into both subsets. Do **not** hide font-only chars in `#` comments — use a `cn_<feature>_chars.txt` file instead. |
 
 ## Consistency check
 

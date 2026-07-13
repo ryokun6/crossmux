@@ -26,7 +26,7 @@ class I18n {
   static Language languageFromCode(const char* code);
 
   // True if this build can actually render `lang`. A language whose strings are
-  // compiled in but whose glyphs are not (e.g. ZH_CN in the non-CJK global
+  // compiled in but whose glyphs are not (e.g. ZH in the non-CJK global
   // build) would render as garbled boxes, so it is reported as unavailable.
   static bool isLanguageAvailable(Language lang);
 

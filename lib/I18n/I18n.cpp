@@ -43,8 +43,15 @@ const char* I18n::getLanguageName(Language lang) const {
 }
 
 Language I18n::languageFromCode(const char* code) {
+  if (code == nullptr) return Language::EN;
   for (uint8_t i = 0; i < getLanguageCount(); i++) {
     if (strcmp(code, LANGUAGE_CODES[i]) == 0) return static_cast<Language>(i);
+  }
+  // Legacy settings.json / --lang values before the ZH_CN → ZH rename.
+  if (strcmp(code, "ZH_CN") == 0) {
+    for (uint8_t i = 0; i < getLanguageCount(); i++) {
+      if (strcmp(LANGUAGE_CODES[i], "ZH") == 0) return static_cast<Language>(i);
+    }
   }
   return Language::EN;
 }
@@ -53,9 +60,9 @@ bool I18n::isLanguageAvailable(Language lang) {
   if (static_cast<uint8_t>(lang) >= getLanguageCount()) return false;
 #ifndef ENABLE_CHINESE_VERSION
   // CJK glyphs ship only with the Chinese SKU; the global build embeds Latin
-  // fonts only, so Chinese strings render as garbled boxes even though ZH_CN's
+  // fonts only, so Chinese strings render as garbled boxes even though ZH's
   // strings are compiled in. Treat it as unavailable here.
-  if (lang == Language::ZH_CN) return false;
+  if (lang == Language::ZH) return false;
 #endif
   return true;
 }

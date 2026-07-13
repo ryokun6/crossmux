@@ -297,12 +297,12 @@ class CrossPointSettings {
   uint8_t imageRendering = IMAGES_DISPLAY;
   // Tilt-based page turning (X3 only — requires QMI8658 IMU)
   uint8_t tiltPageTurn = TILT_OFF;
-  // Language setting (Language enum index). First-boot default is ZH_CN under
-  // ENABLE_CHINESE_VERSION (where the table only has EN + ZH_CN), otherwise EN.
+  // Language setting (Language enum index). First-boot default is ZH under
+  // ENABLE_CHINESE_VERSION (where the table only has EN + ZH), otherwise EN.
   // Resolved out-of-line in CrossPointSettings.cpp so the generated
   // I18nKeys.h header doesn't leak into every consumer of this header.
   // Note: this default also applies on factory reset (re-construction sets
-  // the field back to ZH_CN for CN builds, EN otherwise) — by design, so a
+  // the field back to ZH for CN builds, EN otherwise) — by design, so a
   // fresh device always lands on the SKU's intended UI language.
   uint8_t language = defaultLanguageIndex();
   // Quick Resume: keep current content visible with moon icon instead of showing a static sleep screen.
