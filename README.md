@@ -1,257 +1,147 @@
 # ryOS CrossMux
 
-ryOS CrossMux is reading-first firmware for the Xteink X3 and X4. It is a fork of
-[CrossMux](https://github.com/0x1abin/crossmux), built on
-[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).
+[English](./README.en.md) | **中文**
 
-This fork focuses on Chinese and CJK books: vertical EPUB layout, broader font
-coverage, reliable SD-card fonts, and faster 4-level grayscale text. It keeps
-reading stats, WeRead, and standby faces. The old game and toy apps are not part
-of the firmware.
+**ryOS CrossMux** 是面向 Xteink X3 / X4 的閱讀優先固件。它源自
+[CrossMux](https://github.com/0x1abin/crossmux)，並建立在
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) 之上。
 
-Current firmware version: **1.4.5**
+本 fork 專注於中文與 CJK 書籍：直排 EPUB、更廣的字體覆蓋、可靠的 SD 卡字體，以及更快的 4 級灰階文字。閱讀統計、微信讀書與待機表盤予以保留；舊有的遊戲與玩具類應用不在固件中。
 
-![ryOS CrossMux running on an Xteink device](./docs/images/cover.jpg)
+**當前固件版本：** 1.4.5
 
-## What this fork adds
+![ryOS CrossMux 運行在 Xteink 設備上](./docs/images/cover.jpg)
 
-### Vertical CJK EPUB reading
+## 本 fork 新增了什麼
 
-Choose `Writing Mode > Vertical (RTL)` in Reader Settings or the in-book menu.
-The layout engine then:
+### 直排 CJK EPUB 閱讀
 
-- lays out columns from right to left
-- uses vertical presentation forms for CJK punctuation
-- stacks repeated ellipses and dashes one character cell at a time
-- rotates Latin runs and keeps short numeric references readable
-- applies tate-chu-yoko layout to compact horizontal runs
-- moves paragraph spacing and block margins along the column axis
-- reverses page controls to follow the reading direction
+在閱讀設定或書內選單選擇 `排版方向 > 豎排（右起）`。版面引擎會：
 
-Vertical mode activates only for EPUBs whose language metadata is tagged
-Chinese, Japanese, or Korean. Other books stay horizontal even if the global
-setting is vertical.
+- 由右至左排欄
+- 使用直排標點呈現形
+- 將重複省略號、破折號逐字堆疊
+- 旋轉拉丁文段落，並保持短數字參考可讀
+- 對緊湊橫向片段套用縱中橫
+- 讓段落間距與區塊邊距沿欄軸方向作用
+- 依閱讀方向反轉翻頁控制
 
-### Chinese firmware
+直排僅在 EPUB 語言中繼資料標為中文、日文或韓文時啓用。其他書籍即使全域設定為直排，仍維持橫排。
 
-Two Chinese SKUs ship alongside international:
+### 中文固件
 
-| Env | Locale | UI | OTA asset |
-| --- | --- | --- | --- |
-| `gh_release_tc` | `zh-TW` | Traditional (繁體中文) | `firmware-tc.bin` |
-| `gh_release_sc` | `zh-CN` | Simplified (简体中文, from Taiwan YAML via OpenCC tw2sp) | `firmware-sc.bin` |
+`gh_release_tc` 環境會產出以中文爲優先的固件，包含：
 
-Both include English + Chinese UI strings, CJK line-breaking, WeRead, dual-slot
-OTA from `ryokun6/crossmux`, and embedded CJK bitmap fonts (GenSen TW for TC;
-Source Han Sans CN for SC). TC remaps Simplified EPUB codepoints → Traditional
-glyphs; SC remaps Traditional → Simplified.
+- 首次開機預設語言爲中文
+- 英文與中文 UI 字串（中文 UI 爲繁體）
+- 內嵌 GenSen Rounded TW 點陣字體
+- CJK 斷行與標點規則
+- 微信讀書書架、筆記、書評、搜尋、推薦與 SD 離線快取
+- 從 `ryokun6/crossmux` Release 進行 OTA，並選用中文固件資源
+- 與國際版相同的雙槽固件配置與回滾支援
 
-### Better SD-card fonts
+預設 14pt 閱讀字體約涵蓋 7000 個常用漢字，以及現代 EPUB 常用符號。較小的 UI 字號使用更精簡的子集以符合 ESP32-C3 Flash 預算。簡體碼位會在查字時對應到內嵌的繁體字形，因此不必爲每個點陣各存一份。
 
-`.cpfont` families can live in either `/.fonts/` or `/fonts/` on the SD card.
-The loader indexes large CJK families on demand, prewarms upcoming page glyphs,
-and falls back to the regular style when a CJK bold or italic glyph is absent.
+### 更好的 SD 卡字體
 
-The repo also includes an EB Garamond plus Source Han Serif TC builder. Its
-current character set covers base CJK ideographs, compatibility ideographs,
-Hiragana, Katakana, Greek, EPUB symbols, and a small book-derived supplement.
-See [SD-card fonts](./docs/sd-card-fonts.md).
+`.cpfont` 字族可放在 SD 卡的 `/.fonts/` 或 `/fonts/`。載入器會按需索引大型 CJK 字族、預熱即將用到的頁面字形，並在缺少粗體／斜體字形時回退到 Regular。
 
-### Faster grayscale text
+倉庫亦包含 EB Garamond + Source Han Serif TC 建置腳本。詳見 [SD-card fonts](./docs/sd-card-fonts.md)。
 
-Text anti-aliasing uses the display's four grayscale levels. The fork renders
-the two grayscale planes in narrow strips and writes them directly to the
-display, instead of keeping two extra full-screen buffers in RAM. Fast glyph
-blitting and strip rejection reduce repeated work on pages with SD fonts and
-vertical columns.
+### 更快的灰階文字
 
-### Cache and image handling
+文字反鋸齒使用顯示器的四級灰階。本 fork 以窄條帶渲染兩個灰階平面並直接寫入顯示器，而不再在 RAM 中保留兩個額外的全螢幕緩衝。
 
-Section cache rebuilds write to a `.tmp` sidecar before replacing the active
-cache. If an SD card refuses to truncate or rename a stale section file, the
-reader can keep using the completed sidecar instead of failing the chapter
-rebuild.
+### 更精簡的 Apps 選單
 
-The `Large only` image mode now drops inline icons, em-sized separators, and
-small standalone images while preserving full figures.
+固件僅內建與閱讀相關的應用：
 
-### A smaller Apps menu
+- OPDS 瀏覽器
+- 閱讀統計（歷史、熱力圖、檔案與成就）
+- 中文版的微信讀書
+- 待機表盤（含潦草時鐘、AirPage，以及中文版的傳統日曆）
 
-The firmware ships only reading-related apps:
+數獨、五子棋、踩地雷、2048、中國象棋、生命遊戲與頭像產生器已刻意排除。
 
-- OPDS Browser
-- Reading Stats, including history, heatmap, profile, and achievements
-- WeRead in the Chinese build
-- Standby faces, including Sloppy Clock and AirPage, plus Chinese Calendar in
-  the Chinese build
+## 閱讀功能
 
-Sudoku, Gomoku, Minesweeper, 2048, Chinese Chess, Game of Life, and the avatar
-generator are intentionally excluded.
+ryOS CrossMux 保留上游 CrossPoint 的主要閱讀能力：EPUB 2/3、章節導覽、腳註、書籤、跳轉百分比、內嵌樣式、圖片、字距、連字符、專注閱讀、自動翻頁、方向控制、螢幕截圖、QR、KOReader 進度同步，以及 `.epub` / `.txt` / `.xtc` / `.xtch` / `.bmp` 等格式。
 
-## Reader features
+無線工具包含檔案傳輸、EPUB Optimizer、網頁設定、WebSocket 上傳、WebDAV、Calibre 無線連線、OPDS，以及從最新 `ryokun6/crossmux` GitHub Release 進行網路 OTA。OTA 會依目前安裝的版本選擇 `firmware.bin` 或 `firmware-tc.bin`。也可透過 USB、網頁刷機器或「SD 卡固件更新」安裝。
 
-ryOS CrossMux keeps the main CrossPoint reader:
+## X3 與 X4 支援
 
-- EPUB 2 and EPUB 3 rendering
-- chapter navigation, footnotes, bookmarks, and go-to-percent
-- embedded styles, images, kerning, hyphenation, and focus reading
-- auto page turn, orientation control, screenshots, and QR display
-- KOReader progress sync
-- `.epub`, `.txt`, `.xtc`, `.xtch`, and `.bmp` files
-- recent books, folder browsing, cache management, and long-press delete
-- installable SD-card font families with regular, bold, italic, and bold-italic
-  styles
-- international UI translations and RTL interface support
+同一份固件可在兩種裝置上運行。開機時偵測硬體，並調整面板尺寸、按鍵、電池來源與可用周邊。詳見 [device variants](./docs/engineering/device-variants.md)。
 
-Wireless tools include file transfer, the EPUB Optimizer, web settings, fast
-WebSocket uploads, WebDAV, Calibre wireless connection, OPDS browsing, and
-network OTA from the latest `ryokun6/crossmux` GitHub release. OTA selects
-`firmware.bin`, `firmware-tc.bin`, or `firmware-sc.bin` to match the installed build. Firmware can
-also be installed through USB, the web flasher, or `SD Card Firmware Update`.
+## 刷機前注意
 
-## X3 and X4 support
-
-One firmware image runs on both devices. It detects the hardware at boot and
-adapts the panel size, controls, battery source, and available peripherals.
-
-- X4: 800 x 480 SSD1677 display
-- X3: 792 x 528 UC81xx display, DS3231 clock, fuel gauge, and tilt page turn
-
-There is no separate X3 build. Build either language variant and flash the same
-`firmware.bin` to the matching target in the web flasher. See
-[device variants](./docs/engineering/device-variants.md) for the detection and
-recovery details.
-
-## Before flashing
-
-> **USB-locked device warning**
+> **USB 鎖定裝置警告**
 >
-> The Xteink Unlocker officially supports CrossPoint and CrossInk. ryOS
-> CrossMux is a community fork. Flashing it to a USB-locked device can leave the
-> device permanently stuck without a supported recovery path. Do not install
-> this fork on a locked unit unless you already have a verified way to recover
-> it.
+> Xteink Unlocker 官方支援 CrossPoint 與 CrossInk。ryOS CrossMux 是社群 fork。在 USB 鎖定的裝置上刷入，可能導致無法以官方途徑救援。除非你已有可驗證的救援方式，否則請勿在鎖定裝置上安裝本 fork。
 
-Units bought directly from xteink.com are normally not USB-locked. If a browser
-cannot see the serial device, try another data-capable cable, USB port, and
-Chromium-based browser before assuming the device is locked.
+## 建置與安裝
 
-## Build and install
+### 前置條件
 
-### Requirements
+- [pioarduino](https://github.com/pioarduino/pioarduino) 或其 VS Code 外掛
+- Python 3.8+
+- 支援 submodule 的 Git
+- 支援資料傳輸的 USB-C 線
 
-- [pioarduino](https://github.com/pioarduino/pioarduino) or its VS Code plugin
-- Python 3.8 or newer
-- Git with submodule support
-- a data-capable USB-C cable
-
-### Clone
+### 取得原始碼
 
 ```bash
 git clone --recursive https://github.com/ryokun6/crossmux.git
 cd crossmux
 ```
 
-If the repo was cloned without submodules:
+若克隆時未帶 submodule：
 
 ```bash
 git submodule update --init --recursive
 ```
 
-### Build
+### 建置
 
 ```bash
-# International firmware
+# 國際版固件
 pio run -e gh_release
 
-# Chinese firmware
+# 中文固件
 pio run -e gh_release_tc
-```
 
-Build outputs:
-
-```text
-.pio/build/gh_release/firmware.bin
-.pio/build/gh_release_tc/firmware.bin
-```
-
-### Flash over USB
-
-```bash
-# International
-pio run -e gh_release -t upload
-
-# Chinese
+# 建置並燒錄
 pio run -e gh_release_tc -t upload
 ```
 
-You can also open the
-[CrossPoint web flasher](https://crosspointreader.com/#flash-tools), select the
-physical device, choose `Custom .bin`, and upload the matching build output.
-The target selector patches the image for the device bootloader. It does not
-select a different firmware build.
+產物位於 `.pio/build/<env>/firmware.bin`。
 
-To return to official firmware, flash an official
-[CrossPoint release](https://github.com/crosspoint-reader/crosspoint-reader/releases).
+### 重新產生 CJK 字體（可選）
 
-## Install custom fonts
-
-You can install `.cpfont` files without rebuilding the firmware:
-
-1. On the device, open `Settings > System > Manage Fonts`.
-2. Or upload fonts through the file-transfer web interface.
-3. Or copy a family directory to `/.fonts/FamilyName/` or
-   `/fonts/FamilyName/` on the SD card.
-4. Select the family under `Settings > Reader > Reader Font Family`.
-
-The hidden `/.fonts/` directory wins if the same family exists in both font
-roots. Conversion commands, Unicode presets, and the CJK font builder are
-documented in [docs/sd-card-fonts.md](./docs/sd-card-fonts.md).
-
-## Known limits
-
-- The built-in Chinese font is best at the default 14 pt Medium size. The 12 pt
-  Small font has a smaller ideograph set, while Large and Extra Large are
-  intended mainly for English books.
-- Built-in CJK text has one weight. Install an SD-card family for distinct bold
-  and italic Latin styles.
-- Vertical mode depends on correct `zh`, `ja`, or `ko` EPUB language metadata.
-- The desktop simulator currently models X4 geometry only. X3 display and
-  peripheral testing needs real hardware.
-
-## Development
-
-Useful checks before opening a pull request:
+僅在修改字集或更新內嵌字體時需要。將 `GenSenRounded2TW-R.otf` 放到
+`lib/EpdFont/builtinFonts/source/GenSenRounded2TW/`，然後執行：
 
 ```bash
-./bin/clang-format-fix
-pio check -e default
-pio run -e default
-pio run -e gh_release_tc
+bash lib/EpdFont/scripts/build-cn-builtin-fonts.sh
 ```
 
-The ESP32-C3 has about 380 KB of usable RAM. Reader caches live on the SD card
-under `/.crosspoint/`, and code changes should avoid adding persistent heap
-pressure.
+完整說明見 [docs/engineering/chinese-build.md](./docs/engineering/chinese-build.md)。
 
-Start here:
+## 中文閱讀注意事項
 
-- [User guide](./USER_GUIDE.md)
-- [Development guide](./docs/contributing/README.md)
-- [Architecture](./docs/contributing/architecture.md)
-- [Chinese build](./docs/engineering/chinese-build.md)
-- [Cache management](./docs/engineering/cache-management.md)
-- [Binary file formats](./docs/file-formats.md)
-- [Web server](./docs/webserver.md)
-- [Desktop and WebAssembly simulator](./simulator/README.md)
+中文固件在有限的 Flash 空間內做了取捨：
 
-## Credits and license
+- **內嵌字體以繁體字形爲準**；簡體碼位會在執行時對應到繁體點陣。
+- **UI 字串爲繁體中文**（語言選單顯示爲「中文」）。
+- **大號字下中文正文可能留白**：16pt / 18pt（LARGE / EXTRA_LARGE）僅內嵌 UI 所需小字集，這兩檔是爲英文 EPUB 調優。讀中文請切到 MEDIUM。
+- **無 CJK 粗體／斜體字形**：會回退爲 Regular。若需要更多字重，可在 SD 卡載入自訂字體。
 
-ryOS CrossMux builds on work from
-[CrossMux](https://github.com/0x1abin/crossmux),
-[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader),
-and [diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader).
+## 授權與致謝
 
-The project is not affiliated with Xteink or any device manufacturer.
+ryOS CrossMux 建立在 [CrossMux](https://github.com/0x1abin/crossmux)、
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) 與
+[diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader) 的工作之上。
 
-Licensed under the [MIT License](./LICENSE).
+本專案與 Xteink 及任何裝置廠商均無隸屬關係。
+
+以 [MIT License](./LICENSE) 授權。
