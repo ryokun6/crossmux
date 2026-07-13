@@ -8,6 +8,8 @@
 #include <Txt.h>
 #include <Xtc.h>
 
+#include <cmath>
+
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "activities/reader/ReaderUtils.h"
@@ -15,8 +17,6 @@
 #include "fontIds.h"
 #include "images/Logo120.h"
 #include "images/MoonIcon.h"
-
-#include <cmath>
 
 void SleepActivity::onEnter() {
   Activity::onEnter();

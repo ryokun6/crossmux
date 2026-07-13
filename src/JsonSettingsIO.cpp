@@ -345,8 +345,7 @@ bool JsonSettingsIO::loadSettings(CrossPointSettings& s, const char* json, bool*
 #ifdef ENABLE_CHINESE_VERSION
   // Accept legacy "cn" as the Chinese SKU so renaming the marker does not look
   // like a cross-SKU reflash; still mark needsResave to rewrite as "zh".
-  const bool skuCompatible =
-      skuMatchesExact || (langSku[0] != '\0' && strcmp(langSku, LEGACY_LANG_SKU) == 0);
+  const bool skuCompatible = skuMatchesExact || (langSku[0] != '\0' && strcmp(langSku, LEGACY_LANG_SKU) == 0);
 #else
   const bool skuCompatible = skuMatchesExact;
 #endif

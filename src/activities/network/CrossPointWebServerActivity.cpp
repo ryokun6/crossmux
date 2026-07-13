@@ -7,8 +7,8 @@
 #include <WiFi.h>
 #include <esp_task_wdt.h>
 
-#include <cstddef>
 #include <algorithm>
+#include <cstddef>
 
 #include "MappedInputManager.h"
 #include "NetworkModeSelectionActivity.h"
