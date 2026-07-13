@@ -7,8 +7,9 @@
 #
 # Layout:
 #   Latin  — EB Garamond Regular / Bold / Italic / BoldItalic
-#   CJK    — Source Han Serif TC Regular only (embedded in the regular style;
-#            bold/italic faces fall back to regular for Han at runtime)
+#   CJK    — Source Han Serif TC Regular (regular style) and Bold
+#            (bold + bolditalic styles; italic Han falls back to regular
+#            at runtime)
 #
 # Output: lib/EpdFont/scripts/output/EBGaramondSHS7000/EBGaramondSHS7000_{12,14,16,18}.cpfont
 #
@@ -36,6 +37,7 @@ EB_ITALIC="$EB_GARAMOND_DIR/EBGaramond-Italic.ttf"
 EB_BOLDITALIC="$EB_GARAMOND_DIR/EBGaramond-BoldItalic.ttf"
 
 SHS_REGULAR="$SHS_TC_DIR/SourceHanSerifTC-Regular.otf"
+SHS_BOLD="$SHS_TC_DIR/SourceHanSerifTC-Bold.otf"
 
 FONT_NAME="${FONT_NAME:-EBGaramondSHS7000}"
 TMP_DIR="instanced_fonts/EBGaramondSHS7000"
@@ -45,15 +47,16 @@ LARGE_CHARSET_FILE_SC="chars_7000_common.txt"
 EXTRA_CHARSET_FILE="${EXTRA_CHARSET_FILE:-chars_ebgaramond_extra.txt}"
 LARGE_CHARSET_FILE="$TMP_DIR/chars_7000_common_tc.txt"
 SHS_SUBSET_REGULAR="$TMP_DIR/SourceHanSerifTC-Regular.cn7000.otf"
+SHS_SUBSET_BOLD="$TMP_DIR/SourceHanSerifTC-Bold.cn7000.otf"
 
 # Full base CJK + kana are intentionally SD-only; unlike firmware-embedded fonts,
 # .cpfont assets are not constrained by the OTA app partition.
 SUBSET_UNICODES="U+0020-007E,U+00A0-00FF,U+0370-03FF,U+1F00-1FFF,U+2010-2026,U+2030-205F,U+2070-209F,U+20A0-20CF,U+2150-218F,U+2190-21FF,U+2200-22FF,U+2460-24FF,U+2500-257F,U+2580-259F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+3000-303F,U+3040-30FF,U+4E00-9FFF,U+F900-FAFF,U+FE10-FE19,U+FE30-FE48,U+FE50-FE6F,U+FF00-FFEF,U+FFFD"
 LATIN_INTERVALS="latin-ext,greek,symbols,(0x0413-0x0413),(0x2030-0x205F),(0x2122-0x2122),(0x2460-0x24FF),(0x2580-0x259F)"
-REGULAR_INTERVALS="latin-ext,greek,cjk,symbols,(0x0413-0x0413),(0x2030-0x205F),(0x2122-0x2122),(0x2460-0x24FF),(0x2580-0x259F),(0x3100-0x312F),(0xFE10-0xFE19),(0xFE30-0xFE48),(0xFE50-0xFE6F)"
+CJK_INTERVALS="latin-ext,greek,cjk,symbols,(0x0413-0x0413),(0x2030-0x205F),(0x2122-0x2122),(0x2460-0x24FF),(0x2580-0x259F),(0x3100-0x312F),(0xFE10-0xFE19),(0xFE30-0xFE48),(0xFE50-0xFE6F)"
 
-for f in "$EB_REGULAR" "$EB_BOLD" "$EB_ITALIC" "$EB_BOLDITALIC" "$SHS_REGULAR" "$LARGE_CHARSET_FILE_SC" \
-  "$EXTRA_CHARSET_FILE"; do
+for f in "$EB_REGULAR" "$EB_BOLD" "$EB_ITALIC" "$EB_BOLDITALIC" "$SHS_REGULAR" "$SHS_BOLD" \
+  "$LARGE_CHARSET_FILE_SC" "$EXTRA_CHARSET_FILE"; do
   if [ ! -f "$f" ]; then
     echo "Error: required file not found: $f" >&2
     exit 1
@@ -76,27 +79,39 @@ dst.write_text("".join(out), encoding="utf-8")
 print(f"  {len(raw)} base+extra → {len(out)} TC → {dst}", file=sys.stderr)
 PY
 
-echo "Subsetting $(basename "$SHS_REGULAR") → $(basename "$SHS_SUBSET_REGULAR")..."
-"$PYTHON" -m fontTools.subset "$SHS_REGULAR" \
-  --output-file="$SHS_SUBSET_REGULAR" \
-  --text-file="$LARGE_CHARSET_FILE" \
-  --unicodes="$SUBSET_UNICODES" \
-  --layout-features='*' \
-  --notdef-outline \
-  --recommended-glyphs \
-  --no-hinting \
-  --drop-tables+=DSIG,GSUB,GPOS
+subset_shs() {
+  local src="$1"
+  local dst="$2"
+  echo "Subsetting $(basename "$src") → $(basename "$dst")..."
+  "$PYTHON" -m fontTools.subset "$src" \
+    --output-file="$dst" \
+    --text-file="$LARGE_CHARSET_FILE" \
+    --unicodes="$SUBSET_UNICODES" \
+    --layout-features='*' \
+    --notdef-outline \
+    --recommended-glyphs \
+    --no-hinting \
+    --drop-tables+=DSIG,GSUB,GPOS
+}
+
+subset_shs "$SHS_REGULAR" "$SHS_SUBSET_REGULAR"
+subset_shs "$SHS_BOLD" "$SHS_SUBSET_BOLD"
 
 echo "Generating .cpfont files into $OUTPUT_DIR ..."
-# Regular: Latin + CJK (SHS Regular fallback). B/I/BI: Latin only.
+# Regular: Latin + CJK (SHS Regular). Bold/BoldItalic: Latin + CJK (SHS Bold).
+# Italic: Latin only (CJK falls back to regular at runtime).
 "$PYTHON" "$FONTCONVERT" \
   --regular "$EB_REGULAR" \
   --bold "$EB_BOLD" \
   --italic "$EB_ITALIC" \
   --bolditalic "$EB_BOLDITALIC" \
   --fallback-regular "$SHS_SUBSET_REGULAR" \
+  --fallback-bold "$SHS_SUBSET_BOLD" \
+  --fallback-bolditalic "$SHS_SUBSET_BOLD" \
   --intervals "$LATIN_INTERVALS" \
-  --regular-intervals "$REGULAR_INTERVALS" \
+  --regular-intervals "$CJK_INTERVALS" \
+  --bold-intervals "$CJK_INTERVALS" \
+  --bolditalic-intervals "$CJK_INTERVALS" \
   --sizes 12,14,16,18 \
   --name "$FONT_NAME" \
   --output-dir "$OUTPUT_DIR/"

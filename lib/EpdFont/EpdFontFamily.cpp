@@ -24,15 +24,16 @@ void EpdFontFamily::getTextDimensions(const char* string, int* w, int* h, const 
 
 const EpdFontData* EpdFontFamily::getData(const Style style) const { return getFont(style)->data; }
 
-const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style, const EpdFontData** outData) const {
+const EpdGlyph* EpdFontFamily::getGlyphNoReplacement(const uint32_t cp, const Style style,
+                                                     const EpdFontData** outData) const {
   const EpdFont* font = getFont(style);
   const EpdGlyph* glyph = font->getGlyphNoReplacement(cp);
   if (glyph) {
     if (outData) *outData = font->data;
     return glyph;
   }
-  // Styled face lacks this codepoint (e.g. CJK only embedded in regular for
-  // SD fonts) — use regular's glyph so bold/italic Latin still works.
+  // Styled face lacks this codepoint (e.g. italic CJK only embedded in
+  // regular for SD fonts) — use regular's glyph so styled Latin still works.
   if (font != regular && regular) {
     glyph = regular->getGlyphNoReplacement(cp);
     if (glyph) {
@@ -40,6 +41,21 @@ const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style, co
       return glyph;
     }
   }
+  return nullptr;
+}
+
+const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style, const EpdFontData** outData) const {
+  const EpdGlyph* glyph = getGlyphNoReplacement(cp, style, outData);
+  if (glyph) return glyph;
+
+  // Selected face (often a Latin-only SD font) lacks this codepoint — try the
+  // builtin system font so CJK books still render instead of tofu / blank.
+  if (glyphFallback_) {
+    glyph = glyphFallback_->getGlyphNoReplacement(cp, style, outData);
+    if (glyph) return glyph;
+  }
+
+  const EpdFont* font = getFont(style);
   glyph = font->getGlyph(cp);  // replacement glyph from the styled face
   if (outData) *outData = font->data;
   return glyph;

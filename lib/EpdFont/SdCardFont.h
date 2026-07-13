@@ -8,6 +8,7 @@
 #include "EpdFontData.h"
 
 class HalFile;
+class EpdFontFamily;
 
 // On-disk binary format version for .cpfont files. Defined as a preprocessor
 // macro (rather than a constexpr) so it can be stringified into the SD-fonts
@@ -69,7 +70,10 @@ class SdCardFont {
   // Measure a UTF-8 string's total advance (12.4 summed then snapped per glyph,
   // matching getTextAdvanceX). Opens the .cpfont at most once for the whole
   // string when cache misses occur — critical for CJK indexing speed.
-  int measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub) const;
+  // When \p glyphFallback is set, codepoints absent from this font use that
+  // family's glyph advance (builtin system font for Latin-only SD fonts).
+  int measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub,
+                           const EpdFontFamily* glyphFallback = nullptr) const;
 
   // Returns true if advance table is populated for at least one style.
   bool hasAdvanceTable() const;

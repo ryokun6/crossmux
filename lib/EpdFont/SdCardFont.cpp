@@ -1204,11 +1204,14 @@ uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
   return getAdvanceOrLoadWithFile(codepoint, style, nullptr);
 }
 
-int SdCardFont::measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub) const {
+int SdCardFont::measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub,
+                                     const EpdFontFamily* glyphFallback) const {
   if (!utf8 || !*utf8) return 0;
 
-  // Open the .cpfont at most once for this string. Cache / uniform-CJK hits never
-  // touch the file; misses reuse the same handle instead of open/close per glyph.
+  // Open the .cpfont at most once for this string — but ONLY when a codepoint
+  // is actually present in the font. Evaluating fileForMiss() as a call
+  // argument used to open SD on every cache miss, including absent CJK in a
+  // Latin-only .cpfont, which stalls chapter indexing (open/close per word).
   HalFile file;
   HalFile* sticky = nullptr;
   auto fileForMiss = [&]() -> HalFile* {
@@ -1221,17 +1224,32 @@ int SdCardFont::measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfS
     return sticky;
   };
 
+  uint8_t styleIdx = style & (MAX_STYLES - 1);
+  if (!styles_[styleIdx].present) styleIdx = resolveStyle(styleIdx);
+
   int widthPx = 0;
   int32_t prevAdvanceFP = 0;
   bool havePrev = false;
   const unsigned char* p = reinterpret_cast<const unsigned char*>(utf8);
+  const auto fallbackStyle = static_cast<EpdFontFamily::Style>(style);
   while (uint32_t cp = utf8NextCodepoint(&p)) {
     if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
 
-    // Prefer RAM paths (advance table + uniform Han). Only open SD on a real miss.
+    // Prefer RAM paths (advance table + uniform Han).
     uint16_t adv = getAdvance(cp, style);
     if (adv == 0) {
-      adv = getAdvanceOrLoadWithFile(cp, style, fileForMiss());
+      // Presence check is RAM-only (interval binary search). Skip SD entirely
+      // for codepoints the font does not contain — use builtin fallback.
+      int32_t gIdx = styles_[styleIdx].present ? findGlobalGlyphIndex(styles_[styleIdx], cp) : -1;
+      if (gIdx < 0 && styleIdx != 0 && styles_[0].present) {
+        gIdx = findGlobalGlyphIndex(styles_[0], cp);
+      }
+      if (gIdx >= 0) {
+        adv = getAdvanceOrLoadWithFile(cp, style, fileForMiss());
+      } else if (glyphFallback) {
+        const EpdGlyph* fbGlyph = glyphFallback->getGlyphNoReplacement(cp, fallbackStyle);
+        if (fbGlyph) adv = fbGlyph->advanceX;
+      }
     }
     prevAdvanceFP = static_cast<int32_t>(adv);
     if (halfSupSub) prevAdvanceFP = (prevAdvanceFP + 1) / 2;
@@ -1287,7 +1305,6 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
 
     uint32_t needCount = 0;
     uint32_t missedThisStyle = 0;
-    const int32_t replacementIdx = findGlobalGlyphIndex(s, REPLACEMENT_GLYPH);
     for (uint32_t i = 0; i < cpCount; i++) {
       const uint32_t cp = codepoints[i];
       if (advanceTableLookup(si, cp, nullptr)) continue;  // already cached
@@ -1301,11 +1318,13 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
         if (si != 0 && styles_[0].present && findGlobalGlyphIndex(styles_[0], cp) >= 0) {
           continue;
         }
-        if (replacementIdx < 0) {
-          missedThisStyle++;
-          continue;
-        }
-        idx = replacementIdx;
+        // Genuinely absent (e.g. Latin-only SD font + CJK book). Do NOT map
+        // every miss onto U+FFFD: that forces a seek+read per unique codepoint
+        // (same glyph index defeats the sequential-read optimization) and
+        // stalls indexing for tens of seconds. Layout/render fall back to the
+        // builtin system font via EpdFontFamily::glyphFallback_ instead.
+        missedThisStyle++;
+        continue;
       }
       mappings[needCount].codepoint = cp;
       mappings[needCount].glyphIndex = idx;

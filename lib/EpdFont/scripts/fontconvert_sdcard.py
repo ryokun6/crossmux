@@ -889,7 +889,13 @@ def main():
                         help="Comma-separated interval presets (e.g., 'latin-ext,greek,cyrillic').")
     parser.add_argument("--regular-intervals", dest="regular_intervals",
                         help="Interval presets for regular style only (e.g. add cjk). "
-                             "Other styles keep --intervals. Useful for Latin R/B/I/BI + Regular-only CJK.")
+                             "Other styles keep --intervals unless overridden below.")
+    parser.add_argument("--bold-intervals", dest="bold_intervals",
+                        help="Interval presets for bold style only (e.g. add cjk).")
+    parser.add_argument("--italic-intervals", dest="italic_intervals",
+                        help="Interval presets for italic style only (e.g. add cjk).")
+    parser.add_argument("--bolditalic-intervals", dest="bolditalic_intervals",
+                        help="Interval presets for bold-italic style only (e.g. add cjk).")
     parser.add_argument("--size", type=int, dest="size",
                         help="Single font size to generate.")
     parser.add_argument("--sizes", dest="sizes",
@@ -966,9 +972,17 @@ def main():
         sys.exit(1)
 
     intervals = resolve_intervals(args.intervals)
-    intervals_by_style = None
+    intervals_by_style = {}
     if args.regular_intervals:
-        intervals_by_style = {0: resolve_intervals(args.regular_intervals)}
+        intervals_by_style[0] = resolve_intervals(args.regular_intervals)
+    if args.bold_intervals:
+        intervals_by_style[1] = resolve_intervals(args.bold_intervals)
+    if args.italic_intervals:
+        intervals_by_style[2] = resolve_intervals(args.italic_intervals)
+    if args.bolditalic_intervals:
+        intervals_by_style[3] = resolve_intervals(args.bolditalic_intervals)
+    if not intervals_by_style:
+        intervals_by_style = None
 
     # Determine sizes
     if args.sizes:

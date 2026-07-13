@@ -46,6 +46,10 @@ class SdCardFontSystem {
   }
 
  private:
+  /// After a successful loadFamily, point the SD font at the builtin reader
+  /// font so missing glyphs (CJK in a Latin-only .cpfont) still render.
+  void wireBuiltinGlyphFallback(GfxRenderer& renderer, const char* familyName);
+
   SdCardFontRegistry registry_;
   SdCardFontManager manager_;
   std::atomic<bool> registryDirty_{false};

@@ -154,11 +154,21 @@ bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh
 | `.cpfont` style | EB Garamond (primary) | Source Han Serif TC (fallback) |
 |---|---|---|
 | regular | Regular | Regular (CJK + Latin) |
-| bold | Bold | — (Latin only; CJK falls back to regular at runtime) |
-| italic | Italic | — (Latin only; CJK falls back to regular) |
-| bolditalic | BoldItalic | — (Latin only; CJK falls back to regular) |
+| bold | Bold | Bold (CJK + Latin) |
+| italic | Italic | — (Latin only; CJK falls back to regular at runtime) |
+| bolditalic | BoldItalic | Bold (CJK + Latin; no italic SHS face) |
 
-CJK bitmaps are stored once (regular style) so SPI-SD indexing stays light;
-bold/italic Latin still come from EB Garamond.
+CJK bitmaps are stored for regular (SHS Regular) and bold/bolditalic (SHS Bold);
+italic Han still falls back to regular at runtime. Latin always comes from EB Garamond.
+
+### Missing-glyph fallback (Latin-only SD fonts)
+
+If the selected SD font lacks a codepoint (typical: Latin family + Chinese EPUB),
+the reader uses the **builtin system font** at the current size for that glyph —
+layout advances and bitmaps both. On `gh_release_cn` the builtins carry CJK; on
+the global build they are Latin-only, so missing glyphs remain blank/tofu.
+
+This also avoids an indexing hang: absent codepoints are no longer mapped onto
+U+FFFD in the SD advance table (which previously caused thousands of SPI seeks).
 
 Install custom fonts via the web interface or manual SD card copy.

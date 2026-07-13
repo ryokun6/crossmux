@@ -124,6 +124,10 @@ class GfxRenderer {
   // Setup
   void begin();  // must be called right after display.begin()
   void insertFont(int fontId, EpdFontFamily font);
+  /// Point \p fontId at \p fallbackFontId for missing-glyph lookup (Latin SD
+  /// font → builtin system font). Both IDs must already be in fontMap.
+  /// Returns false if either ID is missing.
+  bool setFontGlyphFallback(int fontId, int fallbackFontId);
   // Clears both the flash-font map and any SD-font registration for fontId.
   // Coupled to avoid dangling SdCardFont* in sdCardFonts_ when callers free
   // the underlying SdCardFont and forget the SD-side unregister.

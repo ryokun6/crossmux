@@ -336,6 +336,9 @@ class CrossPointSettings {
     return (shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) ? 10 : 400;
   }
   int getReaderFontId() const;
+  /// Builtin reader font for the current family/size, ignoring any SD-card
+  /// selection. Used as the glyph fallback when a Latin-only SD font lacks CJK.
+  int getBuiltinReaderFontId() const;
 
   // If count_only is true, returns the number of settings items that would be written.
   uint8_t writeSettings(HalFile& file, bool count_only = false) const;

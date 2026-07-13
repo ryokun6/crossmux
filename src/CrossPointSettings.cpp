@@ -377,6 +377,10 @@ int CrossPointSettings::getReaderFontId() const {
     // Fall through to built-in if SD font not found
   }
 
+  return getBuiltinReaderFontId();
+}
+
+int CrossPointSettings::getBuiltinReaderFontId() const {
   switch (fontFamily) {
     case NOTOSERIF:
     default:

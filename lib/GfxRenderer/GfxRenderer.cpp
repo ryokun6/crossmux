@@ -101,6 +101,19 @@ void GfxRenderer::insertFont(const int fontId, EpdFontFamily font) {
   }
 }
 
+bool GfxRenderer::setFontGlyphFallback(const int fontId, const int fallbackFontId) {
+  auto it = fontMap.find(fontId);
+  auto fb = fontMap.find(fallbackFontId);
+  if (it == fontMap.end() || fb == fontMap.end()) {
+    LOG_ERR("GFX", "setFontGlyphFallback: missing fontId=%d fallback=%d", fontId, fallbackFontId);
+    return false;
+  }
+  // fontMap is node-based; &fb->second stays valid until that entry is erased.
+  // Builtin fallbacks are never removed; SD fonts are unloaded before erase.
+  it->second.setGlyphFallback(&fb->second);
+  return true;
+}
+
 // Translate logical (x,y) coordinates to physical panel coordinates based on current orientation
 // This should always be inlined for better performance
 static inline void rotateCoordinates(const GfxRenderer::Orientation orientation, const int x, const int y, int* phyX,
@@ -1721,8 +1734,11 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, EpdFontFami
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
     const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
     const uint8_t styleIdx = resolveSdCardStyle(*sdIt->second, style);
+    const auto fontIt = fontMap.find(fontId);
+    const EpdFontFamily* fallback = (fontIt != fontMap.end()) ? fontIt->second.getGlyphFallback() : nullptr;
     // One SD open per string on misses (not per codepoint) — see measureUtf8AdvancePx.
-    return sdIt->second->measureUtf8AdvancePx(text, styleIdx, isSupSub);
+    // Missing glyphs (Latin-only SD + CJK) take advance from the builtin fallback.
+    return sdIt->second->measureUtf8AdvancePx(text, styleIdx, isSupSub, fallback);
   }
 
   const auto fontIt = fontMap.find(fontId);

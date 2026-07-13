@@ -15,6 +15,15 @@ static uint8_t fontSizeEnumFromSettings() {
 
 }  // namespace
 
+void SdCardFontSystem::wireBuiltinGlyphFallback(GfxRenderer& renderer, const char* familyName) {
+  const int sdId = manager_.getFontId(familyName);
+  const int builtinId = SETTINGS.getBuiltinReaderFontId();
+  if (sdId == 0) return;
+  if (!renderer.setFontGlyphFallback(sdId, builtinId)) {
+    LOG_ERR("SDFS", "Failed to wire builtin glyph fallback for %s", familyName);
+  }
+}
+
 void SdCardFontSystem::begin(GfxRenderer& renderer) {
   registry_.discover();
 
@@ -31,6 +40,7 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
     if (family) {
       if (manager_.loadFamily(*family, renderer, fontSizeEnumFromSettings())) {
         LOG_DBG("SDFS", "Loaded SD card font family: %s", SETTINGS.sdFontFamilyName);
+        wireBuiltinGlyphFallback(renderer, SETTINGS.sdFontFamilyName);
       } else {
         LOG_ERR("SDFS", "Failed to load SD font family: %s (clearing)", SETTINGS.sdFontFamilyName);
         SETTINGS.sdFontFamilyName[0] = '\0';
@@ -80,7 +90,11 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
     }
     const auto* selected = family->findClosestReaderSize(sizeEnum);
     const uint8_t wantedPt = selected ? selected->pointSize : 0;
-    if (!registryWasDirty && wantedPt == manager_.currentPointSize()) return;
+    if (!registryWasDirty && wantedPt == manager_.currentPointSize()) {
+      // Still refresh fallback in case the builtin family preference changed.
+      wireBuiltinGlyphFallback(renderer, wantedFamily);
+      return;
+    }
     LOG_DBG("SDFS", "Reloading %s: size %u -> %u (enum %u)%s", wantedFamily, manager_.currentPointSize(), wantedPt,
             sizeEnum, registryWasDirty ? " [registry dirty]" : "");
   }
@@ -93,6 +107,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
   if (family) {
     if (manager_.loadFamily(*family, renderer, sizeEnum)) {
       LOG_DBG("SDFS", "Loaded SD font family: %s", wantedFamily);
+      wireBuiltinGlyphFallback(renderer, wantedFamily);
     } else {
       LOG_ERR("SDFS", "Failed to load SD font family: %s (clearing)", wantedFamily);
       SETTINGS.sdFontFamilyName[0] = '\0';
