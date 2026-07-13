@@ -10,7 +10,7 @@
 
 **當前固件版本：** 1.4.5
 
-![ryOS CrossMux 運行在 Xteink 設備上](./docs/images/cover.jpg)
+![ryOS CrossMux 運行在 Xteink 設備上](./docs/images/xteink-vertical-reading.jpg)
 
 ## 本 fork 新增了什麼
 

@@ -13,7 +13,7 @@ of the firmware.
 
 Current firmware version: **1.4.5**
 
-![ryOS CrossMux running on an Xteink device](./docs/images/cover.jpg)
+![ryOS CrossMux running on an Xteink device](./docs/images/xteink-vertical-reading.jpg)
 
 ## What this fork adds
 
