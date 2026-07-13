@@ -55,7 +55,10 @@ jobs:
       - name: Build changelog
         run: |
           set -euo pipefail
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          # Ignore the rolling `nightly` tag and compare against the newest
+          # reachable numeric stable release.
+          PREV_TAG=$(git tag --merged HEAD^ --list '[0-9]*.[0-9]*.[0-9]*' \
+            --sort=-version:refname | sed -n '1p')
           {
             if [ -n "$PREV_TAG" ]; then
               echo "## Changes since ${PREV_TAG}"
