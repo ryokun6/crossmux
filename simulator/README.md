@@ -1,6 +1,6 @@
-# CrossPoint Reader Simulator
+# ryOS CrossMux Simulator
 
-Runs the CrossPoint Reader firmware UI/EPUB logic on a desktop machine (macOS/Linux)
+Runs the ryOS CrossMux firmware UI/EPUB logic on a desktop machine (macOS/Linux)
 without flashing the Xteink X4 hardware. Backed by SDL2 for window+input and a POSIX
 filesystem for the "SD card".
 

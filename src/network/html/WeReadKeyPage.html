@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-Hant">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>微信读书 API Key</title>
+    <title>微信讀書 API Key</title>
     <style>
       :root {
         --font-color: #333;
@@ -127,18 +127,18 @@
     </style>
   </head>
   <body>
-    <h1>🔑 微信读书 API Key</h1>
+    <h1>🔑 微信讀書 API Key</h1>
 
     <div class="card">
-      <h2>绑定 API Key</h2>
+      <h2>綁定 API Key</h2>
       <div id="msg" class="msg"></div>
-      <label for="k">API Key(以 <code>wrk-</code> 开头)</label>
+      <label for="k">API Key(以 <code>wrk-</code> 開頭)</label>
       <input id="k" type="text" placeholder="wrk-xxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false" />
-      <button id="save">保存到设备</button>
+      <button id="save">保存到設備</button>
       <div class="hint">
-        还没有 Key?请先登录
+        還沒有 Key?請先登錄
         <a href="https://weread.qq.com/r/weread-skills" target="_blank" rel="noopener">https://weread.qq.com/r/weread-skills</a>
-        获取,然后粘贴到上方。保存成功后,按设备返回键退出 Web 服务即可。
+        獲取,然後粘貼到上方。保存成功後,按設備返回鍵退出 Web 服務即可。
       </div>
     </div>
 
@@ -153,7 +153,7 @@
         msg.textContent = '';
         if (!key) {
           msg.className = 'msg err';
-          msg.textContent = '请先粘贴 API Key。';
+          msg.textContent = '請先粘貼 API Key。';
           return;
         }
         btn.disabled = true;
@@ -163,18 +163,18 @@
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ key })
           });
-          const j = await res.json().catch(() => ({ ok: false, error: '响应解析失败' }));
+          const j = await res.json().catch(() => ({ ok: false, error: '響應解析失敗' }));
           if (j.ok) {
             msg.className = 'msg ok';
-            msg.textContent = '已保存。请按设备返回键退出 Web 服务。';
+            msg.textContent = '已保存。請按設備返回鍵退出 Web 服務。';
             input.value = '';
           } else {
             msg.className = 'msg err';
-            msg.textContent = j.error || ('保存失败(HTTP ' + res.status + ')');
+            msg.textContent = j.error || ('保存失敗(HTTP ' + res.status + ')');
           }
         } catch (e) {
           msg.className = 'msg err';
-          msg.textContent = '网络错误:' + e.message;
+          msg.textContent = '網絡錯誤:' + e.message;
         } finally {
           btn.disabled = false;
         }

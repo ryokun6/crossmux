@@ -1,6 +1,6 @@
 # Engineering Reference (Agent System of Record)
 
-This directory is the deep firmware-engineering reference for CrossPoint Reader.
+This directory is the deep firmware-engineering reference for ryOS CrossMux.
 [CLAUDE.md](../../CLAUDE.md) (auto-loaded into every session) is the **map**: it
 holds the non-negotiable invariants and points here for detail. Read the file
 that matches your task — don't load everything at once.

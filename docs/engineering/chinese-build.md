@@ -11,7 +11,7 @@ gates every CN-only resource:
 | Resource | Behavior under ENABLE_CHINESE_VERSION |
 |---|---|
 | i18n string table (`gen_i18n.py`) | Pre-script auto-detects the flag via `env.subst("$BUILD_FLAGS")` and emits **only EN + ZH_CN** into `I18nStrings.cpp` (saves ~144 KB vs the full 23-language table). Detection logs `[gen_i18n] ENABLE_CHINESE_VERSION detected …` during the build. |
-| Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers are skipped. Six per-size CJK headers (`notosans_cjk_{8,10,12,14,16,18}.h`) replace them — raw 2-bit bitmaps. **Character coverage is tiered by point size**: 8/10/12pt carry the small UI subset (~3500 chars from `cn_common_chars.txt` + i18n require-from + ASCII + Latin-1 + CJK punctuation); **14pt carries the large reader-default subset (7000 通用汉字 from `chars_7000_common.txt` + extended symbol ranges — number forms / enclosed alphanumerics / box drawing / block elements / geometric shapes / misc symbols / dingbats — plus the standard ASCII/Latin/punct base)**; 16pt/18pt carry only the i18n require-from CJK subset (~430 chars from `chinese.yaml` + ASCII + Latin-1 + CJK punctuation). The 16/18pt sizes are tuned for reader LARGE/EXTRA_LARGE (intended for English EPUB) while still rendering UI strings; Chinese EPUB text at 16/18pt shows blank for chars outside the i18n subset. |
+| Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers are skipped. Six per-size CJK headers (`notosans_cjk_{8,10,12,14,16,18}.h`) replace them — raw 2-bit bitmaps. **Character coverage is tiered by point size**: 8/10/12pt carry the small UI subset (~3500 chars from `cn_common_chars.txt` + i18n require-from + ASCII + Latin-1 + CJK punctuation); **14pt carries the large reader-default subset (7000 通用汉字 from `chars_7000_common.txt` + extended symbol ranges — number forms / enclosed alphanumerics / box drawing / block elements / geometric shapes / misc symbols / dingbats — plus the standard ASCII/Latin/punct base)**; 16pt/18pt carry only the i18n require-from CJK subset (~700 chars from `chinese.yaml` + ASCII + Latin-1 + CJK punctuation). The 16/18pt sizes are tuned for reader LARGE/EXTRA_LARGE (intended for English EPUB) while still rendering UI strings; Chinese EPUB text at 16/18pt shows blank for chars outside the i18n subset. |
 | `src/main.cpp` font globals | Each Latin `EpdFont`/`EpdFontFamily` global is aliased to the matching-size CJK header. Bold/italic variants all point at the Regular OTF (no style data in the subset). SD-card fonts still provide style variants when the user loads them. |
 | EPUB layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp)) | CJK punctuation rules are active: line-head prohibition (禁则) glues trailing punctuation back onto the previous line; full-width punctuation gets width-padded so it occupies a full CJK cell. Both are zero-cost in non-CN builds (gated by `#ifdef`). |
 | Activities (`src/activities/apps/weread/`) | Compiled in (also gated by `build_src_filter +<activities/apps/weread/>`). Game apps (sudoku, chess, etc.) are excluded from all builds. |
@@ -22,9 +22,9 @@ gates every CN-only resource:
 | Section | Bytes |
 |---|---|
 | Code + non-font data | ~3.0 MB |
-| 3 CJK font headers 8/10/12pt (3500 SC + ASCII/Latin/CJK-punct) | ~1.10 MB |
+| 3 CJK font headers 8/10/12pt (~3250 Traditional UI/common + ASCII/Latin/CJK-punct) | ~1.1 MB |
 | 1 CJK font header 14pt (7000 通用汉字 + extended symbols) | ~1.43 MB |
-| 2 CJK font headers 16/18pt (i18n-only ~430 chars + ASCII/Latin/CJK-punct) | ~375 KB |
+| 2 CJK font headers 16/18pt (i18n-only ~700 chars + ASCII/Latin/CJK-punct) | ~400 KB |
 | i18n strings (EN + ZH_CN only) | ~16 KB |
 | **Total** | **~6.05 MB / 6.25 MB (~92.3%)**, ~500 KB headroom |
 
@@ -62,7 +62,7 @@ budget:
    (see "Regenerating the CJK fonts" below). 8/10/12pt carry the small
    ~3500-char UI subset; **14pt carries the reader-default 7000 通用汉字
    subset plus extended symbol ranges**; 16/18pt carry an i18n-only subset
-   (~430 chars from `chinese.yaml`). The tiering keeps the heavy 7000-char
+   (~700 chars from `chinese.yaml`). The tiering keeps the heavy 7000-char
    bitmap to a single point size and shrinks 16/18pt to i18n-only,
    saving ~1 MB vs running the full 7000-char subset at every size.
 
@@ -201,6 +201,7 @@ shrinks proportionally.
 | `lib/EpdFont/scripts/cn_i18n_chars.txt` | Generated i18n-only subset, drives 16/18pt (committed). Contains every CJK char found in `--require-from` inputs. |
 | `lib/EpdFont/scripts/build-cn-builtin-fonts.sh` | pyftsubset → fontconvert.py pipeline, six headers. Default re-runs `build_cn_charset.py`; set `SKIP_CHARSET=1` to reuse the current `cn_common_chars.txt`. The `REQUIRE_FROM=(...)` array at the top lists every file scanned for force-included CJK chars — add new feature-scoped `cn_*_chars.txt` files here. |
 | `lib/EpdFont/scripts/cn_almanac_chars.txt` | Feature-scoped force-include for `ChineseAlmanac.cpp` / `ChineseCalendarFace.cpp` — ganzhi stems/branches + lunar-row vocab that aren't in the pool or any `chinese.yaml` STR_ value. Single-line UTF-8. |
+| `lib/EpdFont/scripts/cn_weread_chars.txt` | Feature-scoped force-include for hardcoded WeRead shelf/search UI fragments. |
 | `lib/EpdFont/builtinFonts/notosans_cjk_{8,10,12,14,16,18}.h` | Generated bitmap headers (committed). Should always match `cn_common_chars.txt` (8/10/12pt), `chars_7000_common.txt` (14pt), and `cn_i18n_chars.txt` (16/18pt) — see consistency check below. |
 | `lib/EpdFont/builtinFonts/source/GenSenRounded2TW/` | OTF source dir (gitignored). Drop `GenSenRounded2TW-R.otf` here. |
 | `lib/EpdFont/ScToTcRemap.h` | Committed SC→TC lookup (~2600 pairs). Regenerated by `build_sc_to_tc_remap.py`. |

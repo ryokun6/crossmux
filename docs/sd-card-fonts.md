@@ -1,6 +1,6 @@
 # SD Card Fonts
 
-CrossPoint supports loading additional fonts from the SD card, including fonts
+ryOS CrossMux supports loading additional fonts from the SD card, including fonts
 with extended Unicode coverage (CJK, Cyrillic, Greek, etc.).
 
 ## Installing Fonts
@@ -9,7 +9,7 @@ There are three ways to install fonts:
 
 ### Option 1: Download from device (recommended)
 
-1. Connect your CrossPoint reader to Wi-Fi
+1. Connect your ryOS CrossMux reader to Wi-Fi
 2. Go to **Settings > System > Manage Fonts**
 3. Browse available font families and tap to download
 4. Downloaded fonts appear immediately in **Settings > Reader > Font Family**
@@ -50,7 +50,7 @@ There are three ways to install fonts:
                ├── Merriweather_12.cpfont
                └── ...
 
-3. Insert the SD card and power on your CrossPoint reader
+3. Insert the SD card and power on your ryOS CrossMux reader
 
 ## Available Pre-Built Fonts
 

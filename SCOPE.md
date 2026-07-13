@@ -1,6 +1,6 @@
-# Project Vision & Scope: CrossPoint Reader
+# Project Vision & Scope: ryOS CrossMux
 
-The goal of CrossPoint Reader is to create an efficient, open-source reading experience for the Xteink X4. We believe a
+The goal of ryOS CrossMux is to create an efficient, open-source reading experience for the Xteink X4. We believe a
 dedicated e-reader should do one thing exceptionally well: **facilitate focused reading.**
 
 ## 1. Core Mission
@@ -53,7 +53,7 @@ usability over "swiss-army-knife" functionality.
 
 ## 3. Idea Evaluation
 
-While I appreciate the desire to add new and exciting features to CrossPoint Reader, CrossPoint Reader is designed to be
+While I appreciate the desire to add new and exciting features to ryOS CrossMux, ryOS CrossMux is designed to be
 a lightweight, reliable, and performant e-reader. Things which distract or compromise the device's core mission will not
 be accepted. As a guiding question, consider if your idea improve the "core reading experience" for the average user,
 and, critically, not distract from that reading experience.
