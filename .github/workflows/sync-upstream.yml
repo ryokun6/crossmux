@@ -3,8 +3,8 @@ name: Sync upstream master
 # Daily: keep a standing PR that merges upstream master into main.
 # - Clean merge  -> push the merge to chore/sync-upstream and open/refresh the PR.
 # - Conflicts    -> reset the branch, open/refresh the PR, label it
-#                   `needs-claude-resolution` and list the conflicted files.
-#                   The companion /schedule Claude routine resolves it later.
+#                   `needs-agent-resolution` and list the conflicted files.
+#                   The companion /schedule agent routine resolves it later.
 # This workflow NEVER merges into main — the human is always the one who
 # clicks merge on the PR.
 
@@ -26,7 +26,7 @@ env:
   UPSTREAM_URL: https://github.com/crosspoint-reader/crosspoint-reader.git
   BASE: main
   SYNC_BRANCH: chore/sync-upstream
-  LABEL: needs-claude-resolution
+  LABEL: needs-agent-resolution
 
 jobs:
   sync:
@@ -79,7 +79,7 @@ jobs:
           ensure_label() {
             gh label create "$LABEL" \
               --color FBCA04 \
-              --description "Sync PR has merge conflicts; awaiting Claude routine" \
+              --description "Sync PR has merge conflicts; awaiting agent routine" \
               2>/dev/null || true
           }
 
@@ -93,7 +93,7 @@ jobs:
                 "Automated daily merge of upstream \`master\` into \`${BASE}\`." \
                 "" \
                 "Maintained by \`.github/workflows/sync-upstream.yml\`. Review and merge when green." \
-                "Conflicts (if any) are resolved automatically by the scheduled Claude routine.")"
+                "Conflicts (if any) are resolved automatically by the scheduled agent routine.")"
               n="$(gh pr create --base "$BASE" --head "$SYNC_BRANCH" \
                     --title "chore: sync upstream master into ${BASE}" \
                     --body "$body" | grep -oE '[0-9]+$')"
@@ -114,7 +114,8 @@ jobs:
             # Seal the conflicted merge (markers stay in the tree) so the sync branch
             # has a real diff vs main; otherwise `gh pr create` rejects an empty PR and
             # no sync PR can ever be opened when there are conflicts (which is every
-            # sync, since .skills/SKILL.md always conflicts). The Claude routine
+            # sync, since upstream's .skills/SKILL.md always conflicts with our
+            # thin AGENTS.md map). The agent routine
             # re-merges from scratch and force-pushes the clean resolution — this commit
             # is just a placeholder + a conflict record for the resolver to target.
             #
@@ -142,15 +143,15 @@ jobs:
             pr="$(ensure_pr)"
             gh pr edit "$pr" --add-label "$LABEL"
             {
-              echo "⏳ Merge of upstream \`master\` ($(git rev-parse --short upstream/master)) has conflicts. Awaiting the scheduled Claude routine."
+              echo "⏳ Merge of upstream \`master\` ($(git rev-parse --short upstream/master)) has conflicts. Awaiting the scheduled agent routine."
               echo ""
               echo "Conflicted files:"
               echo '```'
               echo "$conflicts"
               echo '```'
-              if printf '%s\n' "$conflicts" | grep -qx '.skills/SKILL.md'; then
+              if printf '%s\n' "$conflicts" | grep -Eqx '\.skills/SKILL\.md|AGENTS\.md'; then
                 echo ""
-                echo "⚠️ \`.skills/SKILL.md\` (= \`CLAUDE.md\`) conflicted. Resolve it per **\`docs/engineering/upstream-merge-policy.md\`**: keep main's thin map and route the upstream delta into \`docs/engineering/\` — do NOT merge the monolith back into the map."
+                echo "⚠️ Guide conflict (\`.skills/SKILL.md\` and/or \`AGENTS.md\`). Resolve it per **\`docs/engineering/upstream-merge-policy.md\`**: keep main's thin \`AGENTS.md\` map and route the upstream delta into \`docs/engineering/\` — do NOT merge the monolith back into the map or reintroduce \`.skills/\` / \`CLAUDE.md\`."
               fi
             } | gh pr comment "$pr" --body-file -
             echo "PR #${pr} flagged for resolution."

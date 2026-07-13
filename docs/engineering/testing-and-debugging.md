@@ -1,6 +1,6 @@
 # Testing, Debugging & Verification
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). Build/quality commands, the
+> Deep reference for [AGENTS.md](../../AGENTS.md). Build/quality commands, the
 > crash playbook, the agent vs human verification split, CI awareness, and live
 > serial debugging. For the contributor-facing quick version see
 > [../contributing/testing-debugging.md](../contributing/testing-debugging.md);

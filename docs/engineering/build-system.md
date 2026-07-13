@@ -1,6 +1,6 @@
 # Build System & Build Flags
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). Covers PlatformIO usage, the
+> Deep reference for [AGENTS.md](../../AGENTS.md). Covers PlatformIO usage, the
 > build environments, the critical build flags that change firmware behavior, and
 > personal local overrides.
 

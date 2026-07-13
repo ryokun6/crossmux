@@ -1,28 +1,29 @@
-# Upstream-Merge Policy for `CLAUDE.md` / `.skills/SKILL.md`
+# Upstream-Merge Policy for `AGENTS.md`
 
 > How to resolve conflicts on the development guide when syncing upstream into
 > `main`. This is the rule the daily sync routine and any human resolver must
-> follow. Read it whenever `.skills/SKILL.md` appears in a sync PR's conflict list.
+> follow. Read it whenever upstream's `.skills/SKILL.md` (or our `AGENTS.md`)
+> appears in a sync PR's conflict list.
 
 ## The structural invariant
 
-- `CLAUDE.md` is a **symlink** → `.skills/SKILL.md` (identical on both branches,
-  so the symlink itself never conflicts). The real content lives in
-  `.skills/SKILL.md`.
-- On `main`, `.skills/SKILL.md` is a **thin map** (~90 lines): identity,
-  Golden Rules, a quick reference, and a topic→doc table. The deep
+- On `main`, [`AGENTS.md`](../../AGENTS.md) is the **real thin map** (~90 lines):
+  identity, Golden Rules, a quick reference, and a topic→doc table. The deep
   firmware-engineering reference lives in [`docs/engineering/`](index.md).
-- **Upstream keeps the old monolithic version** of `.skills/SKILL.md` and keeps
-  editing it. This is expected. Because the two diverged structurally, *every*
-  sync that touches this file produces a content conflict on `.skills/SKILL.md`.
+- **Upstream** still keeps a monolithic `.skills/SKILL.md` (and often a
+  `CLAUDE.md` symlink to it) and keeps editing that file. This is expected.
+  Because the two diverged structurally — and because `main` deleted
+  `.skills/` — *every* sync that touches upstream's guide produces a conflict
+  involving `.skills/SKILL.md` (modify/delete or content conflict).
 
 **The job is never to merge the two files line-by-line.** It is to keep
-`main`'s thin map and re-home upstream's new content the same way the original
-refactor did.
+`main`'s thin `AGENTS.md` map and re-home upstream's new content the same way
+the original refactor did. Do **not** reintroduce `.skills/`, `CLAUDE.md`, or
+a monolithic guide on `main`.
 
 ## What is "live" in the map
 
-Only these parts of `.skills/SKILL.md` may receive content directly:
+Only these parts of `AGENTS.md` may receive content directly:
 
 - Project / Mission header
 - **AI Agent Identity and Cognitive Rules**
@@ -36,11 +37,13 @@ map — it goes into `docs/engineering/`.
 
 ## Resolution procedure
 
-When a sync merge reports a conflict on `.skills/SKILL.md`:
+When a sync merge reports a conflict on `.skills/SKILL.md` and/or `AGENTS.md`:
 
 1. **Keep ours (the thin map).** The structure is the whole point.
    ```bash
-   git checkout --ours -- .skills/SKILL.md   # CLAUDE.md symlink auto-resolves (identical both sides)
+   git checkout --ours -- AGENTS.md
+   git rm -f --ignore-unmatch -- .skills/SKILL.md CLAUDE.md claude.md
+   git rm -rf --ignore-unmatch -- .skills
    ```
 
 2. **Compute the upstream delta this sync actually brought** — do not diff the
@@ -58,12 +61,13 @@ When a sync merge reports a conflict on `.skills/SKILL.md`:
    | Deep technical content for an existing area | Edit the matching `docs/engineering/<topic>.md` (routing table below) |
    | A new non-negotiable invariant | Add a one-line **Golden Rule** to the map **and** the full detail to the topic doc |
    | A brand-new area with no home | Create `docs/engineering/<new>.md`, then add a row to the map's table **and** to [`index.md`](index.md) |
-   | A change to a section still living in the map (Identity / Cognitive Rules, Quick Reference, Philosophy) | Apply it directly in `.skills/SKILL.md` |
+   | A change to a section still living in the map (Identity / Cognitive Rules, Quick Reference, Philosophy) | Apply it directly in `AGENTS.md` |
    | Pure reword / typo fix of already-relocated content | Apply in the topic doc only |
    | Irrelevant to `main` (e.g. BLE — `main` deliberately carries no BLE) | Skip it, and note the omission in the sync PR |
 
-4. **Stage and finish.** `git add .skills/SKILL.md` plus every touched
-   `docs/engineering/*` file, then complete the merge.
+4. **Stage and finish.** `git add AGENTS.md` plus every touched
+   `docs/engineering/*` file, then complete the merge. Confirm `.skills/` and
+   `CLAUDE.md` are absent from the index.
 
 ## Routing table (section → destination)
 
@@ -88,6 +92,8 @@ Canonical key for step 3 — keep this in sync with [`index.md`](index.md).
 
 - **Never** resolve by taking upstream's monolithic `.skills/SKILL.md` wholesale —
   that silently undoes the refactor and re-bloats the map.
+- **Never** reintroduce `.skills/`, `CLAUDE.md`, or a symlink farm for the guide
+  on `main`. Canonical path is `AGENTS.md` only.
 - The map stays **≤ ~150 lines**. If a resolution grows it past that, the content
   belonged in `docs/engineering/`, not the map.
 - **Nothing is dropped silently.** Every upstream hunk is either routed to a doc,
@@ -96,7 +102,7 @@ Canonical key for step 3 — keep this in sync with [`index.md`](index.md).
 
 ## Verification (after resolving)
 
-1. `wc -l CLAUDE.md` is still ≤ ~150 lines.
+1. `wc -l AGENTS.md` is still ≤ ~150 lines.
 2. Every relative link in the map and the touched `docs/engineering/*` files
    resolves (see the link checker pattern in the repo).
 3. The upstream delta from step 2 is fully accounted for (routed / promoted /

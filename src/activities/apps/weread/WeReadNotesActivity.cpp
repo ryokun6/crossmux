@@ -60,7 +60,7 @@ void WeReadNotesActivity::renderContent(Rect contentRect) {
         return rows_[i].markText;
       },
       [this](int i) {
-        // Subtitle: date stamp (per CLAUDE.md / SKILL.md, format timestamps).
+        // Subtitle: date stamp (per AGENTS.md, format timestamps).
         const uint32_t t = rows_[i].createTime;
         if (t == 0) return std::string{};
         const time_t raw = static_cast<time_t>(t);

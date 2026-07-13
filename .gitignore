@@ -23,10 +23,5 @@ lib/EpdFont/scripts/output/
 weread_apikey*.txt
 weread_apikey*.bin
 
-# Claude Code: share project skills with the team, keep local agent state
-# (worktrees, scheduled-task locks, settings.local, scout CLEANUP.md) out.
-.claude/*
-!.claude/skills/
-
 # GenSen OTF source used to regenerate CN builtin fonts (large, licensed OFL)
 lib/EpdFont/builtinFonts/source/

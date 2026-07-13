@@ -1,6 +1,6 @@
 # Hardware Constraints & The Resource Protocol
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). The 380 KB RAM ceiling is the
+> Deep reference for [AGENTS.md](../../AGENTS.md). The 380 KB RAM ceiling is the
 > project's primary constraint — every change is judged against it.
 
 ## Development Environment Awareness

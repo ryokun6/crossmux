@@ -1,6 +1,6 @@
 # Git Workflow & Repository Awareness
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). Verify repository context before
+> Deep reference for [AGENTS.md](../../AGENTS.md). Verify repository context before
 > any git operation, and never commit without explicit request. For the
 > contributor-facing fork/branch/PR flow see
 > [../contributing/development-workflow.md](../contributing/development-workflow.md).

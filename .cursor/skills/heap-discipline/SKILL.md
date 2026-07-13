@@ -5,7 +5,7 @@ description: Memory allocation discipline for the ESP32-C3 (~380KB RAM, no PSRAM
 
 # Heap Discipline (ESP32-C3)
 
-CLAUDE.md states the allocation rules. This is the procedure you run while
+AGENTS.md states the allocation rules. This is the procedure you run while
 writing the code and the gate you run before handing it back.
 
 The constraint that makes every call matter: ~380KB RAM, no PSRAM, one 48KB
@@ -48,7 +48,7 @@ Bare `new` / `new[]` is never correct here: under `-fno-exceptions` it calls
 
 ## Justify every allocation
 
-Per CLAUDE.md's evidence rule: when you add a heap allocation, state in one line
+Per AGENTS.md's evidence rule: when you add a heap allocation, state in one line
 why stack/static/reuse was rejected and the worst-case size. If you cannot name
 the size, you cannot budget it, and you should not allocate it.
 

@@ -24,7 +24,7 @@
  * Cross-thread state lives in a shared_ptr<Context>; the Activity may destruct
  * while the task is mid-call without UAF — the task keeps its own shared_ptr
  * and writes results only via the context, never via `this`. shared_ptr is
- * justified here despite the CLAUDE.md preference against it: this is a cold
+ * justified here despite the AGENTS.md preference against it: this is a cold
  * setup path (one per Activity entry), and the alternative (manual flag +
  * busy-wait in destructor) would block Back for up to one HTTP timeout.
  */

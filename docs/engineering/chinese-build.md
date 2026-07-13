@@ -1,6 +1,6 @@
 # Chinese Builds (ENABLE_CHINESE_VERSION)
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). Guide to the Traditional
+> Deep reference for [AGENTS.md](../../AGENTS.md). Guide to the Traditional
 > (`gh_release_tc`) and Simplified (`gh_release_sc`) Chinese firmwares: how the
 > flags gate resources, flash budget, locales, and regenerating CJK fonts.
 
