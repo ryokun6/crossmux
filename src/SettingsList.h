@@ -261,14 +261,17 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_CLOCK, &CrossPointSettings::statusBarClock,
                           {StrId::STR_HIDE, StrId::STR_DIR_LEFT, StrId::STR_DIR_RIGHT}, "statusBarClock",
                           StrId::STR_CUSTOMISE_STATUS_BAR),
-        // Clock timezone/format/sync (device UI uses DateTimeSettingsActivity for offset).
+        // Clock timezone/format/sync — device UI is DateTimeSettingsActivity only
+        // (Settings > System > Date & Time). Keep these in getSettingsList for
+        // JSON/web persistence, but category STR_DATE_AND_TIME so they do not
+        // appear as duplicate rows on the System tab.
         SettingInfo::Value(StrId::STR_CLOCK_UTC_OFFSET, &CrossPointSettings::clockUtcOffsetQ, {0, 104, 1},
-                           "clockUtcOffsetQ", StrId::STR_CAT_SYSTEM),
+                           "clockUtcOffsetQ", StrId::STR_DATE_AND_TIME),
         SettingInfo::Enum(StrId::STR_CLOCK_FORMAT, &CrossPointSettings::clockFormat,
                           {StrId::STR_CLOCK_FORMAT_24H, StrId::STR_CLOCK_FORMAT_12H}, "clockFormat",
-                          StrId::STR_CAT_SYSTEM),
+                          StrId::STR_DATE_AND_TIME),
         SettingInfo::Toggle(StrId::STR_CLOCK_SYNCED, &CrossPointSettings::clockHasBeenSynced, "clockHasBeenSynced",
-                            StrId::STR_CAT_SYSTEM),
+                            StrId::STR_DATE_AND_TIME),
     };
     // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
     if (halTiltSensor.isAvailable()) {
