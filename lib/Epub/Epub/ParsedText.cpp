@@ -10,6 +10,7 @@
 #include <limits>
 #include <vector>
 
+#include "CjkKinsoku.h"
 #include "VerticalPunctuation.h"
 #include "hyphenation/Hyphenator.h"
 
@@ -324,98 +325,6 @@ int verticalGapBeforeWord(const GfxRenderer& renderer, const int fontId, const s
 
 bool containsSoftHyphen(const std::string& word) { return word.find(SOFT_HYPHEN_UTF8) != std::string::npos; }
 
-bool isNoBreakBeforeCjkPunctuation(const uint32_t cp) {
-  switch (cp) {
-    case '.':
-    case ',':
-    case ':':
-    case ';':
-    case '!':
-    case '?':
-    case ')':
-    case ']':
-    case '}':
-    case 0x00BB:  // »
-    case 0x2019:  // ’
-    case 0x201D:  // ”
-    case 0x3001:  // 、
-    case 0x3002:  // 。
-    case 0x3009:  // 〉
-    case 0x300B:  // 》
-    case 0x300D:  // 」
-    case 0x300F:  // 』
-    case 0x3011:  // 】
-    case 0x3015:  // 〕
-    case 0x3017:  // 〗
-    case 0x3019:  // 〙
-    case 0x301B:  // 〛
-    case 0xFF01:  // ！
-    case 0xFF09:  // ）
-    case 0xFF0C:  // ，
-    case 0xFF0E:  // ．
-    case 0xFF1A:  // ：
-    case 0xFF1B:  // ；
-    case 0xFF1F:  // ？
-    case 0xFF3D:  // ］
-    case 0xFF5D:  // ｝
-    case 0xFE10:  // ︐
-    case 0xFE11:  // ︑
-    case 0xFE12:  // ︒
-    case 0xFE13:  // ︓
-    case 0xFE14:  // ︔
-    case 0xFE15:  // ︕
-    case 0xFE16:  // ︖
-    case 0xFE19:  // ︙
-    case 0xFE36:  // ︶
-    case 0xFE38:  // ︸
-    case 0xFE3A:  // ︺
-    case 0xFE3C:  // ︼
-    case 0xFE3E:  // ︾
-    case 0xFE40:  // ﹀
-    case 0xFE42:  // ﹂
-    case 0xFE44:  // ﹄
-    case 0xFE48:  // ﹈
-      return true;
-    default:
-      return false;
-  }
-}
-
-bool isNoBreakAfterCjkPunctuation(const uint32_t cp) {
-  switch (cp) {
-    case '(':
-    case '[':
-    case '{':
-    case 0x00AB:  // «
-    case 0x2018:  // ‘
-    case 0x201C:  // “
-    case 0x3008:  // 〈
-    case 0x300A:  // 《
-    case 0x300C:  // 「
-    case 0x300E:  // 『
-    case 0x3010:  // 【
-    case 0x3014:  // 〔
-    case 0x3016:  // 〖
-    case 0x3018:  // 〘
-    case 0x301A:  // 〚
-    case 0xFF08:  // （
-    case 0xFF3B:  // ［
-    case 0xFF5B:  // ｛
-    case 0xFE35:  // ︵
-    case 0xFE37:  // ︷
-    case 0xFE39:  // ︹
-    case 0xFE3B:  // ︻
-    case 0xFE3D:  // ︽
-    case 0xFE3F:  // ︿
-    case 0xFE41:  // ﹁
-    case 0xFE43:  // ﹃
-    case 0xFE47:  // ﹇
-      return true;
-    default:
-      return false;
-  }
-}
-
 bool containsCjkBreakableCodepoint(const std::string& text) {
   const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str());
   while (*ptr) {
@@ -428,10 +337,67 @@ bool containsCjkBreakableCodepoint(const std::string& text) {
 }
 
 bool hasCjkBreakOpportunityBetween(const uint32_t leftCp, const uint32_t rightCp) {
-  if (!utf8IsCjkBreakable(leftCp) && !utf8IsCjkBreakable(rightCp)) return false;
-  if (isNoBreakAfterCjkPunctuation(leftCp) || isNoBreakBeforeCjkPunctuation(rightCp)) return false;
-  if (utf8IsCombiningMark(rightCp)) return false;
-  return true;
+  return CjkKinsoku::hasCjkBreakOpportunityBetween(leftCp, rightCp);
+}
+
+// True when a line may end after word `leftIdx` with the next line starting at `rightIdx`.
+bool isLegalWordBreakAfter(const std::vector<std::string>& wordList, const size_t leftIdx, const size_t rightIdx) {
+  if (rightIdx >= wordList.size()) return true;
+  return CjkKinsoku::isLegalBreakBetween(lastCodepoint(wordList[leftIdx]), firstCodepoint(wordList[rightIdx]));
+}
+
+// Pull tokens back so the next line does not start with 行頭禁則 and the current
+// line does not end with 行末禁則. Mirrors vertical-column kinsoku backtrack.
+// When retreat is impossible (line would be empty), absorb line-start-prohibited
+// tokens onto the current line instead of orphaning them on the next.
+size_t applyKinsokuBacktrack(const std::vector<std::string>& wordList, const std::vector<bool>& continuesVec,
+                             const size_t lineStart, size_t breakAt) {
+  if (breakAt <= lineStart || breakAt > wordList.size()) {
+    return breakAt;
+  }
+
+  auto retreatOne = [&]() {
+    if (breakAt <= lineStart + 1) return false;
+    --breakAt;
+    while (breakAt > lineStart + 1 && breakAt < wordList.size() && continuesVec[breakAt]) {
+      --breakAt;
+    }
+    return breakAt > lineStart;
+  };
+
+  auto absorbNext = [&]() {
+    if (breakAt >= wordList.size()) return false;
+    ++breakAt;
+    // Keep absorbing continuation-attached tokens that were glued to the punct.
+    while (breakAt < wordList.size() && continuesVec[breakAt]) {
+      ++breakAt;
+    }
+    return true;
+  };
+
+  // Next line must not start with a prohibited character.
+  while (breakAt < wordList.size() && CjkKinsoku::isLineStartProhibited(firstCodepoint(wordList[breakAt]))) {
+    if (!retreatOne()) {
+      if (!absorbNext()) break;
+    }
+  }
+
+  // Current line must not end with an opening bracket / quote / currency prefix.
+  while (breakAt > lineStart && breakAt <= wordList.size() &&
+         CjkKinsoku::isLineEndProhibited(lastCodepoint(wordList[breakAt - 1]))) {
+    if (!retreatOne()) break;
+  }
+
+  // Inseparable pair straddling the break: keep both on the next line when possible,
+  // otherwise absorb onto the current line.
+  while (breakAt > lineStart && breakAt < wordList.size() &&
+         CjkKinsoku::isInseparablePair(lastCodepoint(wordList[breakAt - 1]), firstCodepoint(wordList[breakAt]))) {
+    if (!retreatOne()) {
+      if (!absorbNext()) break;
+    }
+  }
+
+  return breakAt;
 }
 
 std::vector<size_t> cjkCharacterBreakByteOffsets(const std::string& text) {
@@ -563,9 +529,15 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
 
   const auto pushToken = [&](std::string token, const bool continues, const bool noSpaceBefore,
                              const bool isFocusSuffix) {
+    bool effectiveContinues = continues;
+    // 分離禁則: keep ellipsis/dash runs and digit+unit / currency+digit glued via continues.
+    if (!words.empty() && !effectiveContinues &&
+        CjkKinsoku::isInseparablePair(lastCodepoint(words.back()), firstCodepoint(token))) {
+      effectiveContinues = true;
+    }
     words.push_back(std::move(token));
     wordStyles.push_back(baseStyle);
-    wordContinues.push_back(continues);
+    wordContinues.push_back(effectiveContinues);
     wordNoSpaceBefore.push_back(noSpaceBefore);
     wordIsFocusSuffix.push_back(isFocusSuffix);
   };
@@ -857,10 +829,9 @@ std::vector<size_t> ParsedText::computeVerticalColumnBreaks(const GfxRenderer& r
       }
     }
     // Kinsoku shori: closing punctuation must not begin the next vertical
-    // column. Move the preceding token with it instead of leaving punctuation
-    // alone at the column top.
-    if (j < total && j > i + 1 && isNoBreakBeforeCjkPunctuation(firstCodepoint(words[j]))) {
-      --j;
+    // column, and opening punctuation must not end the current column.
+    if (j < total && j > i + 1) {
+      j = applyKinsokuBacktrack(words, wordContinues, i, j);
     }
     if (j <= i) {
       j = i + 1;
@@ -1016,6 +987,11 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
         continue;
       }
 
+      // 禁則: do not end a line with an opener, or start the next line with a closer/stop.
+      if (j + 1 < totalWordCount && !isLegalWordBreakAfter(words, j, j + 1)) {
+        continue;
+      }
+
       int cost;
       if (j == totalWordCount - 1) {
         cost = 0;  // Last line
@@ -1060,6 +1036,11 @@ std::vector<size_t> ParsedText::computeLineBreaks(const GfxRenderer& renderer, c
     // Safety check: prevent infinite loop if nextBreakIndex doesn't advance
     if (nextBreakIndex <= currentWordIndex) {
       // Force advance by at least one word to avoid infinite loop
+      nextBreakIndex = currentWordIndex + 1;
+    }
+
+    nextBreakIndex = applyKinsokuBacktrack(words, continuesVec, currentWordIndex, nextBreakIndex);
+    if (nextBreakIndex <= currentWordIndex) {
       nextBreakIndex = currentWordIndex + 1;
     }
 
@@ -1135,6 +1116,12 @@ std::vector<size_t> ParsedText::computeHyphenatedLineBreaks(const GfxRenderer& r
     // Backtrack to the start of the continuation group so the whole group moves to the next line.
     while (currentIndex > lineStart + 1 && currentIndex < wordWidths.size() && continuesVec[currentIndex]) {
       --currentIndex;
+    }
+
+    // 禁則 repair for the greedy hyphenation path.
+    currentIndex = applyKinsokuBacktrack(words, continuesVec, lineStart, currentIndex);
+    if (currentIndex <= lineStart) {
+      currentIndex = lineStart + 1;
     }
 
     lineBreakIndices.push_back(currentIndex);

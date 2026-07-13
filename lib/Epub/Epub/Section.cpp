@@ -19,11 +19,11 @@ namespace {
 // Values are kept distinct across flavors and above every previously-shipped
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 54;  // was 52; stack grouped upright punctuation by codepoint
+constexpr uint8_t SECTION_FILE_VERSION = 55;  // was 54; horizontal 禁則 (kinsoku) line-break enforcement
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 55;  // Japanese CJK tokenization / GenSen JP metrics
+constexpr uint8_t SECTION_FILE_VERSION = 56;  // was 55; horizontal 禁則 + JA small-kana non-starters
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 56;  // Korean CJK tokenization / RHR KR metrics
+constexpr uint8_t SECTION_FILE_VERSION = 57;  // was 56; horizontal 禁則 line-break enforcement
 #else
 constexpr uint8_t SECTION_FILE_VERSION = 53;  // was 51; stack grouped upright punctuation by codepoint
 #endif
