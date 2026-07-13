@@ -41,7 +41,8 @@ The `gh_release_cn` environment builds a Chinese-first firmware with:
 - built-in GenSen Rounded TW bitmap fonts
 - CJK line-breaking and punctuation rules
 - WeRead shelf, notes, reviews, search, recommendations, and offline SD cache
-- the same dual-slot OTA layout as the international build
+- the same dual-slot firmware layout and rollback support as the international
+  build
 
 The default 14 pt reader font carries roughly 7,000 common ideographs plus
 symbols used by modern EPUBs. Smaller UI sizes use tighter subsets to stay
@@ -75,8 +76,8 @@ cache. If an SD card refuses to truncate or rename a stale section file, the
 reader can keep using the completed sidecar instead of failing the chapter
 rebuild.
 
-The `Large only` image mode now drops inline icons and small standalone images
-while preserving figures that are large in both source and displayed size.
+The `Large only` image mode now drops inline icons, em-sized separators, and
+small standalone images while preserving full figures.
 
 ### A smaller Apps menu
 
@@ -106,8 +107,9 @@ ryOS CrossMux keeps the main CrossPoint reader:
 - international UI translations and RTL interface support
 
 Wireless tools include file transfer, the EPUB Optimizer, web settings, fast
-WebSocket uploads, WebDAV, Calibre wireless connection, and OPDS browsing. The
-OTA updater is inherited from CrossMux and still follows its release channels.
+WebSocket uploads, WebDAV, Calibre wireless connection, and OPDS browsing.
+Network OTA is disabled in this fork. Install firmware with a custom `.bin`
+through USB, the web flasher, or `SD Card Firmware Update`.
 
 ## X3 and X4 support
 
@@ -216,9 +218,6 @@ documented in [docs/sd-card-fonts.md](./docs/sd-card-fonts.md).
 - Built-in CJK text has one weight. Install an SD-card family for distinct bold
   and italic Latin styles.
 - Vertical mode depends on correct `zh`, `ja`, or `ko` EPUB language metadata.
-- Built-in OTA checks `crossmux.com` or `crossmux.yunhug.com`, not releases from
-  `ryokun6/crossmux`. Flash a custom `.bin` to stay on ryOS CrossMux until this
-  fork has its own OTA channel.
 - The desktop simulator currently models X4 geometry only. X3 display and
   peripheral testing needs real hardware.
 

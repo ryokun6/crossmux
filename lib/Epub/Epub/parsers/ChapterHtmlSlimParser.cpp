@@ -22,6 +22,18 @@
 constexpr size_t MIN_SIZE_FOR_POPUP = 10 * 1024;  // 10KB
 constexpr size_t PARSE_BUFFER_SIZE = 1024;
 constexpr int MIN_LARGE_IMAGE_EDGE_PX = 48;
+constexpr const char* SEPARATOR_HINTS[] = {"separator",   "divider",       "ornament",      "flourish",
+                                           "dingbat",     "fleuron",       "asterism",      "scene-break",
+                                           "scene_break", "section-break", "section_break", "decorative"};
+
+constexpr bool shouldSkipLargeOnlyImage(const int sourceWidth, const int sourceHeight, const int displayWidth,
+                                        const int displayHeight) {
+  return sourceWidth < MIN_LARGE_IMAGE_EDGE_PX || sourceHeight < MIN_LARGE_IMAGE_EDGE_PX ||
+         displayWidth < MIN_LARGE_IMAGE_EDGE_PX || displayHeight < MIN_LARGE_IMAGE_EDGE_PX;
+}
+
+static_assert(shouldSkipLargeOnlyImage(1600, 100, 800, 40), "Thin images must be hidden");
+static_assert(!shouldSkipLargeOnlyImage(512, 512, 400, 300), "Large figures must remain visible");
 
 // Hard cap on the number of anchor IDs recorded per chapter. Legitimate navigation
 // anchors (TOC entries, footnotes, cross-references) rarely exceed a few hundred per
@@ -55,6 +67,51 @@ const char* getAttribute(const XML_Char** atts, const char* attrName) {
     if (strcmp(atts[i], attrName) == 0) return atts[i + 1];
   }
   return nullptr;
+}
+
+constexpr char asciiLower(const char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c; }
+
+constexpr bool containsAsciiCaseInsensitive(const char* text, const char* needle) {
+  if (!text || !needle || needle[0] == '\0') return false;
+
+  for (size_t i = 0; text[i] != '\0'; ++i) {
+    size_t j = 0;
+    while (needle[j] != '\0' && text[i + j] != '\0' && asciiLower(text[i + j]) == asciiLower(needle[j])) {
+      ++j;
+    }
+    if (needle[j] == '\0') return true;
+  }
+  return false;
+}
+
+constexpr bool hasSeparatorHint(const char* value) {
+  for (const char* hint : SEPARATOR_HINTS) {
+    if (containsAsciiCaseInsensitive(value, hint)) return true;
+  }
+  return false;
+}
+
+static_assert(hasSeparatorHint("../images/Chapter_Ornament.PNG"), "Separator hints must be case-insensitive");
+static_assert(!hasSeparatorHint("../images/20_burning_r2.jpg"), "Normal figure names must remain visible");
+
+bool hasEmHeightClass(const std::string& classAttr) {
+  const size_t heightPos = classAttr.find("height_");
+  if (heightPos == std::string::npos) return false;
+
+  const size_t tokenEnd = classAttr.find_first_of(" \t\r\n", heightPos);
+  const size_t emPos = classAttr.find("em", heightPos + 7);
+  return emPos != std::string::npos && (tokenEnd == std::string::npos || emPos < tokenEnd);
+}
+
+bool isSemanticSeparatorImage(const std::string& src, const std::string& alt, const std::string& classAttr,
+                              const XML_Char** atts) {
+  if (alt.empty() && hasEmHeightClass(classAttr)) return true;
+
+  const char* role = getAttribute(atts, "role");
+  if (role && containsAsciiCaseInsensitive(role, "separator")) return true;
+
+  return hasSeparatorHint(src.c_str()) || hasSeparatorHint(alt.c_str()) || hasSeparatorHint(classAttr.c_str()) ||
+         hasSeparatorHint(getAttribute(atts, "id")) || hasSeparatorHint(getAttribute(atts, "epub:type"));
 }
 
 // Returns true if the HTML element is a purely inline, non-navigable wrapper.
@@ -489,6 +546,12 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
         self->depth += 1;
         return;
       }
+      if (self->imageRendering == 3 && isSemanticSeparatorImage(src, alt, classAttr, atts)) {
+        LOG_DBG("EHP", "Skipping separator image in large-only mode: %s", src.c_str());
+        self->skipUntilDepth = self->depth;
+        self->depth += 1;
+        return;
+      }
 
       // Skip image if CSS display:none
       if (self->cssParser) {
@@ -639,8 +702,7 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                 // enforced on both source and post-CSS dimensions so styles cannot upscale
                 // a tiny icon enough to pass as a figure.
                 if (self->imageRendering == 3) {
-                  if (dims.width < MIN_LARGE_IMAGE_EDGE_PX || dims.height < MIN_LARGE_IMAGE_EDGE_PX ||
-                      displayWidth < MIN_LARGE_IMAGE_EDGE_PX || displayHeight < MIN_LARGE_IMAGE_EDGE_PX) {
+                  if (shouldSkipLargeOnlyImage(dims.width, dims.height, displayWidth, displayHeight)) {
                     LOG_DBG("EHP", "Skipping small image source=%dx%d display=%dx%d (large-only mode)", dims.width,
                             dims.height, displayWidth, displayHeight);
                     Storage.remove(cachedImagePath.c_str());

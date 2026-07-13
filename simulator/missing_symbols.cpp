@@ -187,9 +187,6 @@ STUB_ACTIVITY_BASE(CalibreConnectActivity)
 #include "activities/browser/OpdsBookBrowserActivity.h"
 STUB_ACTIVITY_BASE(OpdsBookBrowserActivity)
 
-#include "activities/settings/OtaUpdateActivity.h"
-STUB_ACTIVITY_BASE(OtaUpdateActivity)
-
 #include "activities/settings/SdFirmwareUpdateActivity.h"
 void SdFirmwareUpdateActivity::onEnter() {}
 void SdFirmwareUpdateActivity::loop() {}

@@ -98,11 +98,11 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry an independent version counter,
-> currently **48**. The byte layout is identical to the Latin version below; only
+> currently **50**. The byte layout is identical to the Latin version below; only
 > the word-stream contents differ (per-character CJK tokenization), so caches are
 > not reusable across flavors.
 >
-> Latin builds use version **47** (was 46). Counters track `writingMode`, em-based
+> Latin builds use version **49** (was 47). Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
 > (﹁﹂︵︒ etc.), horizontal inter-paragraph spacing in vertical-rl, and normal
 > brackets in rotated numeric references such as `[12]`. Vertical column breaks
@@ -111,8 +111,9 @@ if (parsedSize != fileSize) {
 > preserves source word spaces and punctuation, and adds a 2px gap at
 > upright/sideways boundaries. One- and two-character Latin/numeric tokens rotate
 > when they belong to a phrase, while isolated short numbers retain 縦中横.
-> Large-only image mode suppresses inline images and standalone assets whose
-> intrinsic or displayed dimensions are below the large-image threshold. In
+> Large-only image mode suppresses inline images, small standalone assets, and
+> decorative separators identified by em-height ornament classes, separator
+> roles/types, or common separator hints in image metadata. In
 > vertical-rl, block start/end and extra paragraph spacing advance the horizontal
 > column axis rather than offsetting text vertically. Repeated vertical ellipsis
 > forms stack and consume one character cell each, matching repeated dashes.

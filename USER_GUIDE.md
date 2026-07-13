@@ -283,7 +283,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Time to Sleep**: Set the duration of inactivity before the device automatically goes to sleep; options are 1, 3, 5, 10 (default), 15 or 30 minutes.
 
-- **Wi-Fi Networks**: Connect to Wi-Fi networks for file transfers and firmware updates.
+- **Wi-Fi Networks**: Connect to Wi-Fi networks for file transfers and online library services.
 
 - **KOReader Sync**: Options for setting up KOReader for syncing book progress.
 
@@ -291,7 +291,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Clear Reading Cache**: Clear the internal SD card cache.
 
-- **Check for updates**: Check for Crosspoint firmware updates over Wi-Fi. Firmware can also be updated without a USB connection by placing a `firmware.bin` file on the SD card.
+- **SD Card Firmware Update**: Install a selected `.bin` firmware image from the SD card. Network OTA is disabled in ryOS CrossMux.
 
 - **Language**: Set the UI language. CrossPoint supports 24 languages: English, Spanish, French, German, Czech, Brazilian Portuguese, Russian, Swedish, Romanian, Catalan, Ukrainian, Belarusian, Italian, Polish, Finnish, Danish, Dutch, Turkish, Kazakh, Hungarian, Lithuanian, Slovenian, Valencian, and Hebrew.
 
