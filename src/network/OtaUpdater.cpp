@@ -25,6 +25,10 @@ constexpr char firmwareAssetName[] =
 #else
     "firmware-tc.bin";
 #endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+    "firmware-ja.bin";
+#elif defined(ENABLE_KOREAN_VERSION)
+    "firmware-ko.bin";
 #else
     "firmware.bin";
 #endif

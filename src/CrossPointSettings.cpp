@@ -22,6 +22,10 @@ uint8_t CrossPointSettings::defaultLanguageIndex() {
 #else
   return static_cast<uint8_t>(Language::ZH_TW);
 #endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+  return static_cast<uint8_t>(Language::JA);
+#elif defined(ENABLE_KOREAN_VERSION)
+  return static_cast<uint8_t>(Language::KO);
 #else
   return static_cast<uint8_t>(Language::EN);
 #endif

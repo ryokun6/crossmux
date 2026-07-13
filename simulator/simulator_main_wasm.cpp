@@ -27,8 +27,8 @@ int main(int argc, char** argv) {
   g_simulator_sd_root = "/sd";
 
   // Startup UI language follows the browser: index.html maps navigator.language to a
-  // "--lang <CODE>" arg (CODE = "zh-TW" / "zh-CN" / "EN"; legacy ZH/ZH_CN/ZH_TW
-  // still accepted). Seed SETTINGS.language BEFORE the
+  // "--lang <CODE>" arg (CODE = "zh-TW" / "zh-CN" / "ja-JP" / "ko-KR" / "EN";
+  // legacy ZH/ZH_CN/ZH_TW still accepted). Seed SETTINGS.language BEFORE the
   // firmware task runs. firmware setup() calls loadFromFile() then
   // I18N.setLanguage(SETTINGS.language); loadFromFile() leaves SETTINGS.language
   // untouched when /sd/.crosspoint/settings.json is absent (the fresh-MEMFS demo case),

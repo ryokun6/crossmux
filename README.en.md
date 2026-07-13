@@ -1,6 +1,6 @@
 # ryOS CrossMux
 
-**English** | [中文](./README.md)
+**English** | [中文](./README.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md)
 
 ryOS CrossMux is reading-first firmware for the Xteink X3 and X4. It is a fork of
 [CrossMux](https://github.com/0x1abin/crossmux), built on
@@ -36,20 +36,26 @@ setting is vertical.
 
 ### Chinese firmware (Traditional and Simplified)
 
-Two Chinese SKUs ship alongside international:
+Two Chinese SKUs and Japanese / Korean SKUs ship alongside international:
 
 | Env | Locale | UI | OTA asset |
 | --- | --- | --- | --- |
 | `gh_release_tc` | `zh-TW` | Traditional Chinese | `firmware-tc.bin` |
 | `gh_release_sc` | `zh-CN` | Simplified Chinese (from Taiwan-terminology YAML via OpenCC `tw2sp`) | `firmware-sc.bin` |
+| `gh_release_ja` | `ja-JP` | Japanese | `firmware-ja.bin` |
+| `gh_release_ko` | `ko-KR` | Korean | `firmware-ko.bin` |
 
-Both include English + Chinese UI, CJK line-breaking, WeRead, dual-slot OTA from
+Chinese SKUs include English + Chinese UI, CJK line-breaking, WeRead, dual-slot OTA from
 `ryokun6/crossmux`, and embedded CJK bitmap fonts from GenSen Rounded TW
 (Traditional SKU stores TC-keyed bitmaps; Simplified SKU subsets the same OTF
 by SC codepoints so glyph shapes stay Simplified).
 
-**Automatic text conversion while reading:** book codepoints are remapped at
-glyph lookup so you can open the same EPUB/TXT on either SKU. The Traditional
+Japanese / Korean SKUs use GenSen Rounded 2 JP and Resource Han Rounded KR
+respectively, with **no** OpenCC Han conversion (see
+[docs/engineering/japanese-korean-build.md](docs/engineering/japanese-korean-build.md)).
+
+**Automatic text conversion while reading (Chinese SKUs only):** book codepoints are remapped at
+glyph lookup so you can open the same EPUB/TXT on either Chinese SKU. The Traditional
 build maps Simplified → Traditional bitmaps; the Simplified build maps
 Traditional → Simplified. UI strings are converted at build time — the SC SKU
 runs OpenCC `tw2sp` on the shared Taiwan YAML (e.g. 檔案 → 文件).

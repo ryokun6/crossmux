@@ -1,5 +1,7 @@
 #include "ChineseCalendarFace.h"
 
+#ifdef ENABLE_CHINESE_VERSION
+
 #include <Arduino.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
@@ -424,3 +426,5 @@ void ChineseCalendarFace::render(GfxRenderer& renderer, const Rect& viewport) {
   }
   drawAlmanacPage(renderer, viewport, cachedDay_, *heroStyle_, *heroSeeds_);
 }
+
+#endif  // ENABLE_CHINESE_VERSION

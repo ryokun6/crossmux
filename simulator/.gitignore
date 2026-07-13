@@ -1,5 +1,7 @@
 build/
 build_sc/
+build_ja/
+build_ko/
 build_wasm/
 arduino-host/build/
 sd_root/

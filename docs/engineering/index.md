@@ -19,6 +19,7 @@ that matches your task — don't load everything at once.
 | [git-workflow.md](git-workflow.md) | Any git operation: detecting repo context, branching, commit format, or deciding whether to commit. |
 | [cache-management.md](cache-management.md) | Changing a cache binary layout, invalidating caches, or bumping a format version. (Byte-level formats: [../file-formats.md](../file-formats.md).) |
 | [chinese-build.md](chinese-build.md) | Working on `gh_release_tc` / `gh_release_sc` Chinese firmware or the embedded CJK fonts. |
+| [japanese-korean-build.md](japanese-korean-build.md) | Working on `gh_release_ja` / `gh_release_ko` or regenerating GenSen JP / Resource Han Rounded KR fonts. |
 | [device-variants.md](device-variants.md) | Building or flashing for the Xteink X3 vs X4, runtime device detection (one binary, both panels), and the per-device hardware differences. |
 | [upstream-merge-policy.md](upstream-merge-policy.md) | Resolving a sync conflict on `AGENTS.md` / upstream `.skills/SKILL.md` — how to keep the map thin and route upstream changes into these docs. |
 

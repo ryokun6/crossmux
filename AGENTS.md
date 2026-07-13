@@ -62,6 +62,8 @@ pio run                              # Build (default env)
 pio run -t upload                    # Build + flash
 pio run -e gh_release_tc             # Traditional Chinese (zh-TW)
 pio run -e gh_release_sc             # Simplified Chinese (zh-CN)
+pio run -e gh_release_ja             # Japanese (ja-JP)
+pio run -e gh_release_ko             # Korean (ko-KR)
 pio check                            # Static analysis (cppcheck)
 ./bin/clang-format-fix               # Format (CI uses clang-format 21+)
 python3 scripts/debugging_monitor.py # Enhanced serial monitor
@@ -83,6 +85,7 @@ python3 scripts/debugging_monitor.py # Enhanced serial monitor
 | Git workflow | Repo detection, branching, commits | [docs/engineering/git-workflow.md](docs/engineering/git-workflow.md) |
 | Cache management | Cache structure, invalidation, format versioning | [docs/engineering/cache-management.md](docs/engineering/cache-management.md) |
 | Chinese builds | `gh_release_tc` (zh-TW) / `gh_release_sc` (zh-CN), embedded CJK fonts | [docs/engineering/chinese-build.md](docs/engineering/chinese-build.md) |
+| Japanese / Korean builds | `gh_release_ja` / `gh_release_ko`, GenSen JP + Resource Han Rounded KR | [docs/engineering/japanese-korean-build.md](docs/engineering/japanese-korean-build.md) |
 | Device variants (X3/X4) | Building/flashing for X3, runtime device detection (one binary), per-device hardware differences | [docs/engineering/device-variants.md](docs/engineering/device-variants.md) |
 | System overview & dataflow | Runtime lifecycle, activity model, pipeline diagrams | [docs/contributing/architecture.md](docs/contributing/architecture.md) |
 | Binary file formats | Byte-level cache/notes/font formats | [docs/file-formats.md](docs/file-formats.md) |

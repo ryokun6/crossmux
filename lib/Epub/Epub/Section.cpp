@@ -10,17 +10,20 @@
 #include "parsers/ChapterHtmlSlimParser.h"
 
 namespace {
-// Cache layout version. Latin and Chinese builds emit different word streams
+// Cache layout version. Latin and CJK builds emit different word streams
 // (per-character CJK tokenization + 禁则 + full-width padding live behind
-// ENABLE_CHINESE_VERSION in ParsedText.cpp), so cached pages from one flavor
-// cannot be reused by the other. Carry separate version counters per flavor;
-// each can bump independently. Cache invalidation is automatic on mismatch
-// (no migration code needed — version mismatch triggers a clean re-parse).
+// ENABLE_CJK_VERSION), so cached pages from one flavor cannot be reused by
+// another. Carry separate version counters per flavor; each can bump
+// independently. Cache invalidation is automatic on mismatch (no migration
+// code needed — version mismatch triggers a clean re-parse).
 // Values are kept distinct across flavors and above every previously-shipped
-// number (Latin: 24/26/30, Chinese: 27/29/31, upstream single: 26/27) so a
-// firmware flavor swap can never read the other flavor's stale cache.
-#ifdef ENABLE_CHINESE_VERSION
+// number so a firmware flavor swap can never read another flavor's stale cache.
+#if defined(ENABLE_CHINESE_VERSION)
 constexpr uint8_t SECTION_FILE_VERSION = 54;  // was 52; stack grouped upright punctuation by codepoint
+#elif defined(ENABLE_JAPANESE_VERSION)
+constexpr uint8_t SECTION_FILE_VERSION = 55;  // Japanese CJK tokenization / GenSen JP metrics
+#elif defined(ENABLE_KOREAN_VERSION)
+constexpr uint8_t SECTION_FILE_VERSION = 56;  // Korean CJK tokenization / RHR KR metrics
 #else
 constexpr uint8_t SECTION_FILE_VERSION = 53;  // was 51; stack grouped upright punctuation by codepoint
 #endif

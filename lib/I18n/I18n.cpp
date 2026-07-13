@@ -97,17 +97,17 @@ Language I18n::languageFromCode(const char* code) {
 
 bool I18n::isLanguageAvailable(Language lang) {
   if (static_cast<uint8_t>(lang) >= getLanguageCount()) return false;
-#ifndef ENABLE_CHINESE_VERSION
-  // CJK glyphs ship only with Chinese SKUs; hide Chinese locales on global.
-  // Full international tables include ZH_TW (from chinese.yaml) but no CJK font.
-  if (lang == Language::ZH_TW) return false;
-#endif
-#ifdef ENABLE_CHINESE_VERSION
-#ifdef CHINESE_UI_SIMPLIFIED
-  // SC firmware tables are EN+ZH_CN only — nothing else to hide.
-#else
-  // TW firmware tables are EN+ZH_TW only — nothing else to hide.
-#endif
+#if !defined(ENABLE_CJK_VERSION)
+  // CJK glyphs ship only with CJK SKUs. Full international tables may still
+  // include these locales from YAML — hide them so the picker never offers a
+  // language whose glyphs are missing. Compare persisted codes (not Language::
+  // enumerators) so this compiles when a SKU strips some languages from the
+  // generated enum.
+  const char* code = LANGUAGE_CODES[static_cast<size_t>(lang)];
+  if (strcmp(code, "zh-TW") == 0 || strcmp(code, "zh-CN") == 0 || strcmp(code, "ja-JP") == 0 ||
+      strcmp(code, "ko-KR") == 0) {
+    return false;
+  }
 #endif
   return true;
 }

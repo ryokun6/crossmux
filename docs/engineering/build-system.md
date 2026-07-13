@@ -35,6 +35,8 @@
   * `slim`: Minimal build (no serial logging)
   * `gh_release_tc`: Traditional Chinese (zh-TW) release with GenSen TW CJK fonts (see [chinese-build.md](chinese-build.md))
   * `gh_release_sc`: Simplified Chinese (zh-CN) release with GenSen TW fonts (SC-keyed) + `CHINESE_UI_SIMPLIFIED`
+  * `gh_release_ja`: Japanese (ja-JP) release with GenSen Rounded 2 JP fonts (see [japanese-korean-build.md](japanese-korean-build.md))
+  * `gh_release_ko`: Korean (ko-KR) release with Resource Han Rounded KR fonts (see [japanese-korean-build.md](japanese-korean-build.md))
 
 ## Critical Build Flags
 These flags in `platformio.ini` fundamentally affect firmware behavior:

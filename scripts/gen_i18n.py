@@ -1132,8 +1132,8 @@ else:
     try:
         Import("env")
 
-        # Detect ENABLE_CHINESE_VERSION via multiple sources because the flag
-        # may not yet be normalized into CPPDEFINES at extra_script-pre time.
+        # Detect CJK SKU flags via multiple sources because the flag may not
+        # yet be normalized into CPPDEFINES at extra_script-pre time.
         # PlatformIO populates CPPDEFINES later in the build graph, but the
         # raw "-D…" tokens live in BUILD_FLAGS (after $-substitution).
         #
@@ -1170,22 +1170,37 @@ else:
                 for d in defines
             }
 
-            if _build_flags_has(flag, expanded) or flag in define_names:
-                sc_flag = "CHINESE_UI_SIMPLIFIED"
-                if _build_flags_has(sc_flag, expanded) or sc_flag in define_names:
+            def _has(flag_name: str) -> bool:
+                return _build_flags_has(flag_name, expanded) or flag_name in define_names
+
+            if _has("ENABLE_CHINESE_VERSION"):
+                if _has("CHINESE_UI_SIMPLIFIED"):
                     only = {"ZH_CN"}
                     print(
-                        f"[gen_i18n] {flag}+{sc_flag} detected (env={env_name}); "
+                        f"[gen_i18n] ENABLE_CHINESE_VERSION+CHINESE_UI_SIMPLIFIED "
+                        f"detected (env={env_name}); "
                         f"restricting i18n tables to EN + ZH_CN (tw2sp from ZH_TW)"
                     )
                 else:
                     only = {"ZH_TW"}
                     print(
-                        f"[gen_i18n] {flag} detected (env={env_name}); "
+                        f"[gen_i18n] ENABLE_CHINESE_VERSION detected (env={env_name}); "
                         f"restricting i18n tables to EN + ZH_TW"
                     )
+            elif _has("ENABLE_JAPANESE_VERSION"):
+                only = {"JA"}
+                print(
+                    f"[gen_i18n] ENABLE_JAPANESE_VERSION detected (env={env_name}); "
+                    f"restricting i18n tables to EN + JA"
+                )
+            elif _has("ENABLE_KOREAN_VERSION"):
+                only = {"KO"}
+                print(
+                    f"[gen_i18n] ENABLE_KOREAN_VERSION detected (env={env_name}); "
+                    f"restricting i18n tables to EN + KO"
+                )
             else:
-                print(f"[gen_i18n] {flag} not set (env={env_name}); building full i18n")
+                print(f"[gen_i18n] no CJK SKU flag (env={env_name}); building full i18n")
         except Exception as exc:  # noqa: BLE001
             print(f"[gen_i18n] flag detection failed ({exc}); building full i18n")
             only = None

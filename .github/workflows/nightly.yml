@@ -2,7 +2,8 @@ name: Nightly
 
 # Daily rolling nightly build of main, published as a prerelease tagged
 # `nightly` with international (firmware.bin), Traditional (firmware-tc.bin),
-# and Simplified (firmware-sc.bin) assets. The website's Insider/Nightly reads the newest prerelease.
+# Simplified (firmware-sc.bin), Japanese (firmware-ja.bin), and Korean
+# (firmware-ko.bin) assets. The website's Insider/Nightly reads the newest prerelease.
 on:
   schedule:
     - cron: '0 18 * * *' # daily 18:00 UTC
@@ -39,10 +40,10 @@ jobs:
       - name: Extract short SHA
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
 
-      - name: Build ryOS CrossMux Nightly (international + TC + SC)
+      - name: Build ryOS CrossMux Nightly (international + TC + SC + JA + KO)
         env:
           CROSSPOINT_RC_HASH: ${{ env.SHORT_SHA }}
-        run: pio run -e gh_release_rc -e gh_release_tc_rc -e gh_release_sc_rc
+        run: pio run -e gh_release_rc -e gh_release_tc_rc -e gh_release_sc_rc -e gh_release_ja_rc -e gh_release_ko_rc
 
       - name: Stage nightly assets
         run: |
@@ -50,6 +51,8 @@ jobs:
           cp .pio/build/gh_release_rc/firmware.bin     dist/firmware.bin
           cp .pio/build/gh_release_tc_rc/firmware.bin  dist/firmware-tc.bin
           cp .pio/build/gh_release_sc_rc/firmware.bin  dist/firmware-sc.bin
+          cp .pio/build/gh_release_ja_rc/firmware.bin  dist/firmware-ja.bin
+          cp .pio/build/gh_release_ko_rc/firmware.bin  dist/firmware-ko.bin
 
       # Roll the single `nightly` release/tag forward to the current commit.
       - name: Remove previous nightly release
@@ -71,6 +74,8 @@ jobs:
             - `firmware.bin` — international
             - `firmware-tc.bin` — Traditional Chinese (繁體中文)
             - `firmware-sc.bin` — Simplified Chinese (简体中文)
+            - `firmware-ja.bin` — Japanese (日本語)
+            - `firmware-ko.bin` — Korean (한국어)
 
       # Roll the same nightly binaries onto Gitee for the China mirror. The
       # script deletes the previous Gitee `nightly` release and recreates it.
@@ -88,4 +93,4 @@ jobs:
             "true" \
             "${{ github.sha }}" \
             "gitee-nightly-body.md" \
-            dist/firmware.bin dist/firmware-tc.bin dist/firmware-sc.bin
+            dist/firmware.bin dist/firmware-tc.bin dist/firmware-sc.bin dist/firmware-ja.bin dist/firmware-ko.bin

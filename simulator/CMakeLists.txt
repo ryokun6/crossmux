@@ -226,11 +226,31 @@ if(NOT EMSCRIPTEN)
     list(APPEND CROSSPOINT_LIB ${JPEGDEC_ROOT}/src/JPEGDEC.cpp)
 endif()
 
-# Chinese UI variant: OFF = Traditional (default, matches gh_release_tc fonts/remap);
-# ON = Simplified (matches gh_release_sc — CHINESE_UI_SIMPLIFIED + ZH_CN via OpenCC tw2sp).
-# Build dirs must be separate (e.g. simulator/build vs simulator/build_sc) because
-# gen_i18n writes into shared lib/I18n/ headers.
+# CJK simulator SKU selection (mutually exclusive):
+#   default              → Traditional Chinese (gh_release_tc)
+#   SIMULATOR_CHINESE_UI_SIMPLIFIED=ON → Simplified Chinese (gh_release_sc)
+#   SIMULATOR_JAPANESE_VERSION=ON     → Japanese (gh_release_ja)
+#   SIMULATOR_KOREAN_VERSION=ON       → Korean (gh_release_ko)
+# Use separate build dirs per SKU — gen_i18n writes shared lib/I18n/ headers.
 option(SIMULATOR_CHINESE_UI_SIMPLIFIED "Build Simplified Chinese simulator SKU" OFF)
+option(SIMULATOR_JAPANESE_VERSION "Build Japanese simulator SKU" OFF)
+option(SIMULATOR_KOREAN_VERSION "Build Korean simulator SKU" OFF)
+
+set(_SIM_CJK_SKU_COUNT 0)
+if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
+    math(EXPR _SIM_CJK_SKU_COUNT "${_SIM_CJK_SKU_COUNT}+1")
+endif()
+if(SIMULATOR_JAPANESE_VERSION)
+    math(EXPR _SIM_CJK_SKU_COUNT "${_SIM_CJK_SKU_COUNT}+1")
+endif()
+if(SIMULATOR_KOREAN_VERSION)
+    math(EXPR _SIM_CJK_SKU_COUNT "${_SIM_CJK_SKU_COUNT}+1")
+endif()
+if(_SIM_CJK_SKU_COUNT GREATER 1)
+    message(FATAL_ERROR
+        "Pick at most one of SIMULATOR_CHINESE_UI_SIMPLIFIED / "
+        "SIMULATOR_JAPANESE_VERSION / SIMULATOR_KOREAN_VERSION")
+endif()
 
 # Prefer repo/.venv (has OpenCC for SC tw2sp). Override with -DI18N_PYTHON=...
 if(NOT I18N_PYTHON)
@@ -269,11 +289,20 @@ set(I18N_GENERATED
 )
 file(GLOB I18N_TRANSLATIONS "${REPO_ROOT}/lib/I18n/translations/*.yaml")
 if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
-    # SC firmware tables are EN + ZH_CN only (OpenCC tw2sp from chinese.yaml).
     set(I18N_GEN_ARGS
         ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
         --only-languages ZH_CN)
     set(I18N_GEN_COMMENT "Generating I18n strings (EN + ZH_CN)")
+elseif(SIMULATOR_JAPANESE_VERSION)
+    set(I18N_GEN_ARGS
+        ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
+        --only-languages JA)
+    set(I18N_GEN_COMMENT "Generating I18n strings (EN + JA)")
+elseif(SIMULATOR_KOREAN_VERSION)
+    set(I18N_GEN_ARGS
+        ${REPO_ROOT}/lib/I18n/translations ${REPO_ROOT}/lib/I18n
+        --only-languages KO)
+    set(I18N_GEN_COMMENT "Generating I18n strings (EN + KO)")
 else()
     # Default simulator keeps the full language table (WASM language picker) and
     # Traditional chinese.yaml as ZH_TW — same as a TC-capable Chinese demo.
@@ -287,6 +316,12 @@ add_custom_command(
     COMMENT ${I18N_GEN_COMMENT}
 )
 add_custom_target(i18n_generated DEPENDS ${I18N_GENERATED})
+
+# WeRead is Chinese-SKU only (mirrors PlatformIO build_src_filter). Exclude
+# before add_executable so JA/KO builds don't reference gated ActivityManager APIs.
+if(SIMULATOR_JAPANESE_VERSION OR SIMULATOR_KOREAN_VERSION)
+    list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "activities/apps/weread/")
+endif()
 
 # Entry point + windowing. Native drives an SDL window/event loop; WASM has no window
 # (rendering + input are owned by the browser), so it uses a minimal entry point.
@@ -364,16 +399,14 @@ target_include_directories(crosspoint_simulator PRIVATE
 )
 
 # Rename Arduino entry points so the simulator entry can drive them explicitly.
-# ENABLE_CHINESE_VERSION is on for both native and WASM: the browser demo ships the
-# Chinese build (CJK fonts + WeRead/农历/CJK typography), with the startup
-# language following navigator.language (see simulator_main_wasm.cpp --lang).
+# Default SKU is Traditional Chinese (CJK fonts + WeRead/农历/CJK typography).
+# SIMULATOR_JAPANESE_VERSION / SIMULATOR_KOREAN_VERSION switch to those firmwares.
 # SIMULATOR_CHINESE_UI_SIMPLIFIED mirrors PlatformIO's CHINESE_UI_SIMPLIFIED (SC SKU).
 target_compile_definitions(crosspoint_simulator PRIVATE
     CROSSPOINT_EMULATED=1
     EINK_DISPLAY_SINGLE_BUFFER_MODE=1
     LOG_LEVEL=2
     ENABLE_SERIAL_LOG=1
-    ENABLE_CHINESE_VERSION=1
     XML_GE=0
     XML_CONTEXT_BYTES=1024
     USE_UTF8_LONG_NAMES=1
@@ -381,8 +414,21 @@ target_compile_definitions(crosspoint_simulator PRIVATE
     "setup=firmware_setup"
     "loop=firmware_loop"
 )
-if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
-    target_compile_definitions(crosspoint_simulator PRIVATE CHINESE_UI_SIMPLIFIED=1)
+if(SIMULATOR_JAPANESE_VERSION)
+    target_compile_definitions(crosspoint_simulator PRIVATE
+        ENABLE_JAPANESE_VERSION=1
+        ENABLE_CJK_VERSION=1)
+elseif(SIMULATOR_KOREAN_VERSION)
+    target_compile_definitions(crosspoint_simulator PRIVATE
+        ENABLE_KOREAN_VERSION=1
+        ENABLE_CJK_VERSION=1)
+else()
+    target_compile_definitions(crosspoint_simulator PRIVATE
+        ENABLE_CHINESE_VERSION=1
+        ENABLE_CJK_VERSION=1)
+    if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
+        target_compile_definitions(crosspoint_simulator PRIVATE CHINESE_UI_SIMPLIFIED=1)
+    endif()
 endif()
 
 target_compile_options(crosspoint_simulator PRIVATE -fno-exceptions -fno-rtti

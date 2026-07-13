@@ -1,6 +1,6 @@
 # ryOS CrossMux
 
-[English](./README.en.md) | **中文**
+[English](./README.en.md) | **中文** | [日本語](./README.ja.md) | [한국어](./README.ko.md)
 
 **ryOS CrossMux** 是面向 Xteink X3 / X4 的閱讀優先固件。它源自
 [CrossMux](https://github.com/0x1abin/crossmux)，並建立在

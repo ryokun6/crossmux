@@ -60,7 +60,7 @@ jobs:
           key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ runner.os }}-
 
-      - name: Build gh_release + gh_release_tc + gh_release_sc
+      - name: Build gh_release + TC/SC/JA/KO
         run: |
           set -euo pipefail
-          pio run -e gh_release -e gh_release_tc -e gh_release_sc
+          pio run -e gh_release -e gh_release_tc -e gh_release_sc -e gh_release_ja -e gh_release_ko

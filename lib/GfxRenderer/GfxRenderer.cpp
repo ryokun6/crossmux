@@ -1675,7 +1675,7 @@ int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style styl
 
 int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const uint32_t rightCp,
                                  const EpdFontFamily::Style style) const {
-#ifdef ENABLE_CHINESE_VERSION
+#ifdef ENABLE_CJK_VERSION
   // CJK aware inter-word gap. Parser splits CJK into per-character words, so this
   // function is hit for every CJK↔CJK and CJK↔Latin boundary.
   //   • CJK↔CJK → 0 px natural gap (justify will distribute spareSpace into these slots).

@@ -1187,7 +1187,7 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
       }
     }
 
-#ifdef ENABLE_CHINESE_VERSION
+#ifdef ENABLE_CJK_VERSION
     // CJK per-character tokenization: flush each CJK ideograph / kana / hangul /
     // fullwidth punctuation as its own word. Without this, an entire CJK paragraph
     // accumulates into partWordBuffer until MAX_WORD_SIZE forces a hard truncation;

@@ -21,6 +21,22 @@
 #include <builtinFonts/notosans_cjk_16.h>
 #include <builtinFonts/notosans_cjk_18.h>
 #endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+// Japanese build: GenSen Rounded 2 JP Regular (Japanese orthography; no Han remap).
+#include <builtinFonts/notosans_ja_8.h>
+#include <builtinFonts/notosans_ja_10.h>
+#include <builtinFonts/notosans_ja_12.h>
+#include <builtinFonts/notosans_ja_14.h>
+#include <builtinFonts/notosans_ja_16.h>
+#include <builtinFonts/notosans_ja_18.h>
+#elif defined(ENABLE_KOREAN_VERSION)
+// Korean build: Resource Han Rounded KR Regular (no Han remap).
+#include <builtinFonts/notosans_ko_8.h>
+#include <builtinFonts/notosans_ko_10.h>
+#include <builtinFonts/notosans_ko_12.h>
+#include <builtinFonts/notosans_ko_14.h>
+#include <builtinFonts/notosans_ko_16.h>
+#include <builtinFonts/notosans_ko_18.h>
 #else
 #include <builtinFonts/notoserif_12_bold.h>
 #include <builtinFonts/notoserif_12_bolditalic.h>

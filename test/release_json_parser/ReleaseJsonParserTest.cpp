@@ -224,6 +224,44 @@ TEST(ReleaseJsonParser, SelectsRequestedSimplifiedChineseFirmwareAsset) {
   EXPECT_EQ(p.getFirmwareSize(), 6100000u);
 }
 
+TEST(ReleaseJsonParser, SelectsRequestedJapaneseFirmwareAsset) {
+  const char* json = R"({
+      "tag_name": "1.4.7",
+      "assets": [
+        {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
+        {"name": "firmware-ja.bin", "browser_download_url": "https://example.com/firmware-ja.bin", "size": 5800000},
+        {"name": "firmware-ko.bin", "browser_download_url": "https://example.com/firmware-ko.bin", "size": 5900000}
+      ]
+    })";
+
+  ReleaseJsonParser p("firmware-ja.bin");
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundTag());
+  EXPECT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-ja.bin");
+  EXPECT_EQ(p.getFirmwareSize(), 5800000u);
+}
+
+TEST(ReleaseJsonParser, SelectsRequestedKoreanFirmwareAsset) {
+  const char* json = R"({
+      "tag_name": "1.4.7",
+      "assets": [
+        {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
+        {"name": "firmware-ja.bin", "browser_download_url": "https://example.com/firmware-ja.bin", "size": 5800000},
+        {"name": "firmware-ko.bin", "browser_download_url": "https://example.com/firmware-ko.bin", "size": 5900000}
+      ]
+    })";
+
+  ReleaseJsonParser p("firmware-ko.bin");
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundTag());
+  EXPECT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-ko.bin");
+  EXPECT_EQ(p.getFirmwareSize(), 5900000u);
+}
+
 TEST(ReleaseJsonParser, FieldOrderUrlBeforeName) {
   const char* json = R"({
       "tag_name": "v3.0",
