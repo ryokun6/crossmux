@@ -1,6 +1,7 @@
 #include "StandbyActivity.h"
 
 #include <Arduino.h>
+#include <HalClock.h>
 #include <HalGPIO.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -21,13 +22,13 @@
 #include "AirPageFace.h"
 #include "SloppyClockFace.h"
 #include "StandbyTime.h"
+#include "CrossPointSettings.h"
 #include "WifiCredentialStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
 namespace {
 
-constexpr long kTzOffsetSec = 8 * 3600;      // UTC+8 (Beijing)
 constexpr uint32_t kWifiTimeoutMs = 15000u;  // Same as WifiSelectionActivity
 constexpr uint32_t kNtpTimeoutMs = 12000u;   // SNTP poll budget (multi-server DNS + handshake)
 
@@ -263,9 +264,10 @@ void StandbyActivity::beginNtpSync() {
   // China-region servers: Aliyun is the most reliable; Tencent and the NTP
   // Pool CN node act as fallbacks. pool.ntp.org is often blocked or slow
   // inside the mainland.
-  configTime(kTzOffsetSec, 0, "ntp.aliyun.com", "ntp.tencent.com", "cn.pool.ntp.org");
+  configTime(HalClock::biasedOffsetToSeconds(SETTINGS.clockUtcOffsetQ), 0, "ntp.aliyun.com", "ntp.tencent.com",
+             "cn.pool.ntp.org");
 #else
-  configTime(kTzOffsetSec, 0, "pool.ntp.org");
+  configTime(HalClock::biasedOffsetToSeconds(SETTINGS.clockUtcOffsetQ), 0, "pool.ntp.org");
 #endif
   syncState_ = SyncState::NtpSyncing;
   syncStartMs_ = millis();

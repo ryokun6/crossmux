@@ -96,7 +96,7 @@ To clear a wrong cached detection, **erase NVS** (full chip erase, or wipe the
 | Geometry switch | default 800×480 | `setDisplayX3()` before `begin()` — [HalDisplay.cpp:15](../../lib/hal/HalDisplay.cpp) |
 | Battery | ADC on GPIO0 | BQ27220 fuel gauge (I²C) — [HalPowerManager.cpp](../../lib/hal/HalPowerManager.cpp) |
 | USB / charge detect | GPIO20 reads HIGH | sign of BQ27220 current — [HalGPIO.cpp:272-287](../../lib/hal/HalGPIO.cpp) |
-| RTC clock | none (internal, drifts in deep sleep) | DS3231, X3-only — [HalClock.cpp:21](../../lib/hal/HalClock.cpp) |
+| RTC clock | session-only (NTP; lost at power-off) | DS3231 persists UTC across sleep — [HalClock.cpp](../../lib/hal/HalClock.cpp) |
 | Tilt page-turn | none | QMI8658 gyro, X3-only — [HalTiltSensor.cpp:55](../../lib/hal/HalTiltSensor.cpp) |
 | Theme button layout | stacked on the right | up-left / down-right — [BaseTheme.cpp:194](../../src/components/themes/BaseTheme.cpp), [LyraTheme.cpp:399](../../src/components/themes/lyra/LyraTheme.cpp) |
 | Grayscale / refresh | SSD1677 fast LUT | UC81xx OEM pipeline + "AA-pre-BW" preconditioning — [EInkDisplay.h:56-94](../../open-x4-sdk/libs/display/EInkDisplay/include/EInkDisplay.h) |
@@ -147,8 +147,10 @@ X3 to the simulator is possible but out of scope here.)
   scores.
 - **Web API** — `device` field is `"X3"` / `"X4"`
   ([CrossPointWebServer.cpp:382](../../src/network/CrossPointWebServer.cpp)).
-- **UI** — X3-only menu items appear only on X3: status-bar clock (DS3231) and
-  Tilt Page Turn (QMI8658).
+- **UI** — X3-only menu items: manual date/time editing (DS3231 persistence) and
+  Tilt Page Turn (QMI8658). Both devices share **Settings > System > Date & Time**
+  for timezone, 12/24-hour format, and NTP sync; X4 time is session-only (lost at
+  power-off) while X3 retains it in the DS3231 across sleep cycles.
 
 ## Adding a future device variant
 

@@ -258,20 +258,17 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         SettingInfo::Enum(StrId::STR_XTC_STATUS_BAR, &CrossPointSettings::xtcStatusBarMode,
                           {StrId::STR_HIDE, StrId::STR_BOTTOM, StrId::STR_TOP}, "xtcStatusBarMode",
                           StrId::STR_CUSTOMISE_STATUS_BAR),
-        // Clock entries (web settings only; device UI uses ClockOffsetActivity for the offset).
-        // Range 0..104 = quarter-hour steps from UTC-12:00 to UTC+14:00, biased by 48.
         SettingInfo::Enum(StrId::STR_CLOCK, &CrossPointSettings::statusBarClock,
                           {StrId::STR_HIDE, StrId::STR_DIR_LEFT, StrId::STR_DIR_RIGHT}, "statusBarClock",
                           StrId::STR_CUSTOMISE_STATUS_BAR),
+        // Clock timezone/format/sync (device UI uses DateTimeSettingsActivity for offset).
         SettingInfo::Value(StrId::STR_CLOCK_UTC_OFFSET, &CrossPointSettings::clockUtcOffsetQ, {0, 104, 1},
-                           "clockUtcOffsetQ", StrId::STR_CUSTOMISE_STATUS_BAR),
+                           "clockUtcOffsetQ", StrId::STR_CAT_SYSTEM),
         SettingInfo::Enum(StrId::STR_CLOCK_FORMAT, &CrossPointSettings::clockFormat,
                           {StrId::STR_CLOCK_FORMAT_24H, StrId::STR_CLOCK_FORMAT_12H}, "clockFormat",
-                          StrId::STR_CUSTOMISE_STATUS_BAR),
-        // Persistence flag for NTP debounce. Resetting from the web UI forces a re-sync
-        // on next WiFi connect, which is useful when crossing time zones.
+                          StrId::STR_CAT_SYSTEM),
         SettingInfo::Toggle(StrId::STR_CLOCK_SYNCED, &CrossPointSettings::clockHasBeenSynced, "clockHasBeenSynced",
-                            StrId::STR_CUSTOMISE_STATUS_BAR),
+                            StrId::STR_CAT_SYSTEM),
     };
     // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
     if (halTiltSensor.isAvailable()) {

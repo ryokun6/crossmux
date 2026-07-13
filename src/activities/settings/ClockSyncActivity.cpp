@@ -71,13 +71,15 @@ void ClockSyncActivity::runSync() {
     return;
   }
 
+  halClock.applySavedTimezone(SETTINGS.clockUtcOffsetQ);
+
   // Mark as synced so the auto-sync hook stops firing on future WiFi connects.
   SETTINGS.clockHasBeenSynced = 1;
   SETTINGS.saveToFile();
 
   // Read the freshly synced time back for the user-facing confirmation.
-  char buf[9];
-  if (halClock.formatTime(buf, sizeof(buf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
+  char buf[20];
+  if (halClock.formatDateTime(buf, sizeof(buf), SETTINGS.clockUtcOffsetQ)) {
     snprintf(syncedTime, sizeof(syncedTime), "%s", buf);
   }
   state = SUCCESS;

@@ -831,8 +831,8 @@ void BaseTheme::drawStatusBar(GfxRenderer& renderer, const float bookProgress, c
     leftClusterWidth += batteryWidth;
   }
 
-  // Draw Clock (X3 only — DS3231 RTC)
-  if (SETTINGS.statusBarClock && halClock.isAvailable()) {
+  // Draw Clock when enabled and wall-clock time is available (DS3231 on X3 or NTP on X4).
+  if (SETTINGS.statusBarClock && halClock.hasValidTime()) {
     char timeBuf[9];
     if (halClock.formatTime(timeBuf, sizeof(timeBuf), SETTINGS.clockUtcOffsetQ, SETTINGS.clockFormat == 1)) {
       int clockTextWidth = renderer.getTextWidth(SMALL_FONT_ID, timeBuf);

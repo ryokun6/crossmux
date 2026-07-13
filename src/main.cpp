@@ -457,6 +457,13 @@ void setup() {
   HalSystem::checkPanic();
 
   SETTINGS.loadFromFile();
+
+  if (SETTINGS.clockUtcOffsetQ > 104) {
+    SETTINGS.clockUtcOffsetQ = 48;
+  }
+  halClock.applySavedTimezone(SETTINGS.clockUtcOffsetQ);
+  halClock.hydrateSystemFromRtc();
+
   APP_STATE.loadFromFile();
   RECENT_BOOKS.loadFromFile();
   READING_STATS.loadFromFile();

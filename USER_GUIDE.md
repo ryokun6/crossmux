@@ -281,6 +281,8 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 #### 3.6.4 System
 
+- **Date & Time**: Set a fixed UTC offset (15-minute steps), choose 12- or 24-hour format, and run **Sync now** over Wi-Fi. On X3 you can also **Set date and time** manually; changes are stored in the DS3231 and survive sleep. On X4, time is set only for the current session (NTP or manual sync is not retained after power-off).
+
 - **Time to Sleep**: Set the duration of inactivity before the device automatically goes to sleep; options are 1, 3, 5, 10 (default), 15 or 30 minutes.
 
 - **Wi-Fi Networks**: Connect to Wi-Fi networks for file transfers and online library services.
