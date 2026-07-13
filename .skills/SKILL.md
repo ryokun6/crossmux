@@ -94,3 +94,33 @@ python3 scripts/debugging_monitor.py # Enhanced serial monitor
 ---
 
 Philosophy: We are building a dedicated e-reader, not a Swiss Army knife. If a feature adds RAM pressure without significantly improving the reading experience, it is Out of Scope.
+
+## Cursor Cloud specific instructions
+
+This is embedded ESP32-C3 firmware: the cloud VM has **no device**, so you can
+build/lint/static-analyze the firmware and run the **native host** unit tests,
+but you cannot flash or serial-monitor (`pio run -t upload`, `pio device
+monitor`, `scripts/debugging_monitor.py` need hardware). Runtime behavior (e-ink,
+input, heap) can only be verified on a physical X3/X4.
+
+The startup update script already refreshes the moving parts (checks out the
+`open-x4-sdk` submodule, installs PlatformIO Core, installs `requirements.txt`).
+System toolchain deps are baked into the VM image, not the update script:
+`cmake`, `ninja-build`, `python3-venv` (PlatformIO's internal `penv` fails to
+build without it), the `gcc-14`/`libstdc++-14-dev` host compiler (the native
+gtest suite links `-lstdc++`), and `clang-format-21`.
+
+The four CI-equivalent checks (see `.github/workflows/ci.yml`) all pass headless:
+
+- Build firmware: `pio run` → `.pio/build/default/firmware.bin`. Standard build
+  envs and flags are in `docs/engineering/build-system.md`.
+- Static analysis: `pio check --fail-on-defect low --fail-on-defect medium --fail-on-defect high`.
+- Native unit tests: `cmake -S test -B build/test -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build/test && ctest --test-dir build/test --output-on-failure -j`
+  (or `pio run -t unit-tests`).
+- Formatting: `bin/clang-format-fix` **requires clang-format 21 first on PATH** —
+  run `PATH="/usr/lib/llvm-21/bin:$PATH" ./bin/clang-format-fix`; the bare
+  `clang-format` on the image is not v21.
+
+Non-obvious: PlatformIO installs to `~/.local/bin` (already on the default login
+PATH). The first `pio run` downloads the ESP32 toolchain + libraries into
+`~/.platformio` (a few minutes); subsequent builds are fast.
