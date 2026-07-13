@@ -10,8 +10,9 @@
 #                                                (cn_i18n_chars.txt)
 #
 # Source face: GenSen Rounded 2 TW Regular (Traditional). Charset lists are
-# converted Simplified→Traditional (OpenCC s2t) and deduped so bitmaps store
-# one glyph per character. Runtime remaps SC codepoints via ScToTcRemap.h.
+# converted Simplified→Traditional (OpenCC s2tw, Taiwan forms) and deduped so
+# bitmaps store one glyph per character. Runtime remaps SC codepoints via
+# ScToTcRemap.h (also s2tw).
 #
 # Every tier also ships ASCII + Latin-1 + CJK punctuation + full-width forms +
 # Vertical Forms (U+FE10–FE19) and CJK Compatibility Forms used for tategaki
@@ -156,19 +157,19 @@ if [ ! -f "$LARGE_CHARSET_FILE_SC" ]; then
   exit 1
 fi
 
-# Convert the 7000 通用汉字 pool to Traditional (deduped) for the 14pt subset.
-echo "Converting $LARGE_CHARSET_FILE_SC → Traditional..."
+# Convert the 7000 通用汉字 pool to Traditional Taiwan forms (deduped) for 14pt.
+echo "Converting $LARGE_CHARSET_FILE_SC → Traditional (s2tw)..."
 "$PYTHON" - <<'PY' "$LARGE_CHARSET_FILE_SC" "$LARGE_CHARSET_FILE"
 import sys
 from pathlib import Path
 from opencc import OpenCC
 
 src, dst = Path(sys.argv[1]), Path(sys.argv[2])
-cc = OpenCC("s2t")
+cc = OpenCC("s2tw")
 raw = [c for c in src.read_text(encoding="utf-8") if not c.isspace()]
 out = sorted({cc.convert(c) if len(cc.convert(c)) == 1 else c for c in raw})
 dst.write_text("".join(out), encoding="utf-8")
-print(f"  {len(raw)} SC → {len(out)} TC → {dst}", file=sys.stderr)
+print(f"  {len(raw)} SC → {len(out)} TC (s2tw) → {dst}", file=sys.stderr)
 PY
 
 # Step 1a: subset the OTF down to cn_common_chars (TC) + ASCII + Latin-1 +

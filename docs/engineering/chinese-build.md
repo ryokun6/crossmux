@@ -161,11 +161,12 @@ Override with `CN_BASELINE_ADJUST[_SIZE]` / `CN_LINE_HEIGHT_ADJUST[_SIZE]`.
 
 ### Traditional glyphs + Simplified remap
 
-Bitmaps store **Traditional** codepoints only (OpenCC `s2t` on the same 3500 /
-7000 / i18n lists, deduped). UI strings in `chinese.yaml` are Traditional
-(language display name `中文`); `EpdFont::getGlyph` still remaps via committed
-`lib/EpdFont/ScToTcRemap.h` (~10 KB) so Simplified EPUB/codepoint input does
-not need duplicate bitmaps.
+Bitmaps store **Taiwan Traditional** codepoints (OpenCC `s2tw` on the SC pool,
+plus `--require-from` chars from `chinese.yaml` preserved verbatim so UI forms
+like 啟/為/裡 are not rewritten to HK variants). UI strings in `chinese.yaml`
+are Traditional (`_language_name: 繁體中文`); `EpdFont::getGlyph` remaps via
+committed `lib/EpdFont/ScToTcRemap.h` (~10 KB, also `s2tw`) so Simplified
+EPUB/codepoint input does not need duplicate bitmaps.
 
 Anti-pattern (don't do this): hiding chars in a `#` YAML comment inside
 `chinese.yaml` to abuse the regex scanner. It works (build_cn_charset.py

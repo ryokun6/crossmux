@@ -29,10 +29,11 @@ common modern chars like 浏 (U+6D4F, used in "浏览器") that would otherwise
 be silently dropped by the renderer (see EpdFont::getTextBounds when
 getGlyph returns nullptr).
 
-With --traditional (GenSen Rounded TW CN build), kept / require-from chars
-are converted Simplified→Traditional via OpenCC s2t and deduped before
-writing. Bitmaps store Traditional glyphs only; runtime remaps Simplified
-codepoints through ScToTcRemap.h.
+With --traditional (GenSen Rounded TW CN build), kept chars from the SC
+pool are converted Simplified→Traditional via OpenCC **s2tw** (Taiwan
+forms) and deduped. Characters force-included from --require-from (e.g.
+Taiwan `chinese.yaml`) are preserved verbatim so UI spellings like 啟/為/裡
+are not rewritten to HK variants (啓/爲/裏).
 
 Requires:  pip install wordfreq jieba OpenCC
 """
@@ -84,22 +85,34 @@ def load_required(paths: list[Path]) -> set[str]:
     return required
 
 
-def to_traditional(chars: list[str] | set[str]) -> list[str]:
-    """Map Simplified→Traditional (OpenCC s2t), drop multi-char expansions, dedupe."""
+def to_traditional(
+    chars: list[str] | set[str],
+    *,
+    preserve: set[str] | None = None,
+) -> list[str]:
+    """Map Simplified→Traditional (OpenCC s2tw), drop multi-char expansions, dedupe.
+
+    *preserve* chars (typically --require-from Taiwan UI ideographs) are kept
+    as-is and never rewritten by OpenCC, so 啟/峰/游 are not turned into
+    啓/峯/遊 when those forms appear in chinese.yaml.
+    """
     try:
         from opencc import OpenCC
     except ImportError:
         print("error: OpenCC not installed. Run: pip install OpenCC", file=sys.stderr)
         sys.exit(1)
 
-    cc = OpenCC("s2t")
-    out: set[str] = set()
+    preserve = preserve or set()
+    cc = OpenCC("s2tw")
+    out: set[str] = set(preserve)
     for ch in chars:
+        if ch in preserve:
+            continue
         tc = cc.convert(ch)
         if len(tc) == 1:
             out.add(tc)
         else:
-            # Should not happen for single ideographs with s2t; keep original.
+            # Should not happen for single ideographs with s2tw; keep original.
             out.add(ch)
     return sorted(out)
 
@@ -126,8 +139,8 @@ def main() -> None:
     parser.add_argument(
         "--traditional",
         action="store_true",
-        help="Convert kept / require-from chars to Traditional (OpenCC s2t) "
-        "and dedupe before writing. Used by the GenSen Rounded TW CN font build.",
+        help="Convert SC pool chars to Traditional (OpenCC s2tw) and dedupe. "
+        "--require-from chars are preserved verbatim (Taiwan UI spellings).",
     )
     parser.add_argument(
         "--output",
@@ -197,12 +210,15 @@ def main() -> None:
     if args.traditional:
         sc_kept_n = len(kept_chars)
         sc_i18n_n = len(i18n_chars)
-        kept_chars = to_traditional(kept_chars)
+        # Preserve require-from glyphs (chinese.yaml is already Taiwan Traditional)
+        # so OpenCC cannot rewrite 啟→啓, 峰→峯, 游→遊, etc.
+        kept_chars = to_traditional(kept_chars, preserve=required)
         if i18n_chars:
-            i18n_chars = to_traditional(i18n_chars)
+            i18n_chars = to_traditional(i18n_chars, preserve=required)
         print(
             f"[traditional] kept {sc_kept_n} SC → {len(kept_chars)} TC; "
-            f"i18n {sc_i18n_n} SC → {len(i18n_chars)} TC",
+            f"i18n {sc_i18n_n} SC → {len(i18n_chars)} TC "
+            f"(s2tw + preserve {len(required)} require-from)",
             file=sys.stderr,
         )
 
