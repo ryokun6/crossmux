@@ -32,17 +32,19 @@ pyftsubset kana Unicode ranges). Ideographs are **not** remapped SC↔TC.
 
 | Tier | Sizes | Pool | Source |
 |---|---|---|---|
-| Small / Large | 8/10/12/14 | **All modern** Hangul (11 172) ∪ 기초 한자 1800 ∪ modern jamo ∪ i18n | Hangul Syllables block + MOE 한문 교육용 기초 한자 |
+| UI | 8/10 | modern jamo ∪ every glyph in `korean.yaml` | UI force-include via `--require-from` |
+| Reading | 12/14 | **All modern** Hangul (11 172) ∪ 기초 한자 1800 ∪ modern jamo ∪ i18n | Hangul Syllables block + MOE 한문 교육용 기초 한자 |
 | I18n | 16/18 | modern jamo ∪ every glyph in `korean.yaml` | UI force-include via `--require-from` |
 
-14pt additionally embeds extended EPUB symbol Unicode ranges (same as Chinese).
-Obsolete / ancient Hangul jamo (historical extensions beyond modern
-choseong/jungseong/jongseong) are **not** embedded. Hangul syllables are listed
-in `chars_ko_hangul_all.txt` and fed via `--text-file`. Hanja uses the official
-educational 1800-character list — a deliberately **small** ideograph pool (no
-SC/TC conversion). `build-ko-builtin-fonts.sh` always passes
-`korean.yaml` to `--require-from` so every UI string glyph is present at both
-the common tiers and the 16/18pt i18n-only tier.
+8/10pt stay i18n-only so the dual-OTA `0x640000` app slot still fits; reader
+defaults (12/14) carry the full Hangul pool. 14pt additionally embeds extended
+EPUB symbol Unicode ranges (same as Chinese). Obsolete / ancient Hangul jamo
+(historical extensions beyond modern choseong/jungseong/jongseong) are **not**
+embedded. Hangul syllables are listed in `chars_ko_hangul_all.txt` and fed via
+`--text-file`. Hanja uses the official educational 1800-character list — a
+deliberately **small** ideograph pool (no SC/TC conversion).
+`build-ko-builtin-fonts.sh` always passes `korean.yaml` to `--require-from` so
+every UI string glyph is present at **every** point size (8–18).
 
 ## Regenerating fonts
 
@@ -109,8 +111,9 @@ Use **separate build directories** per SKU — `gen_i18n.py` writes shared
 ## Known limitations
 
 - No bold/italic CJK bitmaps (single Regular weight), same as Chinese.
-- 16/18pt reader sizes are i18n-only by design — switch to MEDIUM (14pt) for
-  full Joyo (JA) or full modern Hangul + Hanja 1800 (KO) EPUB coverage.
+- JA 16/18pt and KO 8/10/16/18pt are i18n-only by design — use MEDIUM (14pt)
+  (or KO SMALL 12pt) for full Joyo (JA) or full modern Hangul + Hanja 1800 (KO)
+  EPUB coverage.
 - JA/KO do **not** convert Chinese characters (no `ScToTcRemap` /
   `TcToScRemap`); mixed SC/TC EPUB text may show □ for the unmapped form if
   that codepoint was not in the Japanese/Korean subset.

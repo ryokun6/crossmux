@@ -3,10 +3,13 @@
 # Generates per-size Korean font headers for ENABLE_KOREAN_VERSION.
 # Coverage tiers (no OpenCC / no Han conversion):
 #
-#   8/10/12pt : ALL Hangul (11 172) ∪ 기초 한자 1800 ∪ jamo ∪ i18n
+#   8/10pt    : i18n + modern jamo only (ko_i18n_chars.txt) — UI chrome;
+#               every korean.yaml glyph is force-included. Full Hangul at
+#               these sizes overflows the 0x640000 OTA slot.
+#   12pt      : ALL modern Hangul (11 172) ∪ 기초 한자 1800 ∪ jamo ∪ i18n
 #               (ko_common_chars.txt)
 #   14pt      : same pool + extended EPUB symbols
-#   16/18pt   : i18n + jamo only (ko_i18n_chars.txt)
+#   16/18pt   : i18n + modern jamo only (ko_i18n_chars.txt)
 #
 # Source face: Resource Han Rounded KR Regular
 #   https://github.com/CyanoHao/Resource-Han-Rounded
@@ -14,7 +17,8 @@
 #
 # Hangul syllables are listed explicitly in chars_ko_hangul_all.txt (fed via
 # --text-file). Do not add a bare U+AC00–D7A3 range to --unicodes for the
-# i18n-only OTF — that would inflate 16/18pt.
+# i18n-only OTF — that would inflate 8/10/16/18pt. Do not list full
+# U+1100–11FF in --unicodes (pulls obsolete jamo).
 #
 # Set PYTHON=/path/to/venv/bin/python to override.
 
@@ -33,9 +37,9 @@ LARGE_OTF="$TMP_DIR/ResourceHanRoundedKR-R.kolarge.otf"
 I18N_OTF="$TMP_DIR/ResourceHanRoundedKR-R.i18nonly.otf"
 I18N_CHARSET_FILE="ko_i18n_chars.txt"
 
-KO_FONT_SIZES_SMALL=(8 10 12)
+KO_FONT_SIZES_SMALL=(12)
 KO_FONT_SIZES_LARGE=(14)
-KO_FONT_SIZES_I18N=(16 18)
+KO_FONT_SIZES_I18N=(8 10 16 18)
 
 # Resource Han Rounded is Source-Han-derived like GenSen; reuse GenSen-tuned metrics.
 baseline_adjust_for() {
