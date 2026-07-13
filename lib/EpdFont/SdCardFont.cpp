@@ -734,6 +734,10 @@ int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOn
   while (*p && cpCount < MAX_PAGE_GLYPHS) {
     uint32_t cp = utf8NextCodepoint(&p);
     if (cp == 0) break;
+    // Mini intervals must use the same resolved key that EpdFont uses at render
+    // time. Otherwise Simplified EPUB text prewarms Simplified keys, then
+    // getGlyphNoReplacement() remaps to Traditional and misses every resident glyph.
+    cp = resolveCnCodepointForLookup(cp);
 
     bool found = false;
     for (uint32_t i = 0; i < cpCount; i++) {

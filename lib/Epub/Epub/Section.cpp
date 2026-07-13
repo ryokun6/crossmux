@@ -20,9 +20,9 @@ namespace {
 // number (Latin: 24/26/30, Chinese: 27/29/31, upstream single: 26/27) so a
 // firmware flavor swap can never read the other flavor's stale cache.
 #ifdef ENABLE_CHINESE_VERSION
-constexpr uint8_t SECTION_FILE_VERSION = 47;  // was 46; vertical block spacing now follows the horizontal column axis
+constexpr uint8_t SECTION_FILE_VERSION = 48;  // was 47; repeated vertical ellipses consume one cell per glyph
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 46;  // was 45; vertical block spacing now follows the horizontal column axis
+constexpr uint8_t SECTION_FILE_VERSION = 47;  // was 46; repeated vertical ellipses consume one cell per glyph
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +

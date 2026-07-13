@@ -21,6 +21,21 @@ void renderFilteredPageElements(const std::vector<std::shared_ptr<PageElement>>&
 }  // namespace
 
 void PageLine::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
+  if (block->getBlockStyle().isVerticalRtl) {
+    // A vertical column occupies one narrow logical-X band. During tiled AA,
+    // portrait rotation maps that band to one or two physical strips; skip the
+    // whole TextBlock before it scans every word for strips it cannot touch.
+    // Ascender padding conservatively covers rotated Latin, SUP/SUB shifts,
+    // italic overhang, and fake-bold offsets.
+    const int columnX = xPos + xOffset;
+    const int padding = renderer.getFontAscenderSize(fontId);
+    const int columnWidth = renderer.getLineHeight(fontId);
+    const int top = yPos + yOffset;
+    const int bottom = renderer.getScreenHeight() - 1;
+    if (!renderer.glyphIntersectsStrip(columnX - padding, top, columnX + columnWidth + padding, bottom)) {
+      return;
+    }
+  }
   block->render(renderer, fontId, xPos + xOffset, yPos + yOffset);
 }
 

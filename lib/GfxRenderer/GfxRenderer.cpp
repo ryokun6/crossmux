@@ -1796,6 +1796,11 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
     return;
   }
 
+  if (fontCacheManager_ && fontCacheManager_->isScanning()) {
+    fontCacheManager_->recordText(text, fontId, style);
+    return;
+  }
+
   const auto fontIt = fontMap.find(fontId);
   if (fontIt == fontMap.end()) {
     LOG_ERR("GFX", "Font %d not found", fontId);
@@ -1854,6 +1859,11 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
 void GfxRenderer::drawTextRotated90CCW(const int fontId, const int x, const int y, const char* text, const bool black,
                                        const EpdFontFamily::Style style) const {
   if (text == nullptr || *text == '\0') {
+    return;
+  }
+
+  if (fontCacheManager_ && fontCacheManager_->isScanning()) {
+    fontCacheManager_->recordText(text, fontId, style);
     return;
   }
 

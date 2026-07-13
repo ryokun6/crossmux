@@ -69,20 +69,26 @@ bool containsAsciiAlphaNumeric(const std::string& word) {
   }
 }
 
-size_t verticalDashRunLength(const std::string& word) {
+size_t verticalStackedPunctuationRunLength(const std::string& word) {
   size_t count = 0;
+  uint32_t runCodepoint = 0;
   const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
   while (true) {
     const uint32_t cp = utf8NextCodepoint(&ptr);
     if (cp == 0) break;
-    if (cp != 0xFE31 && cp != 0xFE32) return 0;  // ︱ / ︲
+    if (cp != 0xFE19 && cp != 0xFE30 && cp != 0xFE31 && cp != 0xFE32) return 0;  // ︙ / ︰ / ︱ / ︲
+    if (runCodepoint == 0) {
+      runCodepoint = cp;
+    } else if (cp != runCodepoint) {
+      return 0;
+    }
     ++count;
   }
   return count >= 2 ? count : 0;
 }
 
 bool isSidewaysVerticalWord(const std::string& word) {
-  return verticalDashRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word);
+  return verticalStackedPunctuationRunLength(word) == 0 && !isVerticalUprightWord(word) && !isTateChuYokoWord(word);
 }
 
 bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_t index) {
@@ -103,9 +109,9 @@ bool isSidewaysVerticalWordAt(const std::vector<std::string>& words, const size_
 
 int verticalExtentForWord(const GfxRenderer& renderer, int fontId, const std::string& word, EpdFontFamily::Style style,
                           int cellStep, uint16_t wordWidth, const bool sideways) {
-  const size_t dashCount = verticalDashRunLength(word);
-  if (dashCount > 0) {
-    return static_cast<int>(dashCount) * cellStep;
+  const size_t stackedCount = verticalStackedPunctuationRunLength(word);
+  if (stackedCount > 0) {
+    return static_cast<int>(stackedCount) * cellStep;
   }
   if (!sideways) {
     return cellStep;
