@@ -3,10 +3,11 @@
 # Generates per-size Korean font headers for ENABLE_KOREAN_VERSION.
 # Coverage tiers (no OpenCC / no Han conversion):
 #
-#   8/10/12pt : i18n + modern jamo only (ko_i18n_chars.txt) — UI chrome +
-#               SMALL reader; every korean.yaml glyph is force-included.
-#               Full Hangul at 8/10/12 as well as 14 overflows the 0x640000
-#               OTA slot (~1.5 MiB over).
+#   8/10/12pt : KS X 1001 완성형 2350 common syllables ∪ i18n ∪ modern jamo
+#               (ko_ui_chars.txt) — UI chrome + SMALL reader. Covers arbitrary
+#               Korean book/file titles in lists at a fraction of the cost of
+#               full Hangul (full Hangul at 8/10/12 as well as 14 overflows
+#               the 0x640000 OTA slot by ~1.5 MiB).
 #   14pt      : ALL modern Hangul (11 172) ∪ 기초 한자 1800 ∪ jamo ∪ i18n
 #               + extended EPUB symbols (reader MEDIUM default)
 #   16/18pt   : i18n + modern jamo only (ko_i18n_chars.txt)
@@ -35,9 +36,12 @@ TMP_DIR="instanced_fonts/ResourceHanRoundedKR"
 LARGE_OTF="$TMP_DIR/ResourceHanRoundedKR-R.kolarge.otf"
 I18N_OTF="$TMP_DIR/ResourceHanRoundedKR-R.i18nonly.otf"
 I18N_CHARSET_FILE="ko_i18n_chars.txt"
+UI_OTF="$TMP_DIR/ResourceHanRoundedKR-R.koui.otf"
+UI_CHARSET_FILE="ko_ui_chars.txt"
 
 KO_FONT_SIZES_LARGE=(14)
-KO_FONT_SIZES_I18N=(8 10 12 16 18)
+KO_FONT_SIZES_UI=(8 10 12)
+KO_FONT_SIZES_I18N=(16 18)
 
 # Resource Han Rounded is Source-Han-derived like GenSen; reuse GenSen-tuned metrics.
 baseline_adjust_for() {
@@ -86,7 +90,7 @@ if [ -z "${SKIP_CHARSET:-}" ]; then
   "$PYTHON" build_ko_charset.py "${require_args[@]}"
 fi
 
-if [ ! -f "$CHARSET_FILE" ] || [ ! -f "$I18N_CHARSET_FILE" ]; then
+if [ ! -f "$CHARSET_FILE" ] || [ ! -f "$UI_CHARSET_FILE" ] || [ ! -f "$I18N_CHARSET_FILE" ]; then
   echo "Error: charset files missing; run without SKIP_CHARSET=1" >&2
   exit 1
 fi
@@ -113,6 +117,17 @@ echo "Subsetting $(basename "$SOURCE_OTF") -> i18n..."
 "$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
   --output-file="$I18N_OTF" \
   --text-file="$I18N_CHARSET_FILE" \
+  --unicodes="$KO_UNICODEM" \
+  --layout-features='*' \
+  --notdef-outline \
+  --recommended-glyphs \
+  --no-hinting \
+  --drop-tables+=DSIG,GSUB,GPOS
+
+echo "Subsetting $(basename "$SOURCE_OTF") -> ui (KS X 1001 + i18n)..."
+"$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
+  --output-file="$UI_OTF" \
+  --text-file="$UI_CHARSET_FILE" \
   --unicodes="$KO_UNICODEM" \
   --layout-features='*' \
   --notdef-outline \
@@ -169,6 +184,9 @@ LARGE_EXTRA_INTERVALS=(
 
 for size in "${KO_FONT_SIZES_LARGE[@]}"; do
   emit_size "$size" "$LARGE_OTF" "${LARGE_EXTRA_INTERVALS[@]}"
+done
+for size in "${KO_FONT_SIZES_UI[@]}"; do
+  emit_size "$size" "$UI_OTF"
 done
 for size in "${KO_FONT_SIZES_I18N[@]}"; do
   emit_size "$size" "$I18N_OTF"
