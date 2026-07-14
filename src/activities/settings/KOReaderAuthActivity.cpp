@@ -17,6 +17,7 @@ void KOReaderAuthActivity::onWifiSelectionComplete(const bool success) {
     {
       RenderLock lock(*this);
       state = FAILED;
+      credentialFailure = false;
       errorMessage = tr(STR_WIFI_CONN_FAILED);
     }
     requestUpdate();
@@ -43,13 +44,10 @@ void KOReaderAuthActivity::performAuthentication() {
       statusMessage = tr(STR_AUTH_SUCCESS);
     } else {
       state = FAILED;
-      // Credential problems point users at Settings > System; other failures keep
+      // Credential problems show the ryOS account blurb; other failures keep
       // the transport/server detail from errorString().
-      if (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS) {
-        errorMessage = tr(STR_LOGIN_SETTINGS_HINT);
-      } else {
-        errorMessage = KOReaderSyncClient::errorString(result);
-      }
+      credentialFailure = (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS);
+      errorMessage = credentialFailure ? tr(STR_LOGIN_SETTINGS_HINT) : KOReaderSyncClient::errorString(result);
     }
   }
   requestUpdate();
@@ -98,6 +96,9 @@ void KOReaderAuthActivity::render(RenderLock&&) {
   } else if (state == FAILED) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_AUTH_FAILED), true, EpdFontFamily::BOLD);
     renderer.drawCenteredText(UI_10_FONT_ID, top + height + 10, errorMessage.c_str());
+    if (credentialFailure) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top + 2 * (height + 10), tr(STR_RYOS_ACCOUNT_HINT));
+    }
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");

@@ -25,6 +25,7 @@ class KOReaderAuthActivity final : public Activity {
   State state = WIFI_SELECTION;
   std::string statusMessage;
   std::string errorMessage;
+  bool credentialFailure = false;
 
   void onWifiSelectionComplete(bool success);
   void performAuthentication();

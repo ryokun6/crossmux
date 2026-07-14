@@ -291,8 +291,8 @@ void KOReaderSyncActivity::render(RenderLock&&) {
   if (state == NO_CREDENTIALS) {
     UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_NO_CREDENTIALS_MSG), true,
                               EpdFontFamily::BOLD);
-    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_LOGIN_SETTINGS_HINT), true,
-                              EpdFontFamily::BOLD);
+    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_LOGIN_SETTINGS_HINT));
+    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 70, tr(STR_RYOS_ACCOUNT_HINT));
 
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
@@ -394,6 +394,7 @@ void KOReaderSyncActivity::render(RenderLock&&) {
     if (authFailure) {
       UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_AUTH_FAILED), true, EpdFontFamily::BOLD);
       UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_LOGIN_SETTINGS_HINT));
+      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 70, tr(STR_RYOS_ACCOUNT_HINT));
     } else {
       UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_SYNC_FAILED_MSG), true,
                                 EpdFontFamily::BOLD);

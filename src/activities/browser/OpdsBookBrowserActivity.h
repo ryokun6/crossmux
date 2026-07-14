@@ -36,7 +36,7 @@ class OpdsBookBrowserActivity final : public Activity {
   bool consumeBack = false;  // Added missing member
   int selectorIndex = 0;
   std::string errorMessage;
-  std::string errorHint;  // Optional second line (e.g. Settings > System login)
+  std::string errorHint;  // Non-empty for auth failures (shows account blurb + Settings)
   std::string statusMessage;
   size_t downloadProgress = 0;
   size_t downloadTotal = 0;
@@ -52,5 +52,7 @@ class OpdsBookBrowserActivity final : public Activity {
   void downloadBook(const OpdsEntry& book);
   void launchSearch();
   void performSearch(const std::string& query);
+  void openLoginSettings();
+  int findServerIndex() const;
   bool preventAutoSleep() override { return true; }
 };
