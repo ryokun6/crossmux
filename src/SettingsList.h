@@ -297,13 +297,12 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     // Only show tilt page turn setting when the QMI8658 IMU is present (X3)
     if (halTiltSensor.isAvailable()) {
       // Insert after the short power button setting (end of Controls section)
-      for (auto it = v.begin(); it != v.end(); ++it) {
-        if (it->nameId == StrId::STR_SHORT_PWR_BTN) {
-          v.insert(it + 1, SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
-                                             {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED},
-                                             "tiltPageTurn", StrId::STR_CAT_CONTROLS));
-          break;
-        }
+      auto it =
+          std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_SHORT_PWR_BTN; });
+      if (it != v.end()) {
+        v.insert(it + 1, SettingInfo::Enum(StrId::STR_TILT_PAGE_TURN, &CrossPointSettings::tiltPageTurn,
+                                           {StrId::STR_STATE_OFF, StrId::STR_NORMAL, StrId::STR_INVERTED},
+                                           "tiltPageTurn", StrId::STR_CAT_CONTROLS));
       }
     }
     return v;

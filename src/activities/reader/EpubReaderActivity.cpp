@@ -753,9 +753,9 @@ void EpubReaderActivity::launchKOReaderSync() {
     const std::string savedEpubPath = epub ? epub->getPath() : "";
     // Best-effort persist so goToReader after Back resumes at the same page.
     (void)saveProgress(currentSpineIndex, currentPage, totalPages);
-    activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
-        renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, SavedProgressPosition{},
-        std::string{}, std::nullopt));
+    activityManager.replaceActivity(
+        std::make_unique<KOReaderSyncActivity>(renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage,
+                                               totalPages, SavedProgressPosition{}, std::string{}, std::nullopt));
     return;
   }
 

@@ -395,7 +395,8 @@ void KOReaderSyncActivity::render(RenderLock&&) {
       UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_AUTH_FAILED), true, EpdFontFamily::BOLD);
       UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_LOGIN_SETTINGS_HINT));
     } else {
-      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_SYNC_FAILED_MSG), true, EpdFontFamily::BOLD);
+      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_SYNC_FAILED_MSG), true,
+                                EpdFontFamily::BOLD);
       UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, statusMessage.c_str());
     }
 
