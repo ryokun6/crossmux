@@ -15,7 +15,13 @@ WeReadSimilarActivity::WeReadSimilarActivity(GfxRenderer& renderer, MappedInputM
       bookId_(std::move(bookId)),
       bookTitle_(std::move(bookTitle)) {}
 
-void WeReadSimilarActivity::buildRequest(JsonDocument& body) { body["bookId"] = bookId_; }
+void WeReadSimilarActivity::buildRequest(JsonDocument& body) {
+  body["bookId"] = bookId_;
+  // skill v1.0.4: count and maxIdx are required — omitting them breaks the
+  // underlying /book/detailinfo listTypes length check.
+  body["count"] = 12;
+  body["maxIdx"] = 0;
+}
 
 void WeReadSimilarActivity::buildResponseFilter(JsonDocument& filter) {
   filter["booksimilar"]["books"][0]["idx"] = true;

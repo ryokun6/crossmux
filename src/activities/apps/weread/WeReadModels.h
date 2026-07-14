@@ -37,7 +37,7 @@ struct NotebookRow {
 struct BookmarkRow {
   std::string bookmarkId;
   std::string markText;
-  std::string range;  // "start-end" — split for weread:// deep link
+  std::string range;  // "start-end" position range (deepLink preferred when present)
   uint32_t chapterUid = 0;
   uint32_t createTime = 0;
 };
