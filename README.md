@@ -30,6 +30,8 @@ The layout engine then:
 - rotates Latin runs and keeps short numeric references readable
 - applies tate-chu-yoko to compact horizontal runs (isolated single letters/digits
   expand to fullwidth; two-character runs stay halfwidth)
+- applies 標點擠壓 / 約物詰め (punctuation compression) on TC/SC/JA when enabled
+  in Reader Settings (default on; Korean/Latin ignore)
 - moves paragraph spacing and block margins along the column axis
 - reverses page controls to follow the reading direction
 

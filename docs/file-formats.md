@@ -98,15 +98,15 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry independent version counters:
-> Traditional (**66**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**67**). The byte
+> Traditional (**70**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**71**). The byte
 > layout is identical to the Latin version below; only the word-stream contents
 > differ (per-character CJK tokenization), so caches are not reusable across
-> flavors. TC **66** keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
-> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC **67**
+> flavors. TC **70** keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
+> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC **71**
 > remaps those marks to FE1x presentation forms like Japanese (corner-biased /
 > GB/T 直排偏右). Brackets and parentheses remap to FE3x/FE4x on all CJK SKUs.
 >
-> Japanese builds use version **68**; Korean builds use version **69**.
+> Japanese builds use version **72**; Korean builds use version **69**.
 >
 > Latin builds use version **54**. Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
@@ -130,7 +130,14 @@ if (parsedSize != fileSize) {
 > variants. Upright punctuation grouped into one parser token (for example,
 > `……”`) also consumes one cell per codepoint.
 >
-> CJK versions 66/67/68/69 enforce 禁則 (kinsoku) for both horizontal lines and
+> CJK versions 70/71/72 add 標點擠壓 (punctuation compression) for TC/SC/JA:
+> adjacent half-em advance trims and line/column-edge trims (TC skips PauseStop
+> adjacent and line-end PauseStop per CLREQ 繁體不適用). Compression runs before
+> kinsoku repair; edge trims apply on the final run bounds. Gated by Reader
+> setting `punctCompressionEnabled` (default on). Korean and Latin SKUs ignore
+> compression. Helpers live in `lib/Epub/Epub/CjkPunctCompression.h`.
+>
+> CJK versions also enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
 > the run head or opening brackets at the run end. Japanese builds also treat
 > small kana and the prolonged sound mark as line-start prohibited. Layout helpers
@@ -145,7 +152,7 @@ Version 32 includes:
 
 - cache-busting fields for paragraph alignment, effective writing mode
   (vertical-rl only for `zh`/`ja`/`ko` EPUB metadata), hyphenation, embedded CSS,
-  image rendering mode, and Focus Reading
+  image rendering mode, Focus Reading, and punctuation compression (TC/SC/JA)
 - page offset LUT
 - anchor-to-page map for fragment and footnote navigation
 - paragraph and list-item LUTs used by KOReader sync page refinement

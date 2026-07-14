@@ -151,6 +151,10 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
                             StrId::STR_CAT_READER),
         SettingInfo::Toggle(StrId::STR_HYPHENATION, &CrossPointSettings::hyphenationEnabled, "hyphenationEnabled",
                             StrId::STR_CAT_READER),
+#if defined(ENABLE_CHINESE_VERSION) || defined(ENABLE_JAPANESE_VERSION)
+        SettingInfo::Toggle(StrId::STR_PUNCT_COMPRESSION, &CrossPointSettings::punctCompressionEnabled,
+                            "punctCompressionEnabled", StrId::STR_CAT_READER),
+#endif
         SettingInfo::Enum(
             StrId::STR_ORIENTATION, &CrossPointSettings::orientation,
             {StrId::STR_PORTRAIT, StrId::STR_LANDSCAPE_CW, StrId::STR_ORIENTATION_INVERTED, StrId::STR_LANDSCAPE_CCW},

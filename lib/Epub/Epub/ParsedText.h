@@ -22,6 +22,7 @@ class ParsedText {
   bool extraParagraphSpacing;
   bool hyphenationEnabled;
   bool focusReadingEnabled;
+  bool punctCompressionEnabled;
   bool isNaturalAlign;
   bool hasRtlWord;
   std::vector<std::string> reorderedWordsScratch;
@@ -50,11 +51,13 @@ class ParsedText {
 
  public:
   explicit ParsedText(const bool extraParagraphSpacing, const bool hyphenationEnabled = false,
-                      const bool focusReadingEnabled = false, const BlockStyle& blockStyle = BlockStyle())
+                      const bool focusReadingEnabled = false, const bool punctCompressionEnabled = true,
+                      const BlockStyle& blockStyle = BlockStyle())
       : blockStyle(blockStyle),
         extraParagraphSpacing(extraParagraphSpacing),
         hyphenationEnabled(hyphenationEnabled),
         focusReadingEnabled(focusReadingEnabled),
+        punctCompressionEnabled(punctCompressionEnabled),
         isNaturalAlign(false),
         hasRtlWord(false) {}
   ~ParsedText() = default;
@@ -72,9 +75,9 @@ class ParsedText {
   void layoutAndExtractVerticalColumns(const GfxRenderer& renderer, int fontId, uint16_t columnHeight,
                                        const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
                                        bool includeLastLine);
-  void extractVerticalColumn(size_t startIdx, size_t endIdx, const std::vector<uint16_t>& wordWidths,
-                             const GfxRenderer& renderer, int fontId, int cellStep,
+  void extractVerticalColumn(size_t startIdx, size_t endIdx, const std::vector<uint16_t>& verticalExtents,
+                             const GfxRenderer& renderer, int fontId,
                              const std::function<void(std::shared_ptr<TextBlock>)>& processLine);
   std::vector<size_t> computeVerticalColumnBreaks(const GfxRenderer& renderer, int fontId, int columnHeight,
-                                                  const std::vector<uint16_t>& wordWidths);
+                                                  const std::vector<uint16_t>& verticalExtents);
 };
