@@ -111,17 +111,22 @@ void WeReadSearchActivity::renderContent(Rect contentRect) {
       [this](int i) {
         const auto& r = rows_[i];
         std::string title;
-        if (r.soldout) title += "[下架] ";
+        if (r.soldout) title += tr(STR_WEREAD_SOLDOUT_PREFIX);
         title += r.title;
         return title;
       },
       [this](int i) {
         const auto& r = rows_[i];
         if (r.newRating > 0) {
-          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · 評分 %.1f · %d 在讀", r.author.c_str(),
-                        r.newRating / 10.0, r.readingCount);
+          char ratingBuf[24];
+          std::snprintf(ratingBuf, sizeof(ratingBuf), tr(STR_WEREAD_RATING_FMT), r.newRating / 10.0);
+          char readingBuf[24];
+          std::snprintf(readingBuf, sizeof(readingBuf), tr(STR_WEREAD_READING_COUNT_FMT), r.readingCount);
+          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · %s · %s", r.author.c_str(), ratingBuf, readingBuf);
         } else {
-          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · %d 在讀", r.author.c_str(), r.readingCount);
+          char readingBuf[24];
+          std::snprintf(readingBuf, sizeof(readingBuf), tr(STR_WEREAD_READING_COUNT_FMT), r.readingCount);
+          std::snprintf(subtitleBuf, sizeof(subtitleBuf), "%s · %s", r.author.c_str(), readingBuf);
         }
         return std::string(subtitleBuf);
       });
