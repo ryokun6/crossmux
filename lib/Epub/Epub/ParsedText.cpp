@@ -1,6 +1,7 @@
 #include "ParsedText.h"
 
 #include <BidiUtils.h>
+#include <EpdFontData.h>
 #include <GfxRenderer.h>
 #include <Utf8.h>
 
@@ -28,6 +29,31 @@ constexpr size_t RTL_PARAGRAPH_PROBE_WORDS = 3;
 // before giving up. 64 is a hedge for pathological cases like long numeric tokens.
 constexpr int RTL_PER_WORD_PROBE_DEPTH = 64;
 constexpr size_t MIN_JUSTIFY_GAPS = 1;
+
+// Line/column-start openers (「（《…) put their blank on the leading side: large
+// positive glyph.left, ink on the trailing half of the em cell. Hang by that
+// left bearing (not merely em/2) and keep a full advance so the next glyph
+// starts at paint+advance ≈ content_edge + ink_width. Shrinking advance — with
+// or without a half-em shift — parks the next cursor inside the opener's ink.
+int openBracketStartHangPx(const GfxRenderer& renderer, const int fontId, const std::string& word,
+                           const EpdFontFamily::Style style, const int fallbackTrimPx) {
+  if (fallbackTrimPx <= 0) return 0;
+  const uint32_t cp = CjkKinsoku::firstCodepoint(word);
+  if (CjkPunctCompression::classify(cp) != CjkPunctCompression::Class::OpenBracket) {
+    return fallbackTrimPx;
+  }
+  const auto& fontMap = renderer.getFontMap();
+  const auto it = fontMap.find(fontId);
+  if (it == fontMap.end()) return fallbackTrimPx;
+  const EpdGlyph* glyph = it->second.getGlyph(cp, style);
+  if (!glyph || glyph->left <= 0) {
+    // Advance-table layout often lacks side bearings; fullwidth openers typically
+    // keep ~2/3 em as leading blank (EBGaramondSHS 「 is left≈19 of advance≈29).
+    return std::max(fallbackTrimPx, (fallbackTrimPx * 4 + 2) / 3);
+  }
+  // Prefer the real leading blank; never hang less than the CLREQ half-em trim.
+  return std::max(fallbackTrimPx, static_cast<int>(glyph->left));
+}
 constexpr int VERTICAL_SIDEWAYS_EDGE_GAP = 2;
 
 // Vertical-rl: upright CJK/Hangul cells; short ASCII runs use 縦中横; longer
@@ -895,16 +921,16 @@ void ParsedText::extractVerticalColumn(const size_t startIdx, const size_t endId
 
   const auto punctProfile =
       punctCompressionEnabled ? CjkPunctCompression::currentProfile() : CjkPunctCompression::Profile::Off;
+  // Line/column-start openers hang their leading blank into the margin (paint
+  // shift from glyph.left, at least half-em) and keep a full advance so the next
+  // glyph clears the opener's trailing ink. End-edge marks still trim advance.
   int startPaintShift = 0;
   if (punctProfile != CjkPunctCompression::Profile::Off && !extents.empty()) {
     const int emPx = verticalCellStep(renderer, fontId);
     const auto edge = CjkPunctCompression::lineEdgeTrimPx(columnWords, 0, columnWords.size(), punctProfile, emPx);
     if (edge.startTrim > 0) {
-      const auto cls = CjkPunctCompression::classify(CjkKinsoku::firstCodepoint(columnWords.front()));
-      extents.front() = CjkPunctCompression::clampAdvanceAfterTrim(extents.front(), edge.startTrim, emPx);
-      if (cls == CjkPunctCompression::Class::OpenBracket) {
-        startPaintShift = -edge.startTrim;
-      }
+      startPaintShift =
+          -openBracketStartHangPx(renderer, fontId, columnWords.front(), columnStyles.front(), edge.startTrim);
     }
     if (edge.endTrim > 0) {
       extents.back() = CjkPunctCompression::clampAdvanceAfterTrim(extents.back(), edge.endTrim, emPx);
@@ -1311,6 +1337,8 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
 
   // Per-line advances: copy compressed paragraph widths, then apply line-edge
   // trims after kinsoku has finalized this break (start/end of the run only).
+  // Open-bracket start: hang by glyph.left (leading blank) and keep full advance.
+  // End marks trim advance only.
   std::vector<uint16_t> lineAdvances;
   lineAdvances.reserve(lineWordCount);
   for (size_t i = 0; i < lineWordCount; ++i) {
@@ -1323,13 +1351,8 @@ void ParsedText::extractLine(const size_t breakIndex, const int pageWidth, const
     const int emPx = verticalCellStep(renderer, fontId);
     const auto edge = CjkPunctCompression::lineEdgeTrimPx(lineWords, 0, lineWordCount, punctProfile, emPx);
     if (edge.startTrim > 0) {
-      const auto cls = CjkPunctCompression::classify(CjkKinsoku::firstCodepoint(lineWords.front()));
-      lineAdvances.front() = CjkPunctCompression::clampAdvanceAfterTrim(lineAdvances.front(), edge.startTrim, emPx);
-      if (cls == CjkPunctCompression::Class::OpenBracket) {
-        // Shift paint origin so the leading blank hangs into the margin and ink
-        // meets the content edge (advance already reduced).
-        lineStartPaintShift = -edge.startTrim;
-      }
+      lineStartPaintShift =
+          -openBracketStartHangPx(renderer, fontId, lineWords.front(), lineWordStyles.front(), edge.startTrim);
     }
     if (edge.endTrim > 0) {
       lineAdvances.back() = CjkPunctCompression::clampAdvanceAfterTrim(lineAdvances.back(), edge.endTrim, emPx);
