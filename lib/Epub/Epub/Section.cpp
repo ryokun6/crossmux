@@ -20,14 +20,14 @@ namespace {
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
 #ifdef CHINESE_UI_SIMPLIFIED
-constexpr uint8_t SECTION_FILE_VERSION = 71;  // SC: punctuation compression (標點擠壓)
+constexpr uint8_t SECTION_FILE_VERSION = 74;  // SC: source-space preservation (CJK segment-break rule)
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 70;  // TC: punctuation compression (conservative)
+constexpr uint8_t SECTION_FILE_VERSION = 73;  // TC: source-space preservation (CJK segment-break rule)
 #endif
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 72;  // JA: punctuation compression (約物詰め)
+constexpr uint8_t SECTION_FILE_VERSION = 75;  // JA: source-space preservation (CJK segment-break rule)
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 69;  // KO: isolated upright 1-char Latin/digit → fullwidth
+constexpr uint8_t SECTION_FILE_VERSION = 76;  // KO: source-space preservation (word spacing)
 #else
 constexpr uint8_t SECTION_FILE_VERSION = 54;  // isolated upright 1-char Latin/digit → fullwidth
 #endif

@@ -248,7 +248,31 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
 
   // flush the buffer
   partWordBuffer[partWordBufferIndex] = '\0';
-  currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues);
+  bool spaceBefore = false;
+#ifdef ENABLE_CJK_VERSION
+  {
+    const auto* p = reinterpret_cast<const unsigned char*>(partWordBuffer);
+    const uint32_t firstCp = utf8NextCodepoint(&p);
+    if (pendingRealSpace) {
+      spaceBefore = true;
+    } else if (pendingSegmentBreak && lastEmittedCp != 0) {
+      // CSS Text 4.1.2: a segment break between two no-space CJK characters is
+      // removed; any other context (Hangul or non-CJK on either side) becomes a space.
+      const bool leftNoSpaceCjk = utf8IsCjkBreakable(lastEmittedCp) && !utf8IsHangul(lastEmittedCp);
+      const bool rightNoSpaceCjk = utf8IsCjkBreakable(firstCp) && !utf8IsHangul(firstCp);
+      spaceBefore = !(leftNoSpaceCjk && rightNoSpaceCjk);
+    }
+    pendingRealSpace = false;
+    pendingSegmentBreak = false;
+    const auto* q = reinterpret_cast<const unsigned char*>(partWordBuffer);
+    uint32_t lastCp = 0;
+    while (*q) {
+      lastCp = utf8NextCodepoint(&q);
+    }
+    lastEmittedCp = lastCp;
+  }
+#endif
+  currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues, spaceBefore);
   partWordBufferIndex = 0;
   nextWordContinues = false;
 }
@@ -256,6 +280,11 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
 // start a new text block if needed
 void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   nextWordContinues = false;  // New block = new paragraph, no continuation
+#ifdef ENABLE_CJK_VERSION
+  pendingRealSpace = false;
+  pendingSegmentBreak = false;
+  lastEmittedCp = 0;
+#endif
   if (currentTextBlock) {
     // already have a text block running and it is empty - just reuse it
     if (currentTextBlock->isEmpty()) {
@@ -1116,6 +1145,13 @@ void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char
       }
       // Whitespace is a real word boundary — reset continuation state
       self->nextWordContinues = false;
+#ifdef ENABLE_CJK_VERSION
+      if (s[i] == ' ' || s[i] == '\t') {
+        self->pendingRealSpace = true;
+      } else {
+        self->pendingSegmentBreak = true;
+      }
+#endif
       // Skip the whitespace char
       continue;
     }

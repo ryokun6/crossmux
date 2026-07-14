@@ -1674,7 +1674,7 @@ int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style styl
 }
 
 int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const uint32_t rightCp,
-                                 const EpdFontFamily::Style style) const {
+                                 const EpdFontFamily::Style style, const bool forceWordSpace) const {
 #ifdef ENABLE_CJK_VERSION
   // CJK aware inter-word gap. Parser splits CJK into per-character words, so this
   // function is hit for every CJK↔CJK and CJK↔Latin boundary.
@@ -1685,7 +1685,10 @@ int GfxRenderer::getSpaceAdvance(const int fontId, const uint32_t leftCp, const 
   // The leftCp==0 case (line-start) means there is no preceding glyph, so the original
   // space-advance behaviour is kept (CJK↔CJK match would otherwise force gap=0 at line
   // start unintentionally; leftCp==0 short-circuits the L flag below).
-  {
+  // forceWordSpace: the caller knows the source text had a real space here (e.g.
+  // between Korean words, or an intentional space in any CJK text), so skip the
+  // CJK gap shrinking and return the font's full space advance.
+  if (!forceWordSpace) {
     const bool L = leftCp != 0 && utf8IsCjkBreakable(leftCp);
     const bool R = rightCp != 0 && utf8IsCjkBreakable(rightCp);
     if (L && R) {
