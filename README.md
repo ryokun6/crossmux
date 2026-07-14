@@ -11,7 +11,7 @@ coverage, reliable SD-card fonts, and faster 4-level grayscale text. It keeps
 reading stats, WeRead (Chinese SKUs), and standby faces. The old game and toy
 apps are not part of the firmware.
 
-Current firmware version: **1.4.10**
+Current firmware version: **1.4.11**
 
 ![ryOS CrossMux running on an Xteink device](./docs/images/xteink-vertical-reading.jpg)
 
