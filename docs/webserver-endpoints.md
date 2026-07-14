@@ -232,7 +232,9 @@ The font-family setting includes SD-card font families when they are installed.
 
 ### `POST /api/settings`
 
-Applies a partial settings update from a JSON object.
+Applies a partial settings update from a JSON object. Password string settings
+(`koPassword`) are only updated when a non-empty value is sent; omitting the key
+or sending an empty string leaves the existing password unchanged.
 
 ```bash
 curl -X POST \
