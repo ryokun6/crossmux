@@ -59,6 +59,44 @@ TEST(CjkKinsoku, LegalBreakPolicyKeepsPunctWithNeighbors) {
   EXPECT_TRUE(mayBreakAfter(0x3002, 0x4E2D));   // 。中 (break after stop is fine)
 }
 
+TEST(CjkKinsoku, VerticalPresentationFormsFollowSameRules) {
+  // After vertical-rl remap, stops/closers/openers use FE** forms.
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFE12));  // ︒
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFE11));  // ︑
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFE42));  // ﹂
+  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0xFE41));    // ﹁
+  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0xFE35));    // ︵
+  EXPECT_FALSE(CjkKinsoku::isLegalBreakBetween(0x4E2D, 0xFE12));
+  EXPECT_FALSE(CjkKinsoku::isLegalBreakBetween(0xFE41, 0x4E2D));
+}
+
+TEST(CjkKinsoku, RepairBreakRetreatsBeforeColumnHeadStop) {
+  // Column would break before 。 — pull previous ideograph onto the next column.
+  const std::vector<std::string> words = {"\xE4\xB8\xAD", "\xE6\x96\x87", "\xE3\x80\x82"};  // 中 文 。
+  const std::vector<bool> continues = {false, false, false};
+  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 2), 1u);
+}
+
+TEST(CjkKinsoku, RepairBreakAbsorbsOrphanStopOntoSingleTokenColumn) {
+  // Only one ideograph fits; next is 。 — absorb so the next column is not headed by 。
+  const std::vector<std::string> words = {"\xE4\xB8\xAD", "\xE3\x80\x82"};  // 中 。
+  const std::vector<bool> continues = {false, false};
+  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 2u);
+}
+
+TEST(CjkKinsoku, RepairBreakRetreatsOpenerFromColumnEnd) {
+  const std::vector<std::string> words = {"\xE4\xB8\xAD", "\xE3\x80\x8C", "\xE6\x96\x87"};  // 中 「 文
+  const std::vector<bool> continues = {false, false, false};
+  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 2), 1u);
+}
+
+TEST(CjkKinsoku, RepairBreakHandlesVerticalRemappedStop) {
+  // U+FE12 PRESENTATION FORM FOR VERTICAL IDEOGRAPHIC FULL STOP
+  const std::vector<std::string> words = {"\xE4\xB8\xAD", "\xEF\xB8\x92"};  // 中 ︒
+  const std::vector<bool> continues = {false, false};
+  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 2u);
+}
+
 #if defined(ENABLE_JAPANESE_VERSION)
 TEST(CjkKinsoku, JapaneseSmallKanaAreLineStartProhibited) {
   EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3083));  // ゃ

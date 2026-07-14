@@ -3,12 +3,17 @@
 #include <Utf8.h>
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 // CJK line-break prohibition (禁則 / kinsoku) classification.
 // Shared by ParsedText tokenization, horizontal line breaking, and vertical
 // column breaking. Tables follow CSS Text "normal" plus JLReq TF guidance
 // (small kana + prolonged sound mark as line-start prohibited on JA builds).
 // Hanging punctuation (懸掛) is intentionally not handled here.
+//
+// Vertical-rl uses the same helpers after punctuation is remapped to
+// presentation forms (FE1x / FE3x); those codepoints are included below.
 
 namespace CjkKinsoku {
 
@@ -274,6 +279,69 @@ inline bool isLegalBreakBetween(const uint32_t leftCp, const uint32_t rightCp) {
 inline bool hasCjkBreakOpportunityBetween(const uint32_t leftCp, const uint32_t rightCp) {
   if (!utf8IsCjkBreakable(leftCp) && !utf8IsCjkBreakable(rightCp)) return false;
   return isLegalBreakBetween(leftCp, rightCp);
+}
+
+inline uint32_t firstCodepoint(const std::string& text) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str());
+  return utf8NextCodepoint(&ptr);
+}
+
+inline uint32_t lastCodepoint(const std::string& text) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str());
+  uint32_t last = 0;
+  while (*ptr) {
+    last = utf8NextCodepoint(&ptr);
+  }
+  return last;
+}
+
+// Repair a candidate line/column break so the next run does not start with
+// 行頭禁則 and the current run does not end with 行末禁則. Used by both
+// horizontal line breaking and vertical-rl column packing.
+// When retreat would empty the current run, absorb start-prohibited tokens
+// onto the current run instead of orphaning them on the next.
+inline size_t repairBreakIndex(const std::vector<std::string>& words, const std::vector<bool>& continuesVec,
+                               const size_t runStart, size_t breakAt) {
+  if (breakAt <= runStart || breakAt > words.size()) {
+    return breakAt;
+  }
+
+  auto retreatOne = [&]() {
+    if (breakAt <= runStart + 1) return false;
+    --breakAt;
+    while (breakAt > runStart + 1 && breakAt < words.size() && continuesVec[breakAt]) {
+      --breakAt;
+    }
+    return breakAt > runStart;
+  };
+
+  auto absorbNext = [&]() {
+    if (breakAt >= words.size()) return false;
+    ++breakAt;
+    while (breakAt < words.size() && continuesVec[breakAt]) {
+      ++breakAt;
+    }
+    return true;
+  };
+
+  while (breakAt < words.size() && isLineStartProhibited(firstCodepoint(words[breakAt]))) {
+    if (!retreatOne()) {
+      if (!absorbNext()) break;
+    }
+  }
+
+  while (breakAt > runStart && breakAt <= words.size() && isLineEndProhibited(lastCodepoint(words[breakAt - 1]))) {
+    if (!retreatOne()) break;
+  }
+
+  while (breakAt > runStart && breakAt < words.size() &&
+         isInseparablePair(lastCodepoint(words[breakAt - 1]), firstCodepoint(words[breakAt]))) {
+    if (!retreatOne()) {
+      if (!absorbNext()) break;
+    }
+  }
+
+  return breakAt;
 }
 
 }  // namespace CjkKinsoku
