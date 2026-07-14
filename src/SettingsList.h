@@ -229,13 +229,16 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
           KOREADER_STORE.saveToFile();
         },
         "koUsername", StrId::STR_KOREADER_SYNC));
+    // Marked obfuscated so the web API never returns the plaintext password
+    // (empty value + hasPassword) and blank POSTs preserve the existing one.
     v.push_back(SettingInfo::DynamicString(
-        StrId::STR_KOREADER_PASSWORD, [] { return KOREADER_STORE.getPassword(); },
-        [](const std::string& v) {
-          KOREADER_STORE.setCredentials(KOREADER_STORE.getUsername(), v);
-          KOREADER_STORE.saveToFile();
-        },
-        "koPassword", StrId::STR_KOREADER_SYNC));
+                    StrId::STR_KOREADER_PASSWORD, [] { return KOREADER_STORE.getPassword(); },
+                    [](const std::string& v) {
+                      KOREADER_STORE.setCredentials(KOREADER_STORE.getUsername(), v);
+                      KOREADER_STORE.saveToFile();
+                    },
+                    "koPassword", StrId::STR_KOREADER_SYNC)
+                    .withObfuscated());
     v.push_back(SettingInfo::DynamicString(
         StrId::STR_SYNC_SERVER_URL,
         [] {

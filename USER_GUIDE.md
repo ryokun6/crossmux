@@ -334,16 +334,17 @@ For web-based Wi-Fi network management, see [Web Settings (Wi-Fi + ryOS Books)](
 
 #### 3.6.6 Web Settings (Wi-Fi + ryOS Books)
 
-While in **File Transfer** mode, the web settings page includes management cards for both **Wi-Fi Networks** and **ryOS Books**.
+While in **File Transfer** mode, the web settings page includes management cards for **Wi-Fi Networks**, **ryOS Books**, and editable **ryOS Cloud Sync** fields.
 
 1. On device: open **File Transfer** and connect through **Join a Network** or **Create Hotspot**.
 2. In a browser, open `http://<device-ip>/settings` or `http://crosspoint.local`.
 3. In **Wi-Fi Networks**, add, edit, or delete saved network entries (SSID + optional password).
 4. In **ryOS Books**, add, edit, or delete book catalogs.
+5. In **ryOS Cloud Sync**, set username, password, and sync server URL.
 
 Behavior notes:
 
-- Passwords are never shown back in the web UI after saving.
+- Passwords are never shown back in the web UI after saving (placeholder shows `(unchanged)` when one is already stored).
 - Leaving Password blank while editing keeps the existing saved password unchanged.
 - The web UI can save hidden-network SSIDs, but connecting to hidden networks still depends on the device-side Wi-Fi connection flow.
 

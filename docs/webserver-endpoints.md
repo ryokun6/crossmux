@@ -226,7 +226,7 @@ Types:
 | `toggle` | `value` (`0` or `1`) |
 | `enum` | `value`, `options` |
 | `value` | `value`, `min`, `max`, `step` |
-| `string` | `value` |
+| `string` | `value`; password fields also include `hasPassword` and always return an empty `value` |
 
 The font-family setting includes SD-card font families when they are installed.
 
