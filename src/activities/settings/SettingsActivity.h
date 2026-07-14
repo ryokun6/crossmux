@@ -71,13 +71,15 @@ struct SettingInfo {
     return s;
   }
 
-  static SettingInfo Enum(StrId nameId, uint8_t CrossPointSettings::* ptr, std::vector<StrId> values,
+  // Takes initializer_list (not vector-by-value) so braced option lists don't
+  // allocate a temporary std::vector on the caller's stack during construction.
+  static SettingInfo Enum(StrId nameId, uint8_t CrossPointSettings::* ptr, std::initializer_list<StrId> values,
                           const char* key = nullptr, StrId category = StrId::STR_NONE_OPT) {
     SettingInfo s;
     s.nameId = nameId;
     s.type = SettingType::ENUM;
     s.valuePtr = ptr;
-    s.enumValues = std::move(values);
+    s.enumValues.assign(values.begin(), values.end());
     s.key = key;
     s.category = category;
     return s;
@@ -115,13 +117,13 @@ struct SettingInfo {
     return s;
   }
 
-  static SettingInfo DynamicEnum(StrId nameId, std::vector<StrId> values, std::function<uint8_t()> getter,
+  static SettingInfo DynamicEnum(StrId nameId, std::initializer_list<StrId> values, std::function<uint8_t()> getter,
                                  std::function<void(uint8_t)> setter, const char* key = nullptr,
                                  StrId category = StrId::STR_NONE_OPT) {
     SettingInfo s;
     s.nameId = nameId;
     s.type = SettingType::ENUM;
-    s.enumValues = std::move(values);
+    s.enumValues.assign(values.begin(), values.end());
     s.valueGetter = std::move(getter);
     s.valueSetter = std::move(setter);
     s.key = key;
