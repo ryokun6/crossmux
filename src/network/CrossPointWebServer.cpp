@@ -1177,7 +1177,19 @@ void CrossPointWebServer::handleGetSettings() const {
       }
       case SettingType::STRING: {
         doc["type"] = "string";
-        if (s.stringGetter) {
+        // Password settings: never expose plaintext — empty value + hasPassword,
+        // matching /api/wifi and /api/opds.
+        if (s.obfuscated) {
+          doc["value"] = "";
+          if (s.stringGetter) {
+            doc["hasPassword"] = !s.stringGetter().empty();
+          } else if (s.stringMaxLen > 0) {
+            const char* ptr = reinterpret_cast<const char*>(&SETTINGS) + s.stringOffset;
+            doc["hasPassword"] = ptr[0] != '\0';
+          } else {
+            doc["hasPassword"] = false;
+          }
+        } else if (s.stringGetter) {
           doc["value"] = s.stringGetter();
         } else if (s.stringMaxLen > 0) {
           doc["value"] = reinterpret_cast<const char*>(&SETTINGS) + s.stringOffset;
@@ -1263,6 +1275,11 @@ void CrossPointWebServer::handlePostSettings() {
       }
       case SettingType::STRING: {
         const std::string val = doc[s.key].as<std::string>();
+        // Blank password in the payload means "leave unchanged" (web UI omits
+        // the key when untouched; also ignore empty strings as a safety net).
+        if (s.obfuscated && val.empty()) {
+          break;
+        }
         if (s.stringSetter) {
           s.stringSetter(val);
         } else if (s.stringMaxLen > 0) {

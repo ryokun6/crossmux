@@ -102,9 +102,11 @@ cards for:
 
 - Saved Wi-Fi networks
 - ryOS Books catalog servers
+- ryOS Cloud Sync credentials (username, password, server URL)
 
 Passwords are accepted when adding or editing entries, but saved passwords are
-not returned by the API.
+not returned by the API. Leaving a password field blank keeps the existing
+password unchanged.
 
 ### Fonts
 

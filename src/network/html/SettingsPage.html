@@ -381,9 +381,16 @@
     }
 
     if (setting.type === 'string') {
-      const inputType = setting.name.toLowerCase().includes('password') ? 'password' : 'text';
+      // Password settings include hasPassword from the API (never pre-filled).
+      const isPassword = Object.prototype.hasOwnProperty.call(setting, 'hasPassword') ||
+        setting.name.toLowerCase().includes('password');
+      if (isPassword) {
+        const placeholder = setting.hasPassword ? '(unchanged)' : '';
+        return '<input type="password" id="' + id + '" value="" placeholder="' + placeholder + '"' +
+          ' oninput="handleSettingChanged(\'' + setting.key + '\')">';
+      }
       const val = setting.value || '';
-      return '<input type="' + inputType + '" id="' + id + '" value="' + escapeHtml(val) + '"' +
+      return '<input type="text" id="' + id + '" value="' + escapeHtml(val) + '"' +
         ' oninput="handleSettingChanged(\'' + setting.key + '\')">';
     }
 
@@ -574,11 +581,18 @@
     btn.disabled = true;
     btn.textContent = 'Saving...';
 
-    // Collect only changed values
+    // Collect only changed values. Password fields: only send when the user
+    // typed a new value; blank means leave the existing password unchanged.
     const changes = {};
     allSettings.forEach(function(s) {
       const current = getValue(s);
-      if (current !== undefined && current !== originalValues[s.key]) {
+      if (current === undefined) return;
+      const isPassword = Object.prototype.hasOwnProperty.call(s, 'hasPassword');
+      if (isPassword) {
+        if (current) changes[s.key] = current;
+        return;
+      }
+      if (current !== originalValues[s.key]) {
         changes[s.key] = current;
       }
     });
@@ -601,9 +615,21 @@
         throw new Error(text || 'Save failed');
       }
 
-      // Update original values to new values
+      // Update original values to new values. Password fields stay empty in the
+      // UI with an (unchanged) placeholder after a successful save.
       for (const key in changes) {
-        originalValues[key] = changes[key];
+        const s = findSetting(key);
+        if (s && Object.prototype.hasOwnProperty.call(s, 'hasPassword')) {
+          originalValues[key] = '';
+          s.hasPassword = true;
+          const el = document.getElementById('setting-' + key);
+          if (el) {
+            el.value = '';
+            el.placeholder = '(unchanged)';
+          }
+        } else {
+          originalValues[key] = changes[key];
+        }
       }
 
       showMessage('Settings saved successfully!', false);
