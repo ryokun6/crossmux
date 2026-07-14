@@ -22,7 +22,7 @@ gates every Chinese-only resource:
 | i18n string table (`gen_i18n.py`) | Emits **EN + ZH_TW** (TC) or synthesizes **EN + ZH_CN** via OpenCC **tw2sp** from the same Taiwan-terminology `chinese.yaml` when `CHINESE_UI_SIMPLIFIED` is set (檔案→文件, 網路→网络, …). Persisted codes are BCP47 `zh-TW` / `zh-CN` (`_locale`). |
 | Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers skipped. Six per-size CJK headers — TC files `notosans_cjk_*.h` or SC files `notosans_sc_*.h` — raw 2-bit bitmaps. Coverage tiers: 8/10/12pt ~3500 common; 14pt ~7000 + symbols; 16/18pt i18n-only. |
 | `src/main.cpp` font globals | Each Latin `EpdFont`/`EpdFontFamily` aliases the matching-size CJK symbol (`notosans_cjk_*`). Bold/italic share Regular. |
-| EPUB layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp), [CjkKinsoku.h](../../lib/Epub/Epub/CjkKinsoku.h)) | CJK punctuation rules (行頭/行末/分離 禁则) for horizontal lines and vertical-rl columns, plus full-width padding. |
+| EPUB / TXT layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp), [CjkKinsoku.h](../../lib/Epub/Epub/CjkKinsoku.h), [TxtReaderActivity.cpp](../../src/activities/reader/TxtReaderActivity.cpp)) | CJK punctuation rules (行頭/行末/分離 禁则) for EPUB horizontal lines and vertical-rl columns, plus TXT horizontal wrap; full-width padding on EPUB. |
 | Activities (`src/activities/apps/weread/`) | Compiled in via `build_src_filter`. |
 | First-boot language | `Language::ZH_TW` or `Language::ZH_CN` by SKU; international defaults to `EN`. |
 

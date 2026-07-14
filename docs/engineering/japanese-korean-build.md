@@ -15,8 +15,9 @@ gaps) plus either `-DENABLE_JAPANESE_VERSION` or `-DENABLE_KOREAN_VERSION`.
 Chinese-only features (WeRead, 农历, SC↔TC remap) stay behind
 `ENABLE_CHINESE_VERSION` and are **not** compiled into JA/KO SKUs.
 
-EPUB line breaking uses [`CjkKinsoku.h`](../../lib/Epub/Epub/CjkKinsoku.h) for
-行頭/行末/分離 禁則 on both horizontal and vertical layout. The Japanese SKU
+EPUB and TXT line breaking use [`CjkKinsoku.h`](../../lib/Epub/Epub/CjkKinsoku.h) for
+行頭/行末/分離 禁則 (EPUB: horizontal lines and vertical-rl columns; TXT: horizontal
+wrap in `TxtReaderActivity`). The Japanese SKU
 additionally treats small kana and `ー` as line-start prohibited (JLReq / CSS
 normal for long-form reading).
 

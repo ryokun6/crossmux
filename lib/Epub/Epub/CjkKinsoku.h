@@ -333,4 +333,77 @@ inline size_t repairBreakIndex(const std::vector<std::string>& words, const std:
   return breakAt;
 }
 
+// Byte offset of the UTF-8 codepoint that ends immediately before `pos`.
+inline size_t utf8CodepointStartBefore(const std::string& text, size_t pos) {
+  if (pos == 0 || pos > text.size()) {
+    return 0;
+  }
+  size_t i = pos - 1;
+  while (i > 0 && (static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) {
+    --i;
+  }
+  return i;
+}
+
+inline uint32_t codepointStartingAt(const std::string& text, size_t bytePos) {
+  if (bytePos >= text.size()) {
+    return 0;
+  }
+  const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str() + bytePos);
+  return utf8NextCodepoint(&ptr);
+}
+
+// Same 禁則 policy as repairBreakIndex, for untokenized UTF-8 runs (TXT wrapping).
+// Retreats only; never empties the current line.
+inline size_t repairBreakByteOffset(const std::string& text, const size_t runStart, size_t breakAt) {
+  if (breakAt <= runStart || breakAt > text.size()) {
+    return breakAt;
+  }
+
+  auto retreatOne = [&]() {
+    if (breakAt <= runStart) {
+      return false;
+    }
+    const size_t prev = utf8CodepointStartBefore(text, breakAt);
+    // Keep at least one codepoint on the current line.
+    if (prev < runStart || prev == breakAt || prev == runStart) {
+      return false;
+    }
+    breakAt = prev;
+    return true;
+  };
+
+  while (breakAt < text.size()) {
+    const uint32_t right = codepointStartingAt(text, breakAt);
+    if (!isLineStartProhibited(right) && !utf8IsCombiningMark(right)) {
+      break;
+    }
+    if (!retreatOne()) {
+      break;
+    }
+  }
+
+  while (breakAt > runStart) {
+    const size_t leftStart = utf8CodepointStartBefore(text, breakAt);
+    if (!isLineEndProhibited(codepointStartingAt(text, leftStart))) {
+      break;
+    }
+    if (!retreatOne()) {
+      break;
+    }
+  }
+
+  while (breakAt > runStart && breakAt < text.size()) {
+    const size_t leftStart = utf8CodepointStartBefore(text, breakAt);
+    if (!isInseparablePair(codepointStartingAt(text, leftStart), codepointStartingAt(text, breakAt))) {
+      break;
+    }
+    if (!retreatOne()) {
+      break;
+    }
+  }
+
+  return breakAt;
+}
+
 }  // namespace CjkKinsoku

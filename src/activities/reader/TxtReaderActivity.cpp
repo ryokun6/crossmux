@@ -1,6 +1,7 @@
 #include "TxtReaderActivity.h"
 
 #include <BidiUtils.h>
+#include <CjkKinsoku.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
@@ -24,7 +25,7 @@ namespace {
 constexpr size_t CHUNK_SIZE = 8 * 1024;  // 8KB chunk for reading
 // Cache file magic and version
 constexpr uint32_t CACHE_MAGIC = 0x54585449;  // "TXTI"
-constexpr uint8_t CACHE_VERSION = 3;          // Increment when cache format changes
+constexpr uint8_t CACHE_VERSION = 4;          // v4: TXT wrap applies CJK 禁則 (kinsoku)
 }  // namespace
 
 void TxtReaderActivity::onEnter() {
@@ -284,6 +285,19 @@ bool TxtReaderActivity::loadPageAtOffset(size_t offset, std::vector<std::string>
 
       if (breakPos == 0) {
         breakPos = 1;
+        while (breakPos < line.length() && (line[breakPos] & 0xC0) == 0x80) {
+          breakPos++;
+        }
+      }
+
+      // 禁則: do not end a line with an opener, or start the next with a closer/stop.
+      // Repair only retreats, so the line still fits the viewport measure.
+      breakPos = CjkKinsoku::repairBreakByteOffset(line, 0, breakPos);
+      if (breakPos == 0) {
+        breakPos = 1;
+        while (breakPos < line.length() && (line[breakPos] & 0xC0) == 0x80) {
+          breakPos++;
+        }
       }
 
       outLines.push_back(line.substr(0, breakPos));

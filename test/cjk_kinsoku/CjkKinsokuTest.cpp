@@ -98,6 +98,30 @@ TEST(CjkKinsoku, RepairBreakKeepsVerticalRemappedStopBounded) {
   EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 1u);
 }
 
+TEST(CjkKinsoku, RepairBreakByteOffsetRetreatsBeforeStop) {
+  // "中文。" — candidate break before 。 pulls 文 onto the next line.
+  const std::string text = "\xE4\xB8\xAD\xE6\x96\x87\xE3\x80\x82";
+  EXPECT_EQ(CjkKinsoku::repairBreakByteOffset(text, 0, 6), 3u);
+}
+
+TEST(CjkKinsoku, RepairBreakByteOffsetRetreatsOpenerFromLineEnd) {
+  // "中「文" — candidate break after 「 pulls the opener onto the next line.
+  const std::string text = "\xE4\xB8\xAD\xE3\x80\x8C\xE6\x96\x87";
+  EXPECT_EQ(CjkKinsoku::repairBreakByteOffset(text, 0, 6), 3u);
+}
+
+TEST(CjkKinsoku, RepairBreakByteOffsetNeverEmptiesLine) {
+  // Only "中" fits before "。" — keep the bounded break.
+  const std::string text = "\xE4\xB8\xAD\xE3\x80\x82";
+  EXPECT_EQ(CjkKinsoku::repairBreakByteOffset(text, 0, 3), 3u);
+}
+
+TEST(CjkKinsoku, RepairBreakByteOffsetKeepsEllipsisRun) {
+  // "あ……い" — candidate break between …… retreats so the run stays together.
+  const std::string text = "\xE3\x81\x82\xE2\x80\xA6\xE2\x80\xA6\xE3\x81\x84";
+  EXPECT_EQ(CjkKinsoku::repairBreakByteOffset(text, 0, 6), 3u);
+}
+
 #if defined(ENABLE_JAPANESE_VERSION)
 TEST(CjkKinsoku, JapaneseSmallKanaAreLineStartProhibited) {
   EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3083));                   // ゃ
