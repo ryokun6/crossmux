@@ -33,6 +33,7 @@ void OpdsBookBrowserActivity::onEnter() {
   consumeConfirm = false;
   consumeBack = false;
   errorMessage.clear();
+  errorHint.clear();
   statusMessage = tr(STR_CHECKING_WIFI);
   requestUpdate();
 
@@ -143,6 +144,9 @@ void OpdsBookBrowserActivity::render(RenderLock&&) {
   if (state == BrowserState::ERROR) {
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, tr(STR_ERROR_MSG));
     renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 10, errorMessage.c_str());
+    if (!errorHint.empty()) {
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 40, errorHint.c_str());
+    }
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_RETRY), "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer();
@@ -189,6 +193,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   if (server.url.empty()) {
     state = BrowserState::ERROR;
     errorMessage = tr(STR_NO_SERVER_URL);
+    errorHint.clear();
     requestUpdate();
     return;
   }
@@ -198,9 +203,17 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   OpdsParser parser;
   {
     OpdsParserStream stream{parser};
-    if (!HttpDownloader::fetchUrl(url, stream, server.username, server.password)) {
+    const auto fetchResult = HttpDownloader::fetchUrl(url, stream, server.username, server.password);
+    if (fetchResult != HttpDownloader::OK) {
       state = BrowserState::ERROR;
-      errorMessage = tr(STR_FETCH_FEED_FAILED);
+      if (fetchResult == HttpDownloader::AUTH_FAILED) {
+        const bool missingCreds = server.username.empty() || server.password.empty();
+        errorMessage = tr(missingCreds ? STR_NO_CREDENTIALS_MSG : STR_AUTH_FAILED);
+        errorHint = tr(STR_LOGIN_SETTINGS_HINT);
+      } else {
+        errorMessage = tr(STR_FETCH_FEED_FAILED);
+        errorHint.clear();
+      }
       requestUpdate();
       return;
     }
@@ -209,6 +222,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   if (!parser) {
     state = BrowserState::ERROR;
     errorMessage = tr(STR_PARSE_FEED_FAILED);
+    errorHint.clear();
     requestUpdate();
     return;
   }
@@ -227,7 +241,10 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
 
   selectorIndex = 0;
   state = entries.empty() ? BrowserState::ERROR : BrowserState::BROWSING;
-  if (entries.empty()) errorMessage = tr(STR_NO_ENTRIES);
+  if (entries.empty()) {
+    errorMessage = tr(STR_NO_ENTRIES);
+    errorHint.clear();
+  }
   requestUpdate();
 }
 
@@ -287,7 +304,14 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
     state = BrowserState::BROWSING;
   } else {
     state = BrowserState::ERROR;
-    errorMessage = tr(STR_DOWNLOAD_FAILED);
+    if (result == HttpDownloader::AUTH_FAILED) {
+      const bool missingCreds = server.username.empty() || server.password.empty();
+      errorMessage = tr(missingCreds ? STR_NO_CREDENTIALS_MSG : STR_AUTH_FAILED);
+      errorHint = tr(STR_LOGIN_SETTINGS_HINT);
+    } else {
+      errorMessage = tr(STR_DOWNLOAD_FAILED);
+      errorHint.clear();
+    }
   }
   requestUpdate();
 }

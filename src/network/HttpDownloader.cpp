@@ -100,6 +100,8 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   if (status != 200) {
     LOG_ERR("HTTP", "unexpected status: %d", status);
     esp_http_client_cleanup(client);
+    // 401/403: missing or wrong Basic auth (OPDS / ryOS Books).
+    if (status == 401 || status == 403) return HttpDownloader::AUTH_FAILED;
     return HttpDownloader::HTTP_ERROR;
   }
 
@@ -262,16 +264,16 @@ bool runPostJson(const std::string& url, const std::string& payload, const std::
 }
 }  // namespace
 
-bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const std::string& username,
-                              const std::string& password) {
+HttpDownloader::DownloadError HttpDownloader::fetchUrl(const std::string& url, Stream& outContent,
+                                                       const std::string& username, const std::string& password) {
   LOG_DBG("HTTP", "Fetching: %s", url.c_str());
   Sink sink;
   sink.write = [&outContent](const uint8_t* data, size_t len) { return outContent.write(data, len) == len; };
-  return runGet(url, username, password, sink) == OK;
+  return runGet(url, username, password, sink);
 }
 
-bool HttpDownloader::fetchUrl(const std::string& url, std::string& outContent, const std::string& username,
-                              const std::string& password) {
+HttpDownloader::DownloadError HttpDownloader::fetchUrl(const std::string& url, std::string& outContent,
+                                                       const std::string& username, const std::string& password) {
   LOG_DBG("HTTP", "Fetching: %s", url.c_str());
   outContent.clear();  // start clean; the sink appends, so don't carry prior content
   Sink sink;
@@ -279,15 +281,15 @@ bool HttpDownloader::fetchUrl(const std::string& url, std::string& outContent, c
     outContent.append(reinterpret_cast<const char*>(data), len);
     return true;
   };
-  return runGet(url, username, password, sink) == OK;
+  return runGet(url, username, password, sink);
 }
 
-bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username,
-                              const std::string& password) {
+HttpDownloader::DownloadError HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData,
+                                                       const std::string& username, const std::string& password) {
   LOG_DBG("HTTP", "Fetching: %s", url.c_str());
   Sink sink;
   sink.write = onData;
-  return runGet(url, username, password, sink) == OK;
+  return runGet(url, username, password, sink);
 }
 
 bool HttpDownloader::postJson(const std::string& url, const std::string& payload, const std::string& bearerToken,

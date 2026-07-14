@@ -43,7 +43,13 @@ void KOReaderAuthActivity::performAuthentication() {
       statusMessage = tr(STR_AUTH_SUCCESS);
     } else {
       state = FAILED;
-      errorMessage = KOReaderSyncClient::errorString(result);
+      // Credential problems point users at Settings > System; other failures keep
+      // the transport/server detail from errorString().
+      if (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS) {
+        errorMessage = tr(STR_LOGIN_SETTINGS_HINT);
+      } else {
+        errorMessage = KOReaderSyncClient::errorString(result);
+      }
     }
   }
   requestUpdate();

@@ -84,6 +84,9 @@ class KOReaderSyncActivity final : public Activity {
   // which makes WiFi.getMode() return WIFI_MODE_NULL.
   bool wifiActivated = false;
 
+  // True when SYNC_FAILED was caused by missing/wrong credentials (401).
+  bool authFailure = false;
+
   void onWifiSelectionComplete(bool success);
   void performSync();
   void performUpload();

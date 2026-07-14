@@ -27,22 +27,23 @@ class HttpDownloader {
     HTTP_ERROR,
     FILE_ERROR,
     ABORTED,
+    AUTH_FAILED,  // HTTP 401/403 — credentials missing or wrong
   };
 
   /**
    * Fetch text content from a URL with optional credentials.
    */
-  static bool fetchUrl(const std::string& url, std::string& outContent, const std::string& username = "",
-                       const std::string& password = "");
+  static DownloadError fetchUrl(const std::string& url, std::string& outContent, const std::string& username = "",
+                                const std::string& password = "");
 
-  static bool fetchUrl(const std::string& url, Stream& stream, const std::string& username = "",
-                       const std::string& password = "");
+  static DownloadError fetchUrl(const std::string& url, Stream& stream, const std::string& username = "",
+                                const std::string& password = "");
 
   /**
    * Stream the response body to onData as it arrives, without buffering it.
    */
-  static bool fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username = "",
-                       const std::string& password = "");
+  static DownloadError fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username = "",
+                                const std::string& password = "");
 
   /**
    * Download a file to the SD card with optional credentials.

@@ -74,6 +74,7 @@ void KOReaderSyncActivity::saveProgressAndReturn(int spineIndex, int page) {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;
+      authFailure = false;
       statusMessage = tr(STR_SAVE_PROGRESS_FAILED);
     }
     requestUpdate(true);
@@ -123,6 +124,7 @@ void KOReaderSyncActivity::performSync() {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;
+      authFailure = false;
       statusMessage = tr(STR_HASH_FAILED);
     }
     requestUpdate(true);
@@ -155,7 +157,12 @@ void KOReaderSyncActivity::performSync() {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;
-      statusMessage = KOReaderSyncClient::errorString(result);
+      authFailure = (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS);
+      if (authFailure) {
+        statusMessage.clear();
+      } else {
+        statusMessage = KOReaderSyncClient::errorString(result);
+      }
     }
     requestUpdate(true);
     return;
@@ -168,6 +175,7 @@ void KOReaderSyncActivity::performSync() {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;
+      authFailure = false;
       statusMessage = "";
     }
     requestUpdate(true);
@@ -215,7 +223,12 @@ void KOReaderSyncActivity::performUpload() {
     {
       RenderLock lock(*this);
       state = SYNC_FAILED;
-      statusMessage = KOReaderSyncClient::errorString(result);
+      authFailure = (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS);
+      if (authFailure) {
+        statusMessage.clear();
+      } else {
+        statusMessage = KOReaderSyncClient::errorString(result);
+      }
     }
     requestUpdate();
     return;
@@ -278,7 +291,7 @@ void KOReaderSyncActivity::render(RenderLock&&) {
   if (state == NO_CREDENTIALS) {
     UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_NO_CREDENTIALS_MSG), true,
                               EpdFontFamily::BOLD);
-    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_KOREADER_SETUP_HINT), true,
+    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_LOGIN_SETTINGS_HINT), true,
                               EpdFontFamily::BOLD);
 
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
@@ -378,8 +391,13 @@ void KOReaderSyncActivity::render(RenderLock&&) {
   }
 
   if (state == SYNC_FAILED) {
-    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_SYNC_FAILED_MSG), true, EpdFontFamily::BOLD);
-    UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, statusMessage.c_str());
+    if (authFailure) {
+      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_AUTH_FAILED), true, EpdFontFamily::BOLD);
+      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, tr(STR_LOGIN_SETTINGS_HINT));
+    } else {
+      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top, tr(STR_SYNC_FAILED_MSG), true, EpdFontFamily::BOLD);
+      UITheme::drawCenteredText(renderer, screen, UI_10_FONT_ID, top + 40, statusMessage.c_str());
+    }
 
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

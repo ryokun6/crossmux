@@ -418,8 +418,7 @@ void EpubReaderActivity::loop() {
         }
         break;
       case CrossPointSettings::LP_MENU_KOSYNC:
-        // Hold ~1s launches KOReader sync. If sync can't run (no credentials stored), fall
-        // through so the normal Confirm-release still opens the reader menu.
+        // Hold ~1s launches KOReader sync (or the credentials hint if not logged in).
         if (mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
           if (launchKOReaderSync()) {
             ignoreNextConfirmRelease = true;  // sync launched or error shown; suppress menu open
@@ -747,7 +746,19 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
 }
 
 bool EpubReaderActivity::launchKOReaderSync() {
-  if (!KOREADER_STORE.hasCredentials()) return false;  // no-op: nothing to launch
+  // No credentials: still open the sync activity so the user sees how to log in
+  // (Settings > System). Skip Wi-Fi/TLS prep — onEnter short-circuits to NO_CREDENTIALS.
+  if (!KOREADER_STORE.hasCredentials()) {
+    const int currentPage = section ? section->currentPage : nextPageNumber;
+    const int totalPages = section ? section->pageCount : cachedChapterTotalPageCount;
+    const std::string savedEpubPath = epub ? epub->getPath() : "";
+    // Best-effort persist so goToReader after Back resumes at the same page.
+    (void)saveProgress(currentSpineIndex, currentPage, totalPages);
+    activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
+        renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, SavedProgressPosition{},
+        std::string{}, std::nullopt));
+    return true;
+  }
 
   const int currentPage = section ? section->currentPage : nextPageNumber;
   const int totalPages = section ? section->pageCount : cachedChapterTotalPageCount;
