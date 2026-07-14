@@ -1,7 +1,7 @@
 #include "TxtReaderActivity.h"
 
 #include <BidiUtils.h>
-#include <CjkKinsoku.h>
+#include <Epub/CjkKinsoku.h>
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
