@@ -9,3 +9,5 @@ arduino-host/build/
 sd_root/
 sd_root_tc/
 sd_root_sc/
+sd_root_ja/
+sd_root_ko/

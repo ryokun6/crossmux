@@ -123,43 +123,68 @@ To list all presets with codepoint counts:
 
 `--force-autohint` — force FreeType's auto-hinter instead of the font's native hinting (useful when a font's built-in hints produce poor results at small sizes).
 
-### CJK subset fonts (lighter `.cpfont`s)
+### CJK `.cpfont` size notes
 
-Full-range `--intervals cjk` on a complete CJK OTF can produce **15–30 MB** per size and is slow on-device because SD fonts load glyphs on demand. For Chinese reading on `gh_release_tc`, prefer a **subset** matching the builtin reader tier:
+Full-range `--intervals cjk` on a **complete** pan-CJK OTF can produce
+**15–30 MB** per size. Prefer a language-region subset (Adobe Source Han
+regional SubsetOTF, or your own `pyftsubset` pass) and let
+`fontconvert_sdcard.py` keep only glyphs present in that face.
 
-- ~7000 通用汉字 converted Simplified→Traditional (OpenCC `s2t`)
-- Extended symbol blocks for EPUB (arrows, box drawing, dingbats, etc.)
-- Traditional glyphs only; firmware remaps Simplified codepoints at runtime via `ScToTcRemap.h`
+### EB Garamond + Source Han Serif (locale families)
 
-**EB Garamond + Source Han Serif** (Latin from EB Garamond, CJK from
-weight-matched regional Source Han Serif fallbacks):
+The repo ships a builder that composites EB Garamond (Latin) with Adobe
+regional Source Han Serif SubsetOTF fallbacks (CJK / Hangul). Sources are
+vendored under `lib/EpdFont/scripts/source_fonts/`:
+
+```
+source_fonts/
+├── EBGaramond/                 # Regular / Bold / Italic / BoldItalic + OFL
+├── SourceHanSerifTW/           # TW Regular + Bold + LICENSE
+├── SourceHanSerifCN/
+├── SourceHanSerifJP/
+└── SourceHanSerifKR/
+```
+
+There is **no second-pass character trim**: every glyph in the regional face
+that falls inside the locale intervals is rasterized. Firmware SC↔TC remaps
+(`ScToTcRemap` / `TcToScRemap`) still apply at runtime for cross-orthography
+EPUB text on Chinese SKUs.
 
 ```bash
-pip install freetype-py fonttools
+# From repo root; use the project venv if you have one:
+pip install -r lib/EpdFont/scripts/requirements.txt
+# or: PYTHON=.venv/bin/python …
 
-# Sources default to lib/EpdFont/scripts/source_fonts/
-#   EBGaramond/, SourceHanSerif{TW,CN,JP,KR}/
 bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh          # all locales
 bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh tc       # one locale
 LOCALES=sc,ja bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh
 ```
 
-| Locale arg | Family folder | Source Han Serif | Charset |
+| Locale arg | Family folder | Source Han Serif | Intervals extras |
 |---|---|---|---|
-| `tc` | `EBGaramondSHS-TC` | `source_fonts/SourceHanSerifTW` | Adobe regional subset as-is |
-| `sc` | `EBGaramondSHS-SC` | `source_fonts/SourceHanSerifCN` | Adobe regional subset as-is |
-| `ja` | `EBGaramondSHS-JA` | `source_fonts/SourceHanSerifJP` | Adobe regional subset as-is |
-| `ko` | `EBGaramondSHS-KO` | `source_fonts/SourceHanSerifKR` | Adobe regional subset as-is (+ Hangul intervals) |
+| `tc` | `EBGaramondSHS-TC` | `source_fonts/SourceHanSerifTW` | Bopomofo |
+| `sc` | `EBGaramondSHS-SC` | `source_fonts/SourceHanSerifCN` | — |
+| `ja` | `EBGaramondSHS-JA` | `source_fonts/SourceHanSerifJP` | — |
+| `ko` | `EBGaramondSHS-KO` | `source_fonts/SourceHanSerifKR` | `hangul` |
 
-No second-pass character trim: every glyph present in the regional face that
-falls inside the locale intervals is rasterized. Firmware SC↔TC remaps
-(`ScToTcRemap` / `TcToScRemap`) still apply at runtime for cross-orthography
-EPUB text.
+Output: `lib/EpdFont/scripts/output/EBGaramondSHS-{TC,SC,JA,KO}/` with
+`{name}_{12,14,16,18}.cpfont`. Install by copying (or symlinking) a family
+folder to `/.fonts/<name>/` on the SD card.
 
-Output lands in `lib/EpdFont/scripts/output/EBGaramondSHS-{TC,SC,JA,KO}/`.
-Copy a folder to `/.fonts/<name>/` on the SD card.
+Simulator convenience (local only; `simulator/sd_root*` is gitignored):
 
-Override font locations:
+```bash
+# Example: TC → shared sd_root
+mkdir -p simulator/sd_root/.fonts
+ln -sfn ../../../lib/EpdFont/scripts/output/EBGaramondSHS-TC \
+  simulator/sd_root/.fonts/EBGaramondSHS-TC
+# SC / JA / KO → simulator/sd_root_{sc,ja,ko}/.fonts/…
+```
+
+Then set `sdFontFamilyName` in that root’s `.crosspoint/settings.json`
+(e.g. `"EBGaramondSHS-TC"`) and `fontSize` to `1` for MEDIUM.
+
+Override source locations if needed:
 
 ```bash
 SOURCE_FONTS_DIR=/path/to/source_fonts \

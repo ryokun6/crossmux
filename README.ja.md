@@ -61,7 +61,7 @@
 
 `.cpfont` フォントファミリーは SD カードの `/.fonts/` または `/fonts/` に配置できます。ローダーは大型 CJK ファミリーをオンデマンドで索引化し、次ページの字形を先読みし、CJK の太字・斜体字形が無い場合は Regular へフォールバックします。
 
-リポジトリには EB Garamond + Source Han Serif TC のビルダースクリプトも含まれます。変換コマンドや Unicode プリセットは [SD-card fonts](./docs/sd-card-fonts.md) に記載しています。
+リポジトリには EB Garamond + 地域別 Source Han Serif のビルダー（`EBGaramondSHS-{TC,SC,JA,KO}`）も含まれます。変換コマンドや Unicode プリセットは [SD-card fonts](./docs/sd-card-fonts.md) に記載しています。
 
 ### 高速なグレースケール文字
 

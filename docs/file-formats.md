@@ -97,35 +97,40 @@ if (parsedSize != fileSize) {
 
 ### Version 32
 
-> Chinese builds (`ENABLE_CHINESE_VERSION`) carry an independent version counter,
-> currently **59**. The byte layout is identical to the Latin version below; only
-> the word-stream contents differ (per-character CJK tokenization), so caches are
-> not reusable across flavors.
+> Chinese builds (`ENABLE_CHINESE_VERSION`) carry independent version counters:
+> Traditional (**66**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**67**). The byte
+> layout is identical to the Latin version below; only the word-stream contents
+> differ (per-character CJK tokenization), so caches are not reusable across
+> flavors. TC **66** keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
+> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC **67**
+> remaps those marks to FE1x presentation forms like Japanese (corner-biased /
+> GB/T 直排偏右). Brackets and parentheses remap to FE3x/FE4x on all CJK SKUs.
 >
-> Japanese builds use version **60**; Korean builds use version **61**.
+> Japanese builds use version **68**; Korean builds use version **69**.
 >
-> Latin builds use version **53** (was 51). Counters track `writingMode`, em-based
+> Latin builds use version **54**. Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
-> (﹁﹂︵︒ etc.), horizontal inter-paragraph spacing in vertical-rl, and normal
-> brackets in rotated numeric references such as `[12]`. Vertical column breaks
-> also enforce kinsoku so closing punctuation cannot begin a column and opening
-> punctuation cannot end one. Repair retreats to an earlier bounded break; it
-> never paints punctuation past the column height. Repeated
-> vertical dashes stack and consume one character cell each. Sideways Latin
-> preserves source word spaces and punctuation, and adds a 2px gap at
-> upright/sideways boundaries. One- and two-character Latin/numeric tokens rotate
-> when they belong to a phrase, while isolated short numbers retain 縦中横.
-> Large-only image mode suppresses inline images, small standalone assets, and
-> decorative separators identified by em-height ornament classes, separator
-> roles/types, or common separator hints in image metadata. In
-> vertical-rl, block start/end and extra paragraph spacing advance the horizontal
-> column axis rather than offsetting text vertically. Repeated vertical ellipsis
-> variants (…, ⋯, ⋮, ︙, ‥, ︰), including mixed encodings, stack and consume one
-> character cell each, matching repeated dash variants. Upright punctuation
-> grouped into one parser token (for example, `……”`) also consumes one cell per
-> codepoint.
+> (﹁﹂︵︒ etc. on JA/KO/SC/Latin; TC keeps upright centered 點號), horizontal
+> inter-paragraph spacing in vertical-rl, and normal brackets in rotated numeric
+> references such as `[12]`. Vertical column breaks also enforce kinsoku so
+> closing punctuation cannot begin a column and opening punctuation cannot end
+> one. Repair retreats to an earlier bounded break; it never paints punctuation
+> past the column height. Repeated vertical dashes stack and consume one
+> character cell each. Sideways Latin preserves source word spaces and
+> punctuation, and adds a 2px gap at upright/sideways boundaries. One- and
+> two-character Latin/numeric tokens rotate when they belong to a phrase; isolated
+> one-character 縦中横 expands to fullwidth (U+FF10–FF5A), while isolated
+> two-character 縦中横 stays halfwidth. Large-only image mode suppresses inline
+> images, small standalone assets, and decorative separators identified by
+> em-height ornament classes, separator roles/types, or common separator hints
+> in image metadata. In vertical-rl, block start/end and extra paragraph spacing
+> advance the horizontal column axis rather than offsetting text vertically.
+> Repeated vertical ellipsis variants (…, ⋯, ⋮, ︙, ‥, ︰), including mixed
+> encodings, stack and consume one character cell each, matching repeated dash
+> variants. Upright punctuation grouped into one parser token (for example,
+> `……”`) also consumes one cell per codepoint.
 >
-> CJK versions 59/60/61 enforce 禁則 (kinsoku) for both horizontal lines and
+> CJK versions 66/67/68/69 enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
 > the run head or opening brackets at the run end. Japanese builds also treat
 > small kana and the prolonged sound mark as line-start prohibited. Layout helpers

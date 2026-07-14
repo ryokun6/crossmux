@@ -62,7 +62,7 @@
 
 `.cpfont` 글꼴 패밀리는 SD 카드의 `/.fonts/` 또는 `/fonts/`에 넣을 수 있습니다. 로더는 대형 CJK 패밀리를 필요할 때 색인하고, 다음 페이지의 글리프를 미리 준비하며, CJK 굵게·기울임 글리프가 없으면 Regular로 대체합니다.
 
-저장소에는 EB Garamond + Source Han Serif TC 빌더 스크립트도 포함되어 있습니다. 변환 명령·유니코드 프리셋은 [SD-card fonts](./docs/sd-card-fonts.md)에 정리되어 있습니다.
+저장소에는 EB Garamond + 지역별 Source Han Serif 빌더(`EBGaramondSHS-{TC,SC,JA,KO}`)도 포함되어 있습니다. 변환 명령·유니코드 프리셋은 [SD-card fonts](./docs/sd-card-fonts.md)에 정리되어 있습니다.
 
 ### 더 빠른 그레이스케일 텍스트
 

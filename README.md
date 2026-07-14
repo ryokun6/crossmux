@@ -23,10 +23,13 @@ Choose `Writing Mode > Vertical (RTL)` in Reader Settings or the in-book menu.
 The layout engine then:
 
 - lays out columns from right to left
-- uses vertical presentation forms for CJK punctuation
+- uses vertical presentation forms for CJK punctuation; Traditional Chinese
+  keeps upright centered 點號 (`、。，：；！？`) per CLREQ / Taiwan practice,
+  while Simplified Chinese follows Japanese-style FE remapping
 - stacks repeated ellipses and dashes one character cell at a time
 - rotates Latin runs and keeps short numeric references readable
-- applies tate-chu-yoko layout to compact horizontal runs
+- applies tate-chu-yoko to compact horizontal runs (isolated single letters/digits
+  expand to fullwidth; two-character runs stay halfwidth)
 - moves paragraph spacing and block margins along the column axis
 - reverses page controls to follow the reading direction
 
@@ -69,10 +72,9 @@ and [docs/engineering/chinese-build.md](./docs/engineering/chinese-build.md).
 The loader indexes large CJK families on demand, prewarms upcoming page glyphs,
 and falls back to the regular style when a CJK bold or italic glyph is absent.
 
-The repo also includes an EB Garamond plus Source Han Serif TC builder. Its
-current character set covers base CJK ideographs, compatibility ideographs,
-Hiragana, Katakana, Greek, EPUB symbols, and a small book-derived supplement.
-See [SD-card fonts](./docs/sd-card-fonts.md).
+The repo also includes an EB Garamond plus regional Source Han Serif builder
+for locale families `EBGaramondSHS-{TC,SC,JA,KO}` (vendored sources under
+`lib/EpdFont/scripts/source_fonts/`). See [SD-card fonts](./docs/sd-card-fonts.md).
 
 ### Faster grayscale text
 

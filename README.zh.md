@@ -57,7 +57,7 @@
 
 `.cpfont` 字族可放在 SD 卡的 `/.fonts/` 或 `/fonts/`。載入器會按需索引大型 CJK 字族、預熱即將用到的頁面字形，並在缺少粗體／斜體字形時回退到 Regular。
 
-倉庫亦包含 EB Garamond + Source Han Serif TC 建置腳本。詳見 [SD-card fonts](./docs/sd-card-fonts.md)。
+倉庫亦包含 EB Garamond + 各地區 Source Han Serif 建置腳本（`EBGaramondSHS-{TC,SC,JA,KO}`）。詳見 [SD-card fonts](./docs/sd-card-fonts.md)。
 
 ### 更快的灰階文字
 

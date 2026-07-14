@@ -19,13 +19,17 @@ namespace {
 // Values are kept distinct across flavors and above every previously-shipped
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 59;  // bounded vertical-rl 禁則; never paint past column height
-#elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 60;  // bounded vertical-rl 禁則; never paint past column height
-#elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 61;  // bounded vertical-rl 禁則; never paint past column height
+#ifdef CHINESE_UI_SIMPLIFIED
+constexpr uint8_t SECTION_FILE_VERSION = 67;  // SC: FE punct + isolated 1-char → fullwidth
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 53;  // was 51; stack grouped upright punctuation by codepoint
+constexpr uint8_t SECTION_FILE_VERSION = 66;  // TC: upright 點號 + isolated 1-char → fullwidth
+#endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+constexpr uint8_t SECTION_FILE_VERSION = 68;  // JA: isolated upright 1-char Latin/digit → fullwidth
+#elif defined(ENABLE_KOREAN_VERSION)
+constexpr uint8_t SECTION_FILE_VERSION = 69;  // KO: isolated upright 1-char Latin/digit → fullwidth
+#else
+constexpr uint8_t SECTION_FILE_VERSION = 54;  // isolated upright 1-char Latin/digit → fullwidth
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +

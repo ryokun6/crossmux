@@ -136,12 +136,82 @@ void appendUtf8(std::string& out, uint32_t cp) {
   }
 }
 
+uint32_t halfwidthAlnumToFullwidth(const uint32_t cp) {
+  if (cp >= '0' && cp <= '9') return 0xFF10 + (cp - '0');
+  if (cp >= 'A' && cp <= 'Z') return 0xFF21 + (cp - 'A');
+  if (cp >= 'a' && cp <= 'z') return 0xFF41 + (cp - 'a');
+  return cp;
+}
+
+// Isolated upright 縦中横 of exactly one halfwidth letter/digit → fullwidth so it
+// fills the em cell. Two-character 縦中横 (e.g. "12", "OK") stay halfwidth.
+// Must run before any neighbor is converted so phrase detection still sees ASCII.
+void expandIsolatedSingleTateChuYokoToFullwidth(std::vector<std::string>& words) {
+  for (size_t i = 0; i < words.size(); ++i) {
+    if (!isTateChuYokoWord(words[i]) || isSidewaysVerticalWordAt(words, i)) {
+      continue;
+    }
+
+    size_t n = 0;
+    uint32_t only = 0;
+    const auto* ptr = reinterpret_cast<const unsigned char*>(words[i].c_str());
+    while (true) {
+      const uint32_t cp = utf8NextCodepoint(&ptr);
+      if (cp == 0) break;
+      if (cp == 0x00AD) continue;
+      only = cp;
+      ++n;
+      if (n > 1) break;
+    }
+    if (n != 1) {
+      continue;  // two-char 縦中横: keep halfwidth
+    }
+
+    const uint32_t fullwidth = halfwidthAlnumToFullwidth(only);
+    if (fullwidth == only) {
+      continue;
+    }
+    std::string out;
+    out.reserve(3);
+    appendUtf8(out, fullwidth);
+    words[i].swap(out);
+  }
+}
+
 // Vertical-rl punctuation: Western quotes → ﹁﹂/﹃﹄; CJK/FW punct → Vertical Forms /
 // Compatibility Forms so glyphs sit correctly in the column (GenSen ships these cps).
+// Traditional Chinese (TC) keeps pause/stop marks (點號) upright and centered —
+// CLREQ / Taiwan MOE: 、。，：；！？ sit in the middle of the em box. Simplified
+// Chinese (SC) follows Japanese-style FE1x remapping (corner-biased / GB/T 直排
+// 偏右). Brackets / parentheses remap to FE3x/FE4x on all CJK SKUs.
 struct VerticalPunctRemapState {
   bool nextDoubleQuoteOpen = true;
   bool nextSingleQuoteOpen = true;
 };
+
+bool keepUprightForTraditionalChineseVertical(const uint32_t cp) {
+#if defined(ENABLE_CHINESE_VERSION) && !defined(CHINESE_UI_SIMPLIFIED)
+  // Pause/stop marks (點號). See W3C CLREQ §3.1 and Taiwan MOE 重訂標點符號手冊:
+  // Traditional Chinese centers these in both horizontal and vertical writing.
+  // SC (CHINESE_UI_SIMPLIFIED) uses the shared FE remap path like Japanese.
+  switch (cp) {
+    case 0x3001:  // 、 ideographic comma
+    case 0x3002:  // 。 ideographic full stop
+    case 0xFF0C:  // ， fullwidth comma
+    case 0xFF0E:  // ． fullwidth full stop (occasional EPUB substitute for 。)
+    case 0xFF1A:  // ： fullwidth colon
+    case 0xFF1B:  // ； fullwidth semicolon
+    case 0xFF01:  // ！ fullwidth exclamation mark
+    case 0xFF1F:  // ？ fullwidth question mark
+      return true;
+    default:
+      return false;
+  }
+#else
+  (void)cp;
+  return false;
+#endif
+}
 
 bool isBracketedAsciiReference(const std::string& word) {
   // Keep compact footnote/citation markers such as [1] and [123] intact so the
@@ -170,6 +240,9 @@ bool containsSidewaysAlphaNumeric(const std::string& word) {
 uint32_t verticalFormForCodepoint(uint32_t cp, VerticalPunctRemapState& state) {
   if (const uint32_t stackedPresentation = VerticalPunctuation::presentationCodepoint(cp); stackedPresentation != 0) {
     return stackedPresentation;
+  }
+  if (keepUprightForTraditionalChineseVertical(cp)) {
+    return cp;
   }
 
   switch (cp) {
@@ -830,6 +903,7 @@ void ParsedText::layoutAndExtractVerticalColumns(const GfxRenderer& renderer, co
   for (auto& w : words) {
     remapVerticalPunctuationInPlace(w, punctState);
   }
+  expandIsolatedSingleTateChuYokoToFullwidth(words);
 
   if (renderer.isSdCardFont(fontId)) {
     uint8_t styleMask = 0;
