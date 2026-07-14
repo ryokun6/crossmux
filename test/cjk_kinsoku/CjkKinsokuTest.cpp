@@ -11,22 +11,22 @@ bool mayBreakAfter(const uint32_t left, const uint32_t right) { return CjkKinsok
 }  // namespace
 
 TEST(CjkKinsoku, LineStartProhibitedCoversStopsAndClosers) {
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3002));  // 。
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3001));  // 、
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFF0C));  // ，
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x300D));  // 」
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFF09));  // ）
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x30FB));  // ・
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x2026));  // …
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3002));   // 。
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3001));   // 、
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFF0C));   // ，
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x300D));   // 」
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0xFF09));   // ）
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x30FB));   // ・
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x2026));   // …
   EXPECT_FALSE(CjkKinsoku::isLineStartProhibited(0x4E2D));  // 中
   EXPECT_FALSE(CjkKinsoku::isLineStartProhibited(0x300C));  // 「
 }
 
 TEST(CjkKinsoku, LineEndProhibitedCoversOpenersAndCurrency) {
-  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0x300C));  // 「
-  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0xFF08));  // （
-  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0x201C));  // “
-  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0xFFE5));  // ￥
+  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0x300C));   // 「
+  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0xFF08));   // （
+  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0x201C));   // “
+  EXPECT_TRUE(CjkKinsoku::isLineEndProhibited(0xFFE5));   // ￥
   EXPECT_FALSE(CjkKinsoku::isLineEndProhibited(0x3002));  // 。
   EXPECT_FALSE(CjkKinsoku::isLineEndProhibited(0x4E2D));  // 中
 }
@@ -77,11 +77,12 @@ TEST(CjkKinsoku, RepairBreakRetreatsBeforeColumnHeadStop) {
   EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 2), 1u);
 }
 
-TEST(CjkKinsoku, RepairBreakAbsorbsOrphanStopOntoSingleTokenColumn) {
-  // Only one ideograph fits; next is 。 — absorb so the next column is not headed by 。
+TEST(CjkKinsoku, RepairBreakNeverOverflowsSingleTokenColumn) {
+  // Only one ideograph fits; next is 。. The impossible one-cell case keeps the
+  // bounded break rather than drawing punctuation outside the column measure.
   const std::vector<std::string> words = {"\xE4\xB8\xAD", "\xE3\x80\x82"};  // 中 。
   const std::vector<bool> continues = {false, false};
-  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 2u);
+  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 1u);
 }
 
 TEST(CjkKinsoku, RepairBreakRetreatsOpenerFromColumnEnd) {
@@ -90,18 +91,18 @@ TEST(CjkKinsoku, RepairBreakRetreatsOpenerFromColumnEnd) {
   EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 2), 1u);
 }
 
-TEST(CjkKinsoku, RepairBreakHandlesVerticalRemappedStop) {
+TEST(CjkKinsoku, RepairBreakKeepsVerticalRemappedStopBounded) {
   // U+FE12 PRESENTATION FORM FOR VERTICAL IDEOGRAPHIC FULL STOP
   const std::vector<std::string> words = {"\xE4\xB8\xAD", "\xEF\xB8\x92"};  // 中 ︒
   const std::vector<bool> continues = {false, false};
-  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 2u);
+  EXPECT_EQ(CjkKinsoku::repairBreakIndex(words, continues, 0, 1), 1u);
 }
 
 #if defined(ENABLE_JAPANESE_VERSION)
 TEST(CjkKinsoku, JapaneseSmallKanaAreLineStartProhibited) {
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3083));  // ゃ
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3063));  // っ
-  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x30FC));  // ー
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3083));                   // ゃ
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x3063));                   // っ
+  EXPECT_TRUE(CjkKinsoku::isLineStartProhibited(0x30FC));                   // ー
   EXPECT_FALSE(CjkKinsoku::hasCjkBreakOpportunityBetween(0x304D, 0x3083));  // きゃ
 }
 #else

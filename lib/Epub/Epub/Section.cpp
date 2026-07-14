@@ -19,11 +19,11 @@ namespace {
 // Values are kept distinct across flavors and above every previously-shipped
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 56;  // was 55; vertical-rl 禁則 absorb + full repair
+constexpr uint8_t SECTION_FILE_VERSION = 59;  // bounded vertical-rl 禁則; never paint past column height
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 57;  // was 56; vertical-rl 禁則 absorb + full repair
+constexpr uint8_t SECTION_FILE_VERSION = 60;  // bounded vertical-rl 禁則; never paint past column height
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 58;  // was 57; vertical-rl 禁則 absorb + full repair
+constexpr uint8_t SECTION_FILE_VERSION = 61;  // bounded vertical-rl 禁則; never paint past column height
 #else
 constexpr uint8_t SECTION_FILE_VERSION = 53;  // was 51; stack grouped upright punctuation by codepoint
 #endif

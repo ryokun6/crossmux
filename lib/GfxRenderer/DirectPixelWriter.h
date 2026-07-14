@@ -22,6 +22,7 @@ struct DirectPixelWriter {
   uint8_t* fbMsb = nullptr;
   GfxRenderer::RenderMode mode = GfxRenderer::BW;
   uint16_t displayWidthBytes = 0;  // Runtime framebuffer stride (X4: 100, X3: 99)
+  int displayWidthPixels = 0;
   // Active write target: for tiled grayscale, fb is the band scratch, originY is
   // the band's top physical row, and clipRows is the band height. Off-band
   // pixels are dropped. With no strip active these collapse to the full frame
@@ -49,6 +50,7 @@ struct DirectPixelWriter {
     clipRows = renderer.getWriteRows();
     mode = renderer.getRenderMode();
     displayWidthBytes = renderer.getDisplayWidthBytes();
+    displayWidthPixels = renderer.getDisplayWidth();
     blackInk = true;
 
     const int phyW = renderer.getDisplayWidth();
@@ -110,41 +112,40 @@ struct DirectPixelWriter {
     rowPhyYBase = phyYBase + logicalY * phyYStepY;
   }
 
-  // For the current row (set via beginRow), narrow [colStart, colEnd) to the
-  // columns whose pixels fall inside the active strip band. writePixel() would
-  // clip the rest anyway, but on a strip pass that is most of a full-page image
-  // (only ~one strip-height worth of columns survive in portrait); skipping them
-  // here avoids the per-pixel unpack+transform entirely. For full-frame passes
-  // (clipRows == panel height) the range is unchanged. xBase is the logical X of
-  // column 0; the band test mirrors writePixel(): 0 <= phyY - originY < clipRows.
-  inline void bandColRange(int xBase, int width, int& colStart, int& colEnd) const {
-    // init() only ever sets phyYStepX to 0, +1, or -1; the +1/-1 solve below
-    // relies on that.
-    assert(phyYStepX == 0 || phyYStepX == 1 || phyYStepX == -1);
-    colStart = 0;
-    colEnd = width;
-    if (phyYStepX == 0) {
-      // phyY is constant across the row: the whole row is in-band or out.
-      const int sy = rowPhyYBase - originY;
-      if (static_cast<unsigned>(sy) >= static_cast<unsigned>(clipRows)) colEnd = 0;
+  // Intersect [colStart, colEnd) with logical X values whose transformed
+  // coordinate falls in [lower, upper]. Transform steps are always -1, 0, or 1.
+  inline void clipColRangeForAxis(const int coordBase, const int coordStep, const int xBase, const int lower,
+                                  const int upper, int& colStart, int& colEnd) const {
+    assert(coordStep == 0 || coordStep == 1 || coordStep == -1);
+    if (colStart >= colEnd) return;
+    if (coordStep == 0) {
+      if (coordBase < lower || coordBase > upper) colEnd = colStart;
       return;
     }
-    // phyY = rowPhyYBase + logicalX * phyYStepX (phyYStepX is +1 or -1).
-    // Solve originY <= phyY <= originY + clipRows - 1 for logicalX.
-    const int loY = originY;
-    const int hiY = originY + clipRows - 1;
+
     int xLo, xHi;
-    if (phyYStepX > 0) {
-      xLo = loY - rowPhyYBase;
-      xHi = hiY - rowPhyYBase;
+    if (coordStep > 0) {
+      xLo = lower - coordBase;
+      xHi = upper - coordBase;
     } else {
-      xLo = rowPhyYBase - hiY;
-      xHi = rowPhyYBase - loY;
+      xLo = coordBase - upper;
+      xHi = coordBase - lower;
     }
     const int cs = xLo - xBase;
     const int ce = xHi - xBase + 1;  // exclusive
     if (cs > colStart) colStart = cs;
     if (ce < colEnd) colEnd = ce;
+    if (colStart > colEnd) colStart = colEnd;
+  }
+
+  // For the current row (set via beginRow), narrow [colStart, colEnd) to pixels
+  // inside both the physical panel width and the active strip/full-frame rows.
+  // Clipping once per glyph row keeps the inner pixel loop branch-free.
+  inline void bandColRange(int xBase, int width, int& colStart, int& colEnd) const {
+    colStart = 0;
+    colEnd = width;
+    clipColRangeForAxis(rowPhyXBase, phyXStepX, xBase, 0, displayWidthPixels - 1, colStart, colEnd);
+    clipColRangeForAxis(rowPhyYBase, phyYStepX, xBase, originY, originY + clipRows - 1, colStart, colEnd);
     if (colStart < 0) colStart = 0;
     if (colEnd > width) colEnd = width;
     if (colStart > colEnd) colStart = colEnd;
@@ -160,7 +161,8 @@ struct DirectPixelWriter {
 
   // Write a single 2-bit pixel value to the framebuffer.
   // Must be called after beginRow() for the current row.
-  // No bounds checking — caller guarantees coordinates are valid.
+  // bandColRange() guarantees physical X bounds; the unsigned Y compare remains
+  // as a defensive strip/full-frame row guard.
   inline void writePixel(int logicalX, uint8_t pixelValue) const {
     const int phyX = rowPhyXBase + logicalX * phyXStepX;
     const int phyY = rowPhyYBase + logicalX * phyYStepX;

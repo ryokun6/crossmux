@@ -765,15 +765,8 @@ std::vector<size_t> ParsedText::computeVerticalColumnBreaks(const GfxRenderer& r
       const int gap = verticalGapBeforeWord(renderer, fontId, words, wordStyles, wordContinues, wordNoSpaceBefore, j);
       const int extent = verticalExtentForWord(renderer, fontId, words[j], wordStyles[j], cellStep, wordWidths[j],
                                                isSidewaysVerticalWordAt(words, j));
-      // Prefer force-including a 行頭禁則 / inseparable token that would otherwise
-      // begin the next column, even if it slightly overflows the column height.
-      // Opening brackets at the prospective column end are repaired below.
       if (y + gap + extent > columnHeight && j > i) {
-        const bool mustAbsorb = CjkKinsoku::isLineStartProhibited(firstCodepoint(words[j])) ||
-                                CjkKinsoku::isInseparablePair(lastCodepoint(words[j - 1]), firstCodepoint(words[j]));
-        if (!mustAbsorb) {
-          break;
-        }
+        break;
       }
       y += gap + extent;
       j++;
@@ -781,9 +774,9 @@ std::vector<size_t> ParsedText::computeVerticalColumnBreaks(const GfxRenderer& r
         break;
       }
     }
-    // Keep continuation groups intact, then apply full 禁則 repair (行頭/行末/分離).
-    // Always run repair when more text remains — including the single-token case —
-    // so a lone ideograph cannot leave `。`/FE12 alone at the next column head.
+    // Keep continuation groups intact, then retreat the bounded break to enforce
+    // 行頭/行末/分離禁則. Never force punctuation beyond columnHeight: the glyph
+    // fast path assumes all layout coordinates stay inside the text viewport.
     while (j > i + 1 && j < total && wordContinues[j]) {
       --j;
     }

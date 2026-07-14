@@ -98,19 +98,19 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry an independent version counter,
-> currently **56**. The byte layout is identical to the Latin version below; only
+> currently **59**. The byte layout is identical to the Latin version below; only
 > the word-stream contents differ (per-character CJK tokenization), so caches are
 > not reusable across flavors.
 >
-> Japanese builds use version **57**; Korean builds use version **58**.
+> Japanese builds use version **60**; Korean builds use version **61**.
 >
 > Latin builds use version **53** (was 51). Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
 > (﹁﹂︵︒ etc.), horizontal inter-paragraph spacing in vertical-rl, and normal
 > brackets in rotated numeric references such as `[12]`. Vertical column breaks
 > also enforce kinsoku so closing punctuation cannot begin a column and opening
-> punctuation cannot end one (same `CjkKinsoku` repair as horizontal, including
-> soft-overflow absorb when a column would otherwise orphan a stop); repeated
+> punctuation cannot end one. Repair retreats to an earlier bounded break; it
+> never paints punctuation past the column height. Repeated
 > vertical dashes stack and consume one character cell each. Sideways Latin
 > preserves source word spaces and punctuation, and adds a 2px gap at
 > upright/sideways boundaries. One- and two-character Latin/numeric tokens rotate
@@ -125,7 +125,7 @@ if (parsedSize != fileSize) {
 > grouped into one parser token (for example, `……”`) also consumes one cell per
 > codepoint.
 >
-> CJK versions 56/57/58 enforce 禁則 (kinsoku) for both horizontal lines and
+> CJK versions 59/60/61 enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
 > the run head or opening brackets at the run end. Japanese builds also treat
 > small kana and the prolonged sound mark as line-start prohibited. Layout helpers

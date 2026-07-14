@@ -298,8 +298,10 @@ inline uint32_t lastCodepoint(const std::string& text) {
 // Repair a candidate line/column break so the next run does not start with
 // 行頭禁則 and the current run does not end with 行末禁則. Used by both
 // horizontal line breaking and vertical-rl column packing.
-// When retreat would empty the current run, absorb start-prohibited tokens
-// onto the current run instead of orphaning them on the next.
+//
+// Repair only retreats the break. It must never absorb a token that did not fit:
+// doing so would exceed the line/column measure. If the run contains only one
+// token, keeping the bounded break is the only safe fallback.
 inline size_t repairBreakIndex(const std::vector<std::string>& words, const std::vector<bool>& continuesVec,
                                const size_t runStart, size_t breakAt) {
   if (breakAt <= runStart || breakAt > words.size()) {
@@ -315,19 +317,8 @@ inline size_t repairBreakIndex(const std::vector<std::string>& words, const std:
     return breakAt > runStart;
   };
 
-  auto absorbNext = [&]() {
-    if (breakAt >= words.size()) return false;
-    ++breakAt;
-    while (breakAt < words.size() && continuesVec[breakAt]) {
-      ++breakAt;
-    }
-    return true;
-  };
-
   while (breakAt < words.size() && isLineStartProhibited(firstCodepoint(words[breakAt]))) {
-    if (!retreatOne()) {
-      if (!absorbNext()) break;
-    }
+    if (!retreatOne()) break;
   }
 
   while (breakAt > runStart && breakAt <= words.size() && isLineEndProhibited(lastCodepoint(words[breakAt - 1]))) {
@@ -336,9 +327,7 @@ inline size_t repairBreakIndex(const std::vector<std::string>& words, const std:
 
   while (breakAt > runStart && breakAt < words.size() &&
          isInseparablePair(lastCodepoint(words[breakAt - 1]), firstCodepoint(words[breakAt]))) {
-    if (!retreatOne()) {
-      if (!absorbNext()) break;
-    }
+    if (!retreatOne()) break;
   }
 
   return breakAt;
