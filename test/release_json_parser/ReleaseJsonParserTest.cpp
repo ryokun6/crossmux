@@ -186,7 +186,7 @@ TEST(ReleaseJsonParser, FirmwareNotFirstAsset) {
 
 TEST(ReleaseJsonParser, SelectsRequestedTraditionalChineseFirmwareAsset) {
   const char* json = R"({
-      "tag_name": "1.4.12",
+      "tag_name": "1.4.13",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
         {"name": "firmware-tc.bin", "browser_download_url": "https://example.com/firmware-tc.bin", "size": 6000000},
@@ -199,14 +199,14 @@ TEST(ReleaseJsonParser, SelectsRequestedTraditionalChineseFirmwareAsset) {
 
   EXPECT_TRUE(p.foundTag());
   EXPECT_TRUE(p.foundFirmware());
-  EXPECT_STREQ(p.getTagName(), "1.4.12");
+  EXPECT_STREQ(p.getTagName(), "1.4.13");
   EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-tc.bin");
   EXPECT_EQ(p.getFirmwareSize(), 6000000u);
 }
 
 TEST(ReleaseJsonParser, SelectsRequestedSimplifiedChineseFirmwareAsset) {
   const char* json = R"({
-      "tag_name": "1.4.12",
+      "tag_name": "1.4.13",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
         {"name": "firmware-tc.bin", "browser_download_url": "https://example.com/firmware-tc.bin", "size": 6000000},
@@ -219,14 +219,14 @@ TEST(ReleaseJsonParser, SelectsRequestedSimplifiedChineseFirmwareAsset) {
 
   EXPECT_TRUE(p.foundTag());
   EXPECT_TRUE(p.foundFirmware());
-  EXPECT_STREQ(p.getTagName(), "1.4.12");
+  EXPECT_STREQ(p.getTagName(), "1.4.13");
   EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware-sc.bin");
   EXPECT_EQ(p.getFirmwareSize(), 6100000u);
 }
 
 TEST(ReleaseJsonParser, SelectsRequestedJapaneseFirmwareAsset) {
   const char* json = R"({
-      "tag_name": "1.4.12",
+      "tag_name": "1.4.13",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
         {"name": "firmware-ja.bin", "browser_download_url": "https://example.com/firmware-ja.bin", "size": 5800000},
@@ -245,7 +245,7 @@ TEST(ReleaseJsonParser, SelectsRequestedJapaneseFirmwareAsset) {
 
 TEST(ReleaseJsonParser, SelectsRequestedKoreanFirmwareAsset) {
   const char* json = R"({
-      "tag_name": "1.4.12",
+      "tag_name": "1.4.13",
       "assets": [
         {"name": "firmware.bin", "browser_download_url": "https://example.com/firmware.bin", "size": 5000000},
         {"name": "firmware-ja.bin", "browser_download_url": "https://example.com/firmware-ja.bin", "size": 5800000},
