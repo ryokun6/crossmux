@@ -45,6 +45,18 @@ inline bool utf8IsCjkBreakable(const uint32_t cp) {
          || (cp >= 0x2A700 && cp <= 0x2B73F);  // CJK Extension C
 }
 
+// Returns true for Hangul codepoints. Korean is the only CJK script written with
+// spaces between words, so a few layout rules treat it differently from the
+// no-space CJK scripts (CSS Text 4.1.2 segment-break transformation exempts Hangul).
+inline bool utf8IsHangul(const uint32_t cp) {
+  return (cp >= 0x1100 && cp <= 0x11FF)      // Hangul Jamo
+         || (cp >= 0x3130 && cp <= 0x318F)   // Hangul Compatibility Jamo
+         || (cp >= 0xA960 && cp <= 0xA97F)   // Hangul Jamo Extended-A
+         || (cp >= 0xAC00 && cp <= 0xD7AF)   // Hangul Syllables
+         || (cp >= 0xD7B0 && cp <= 0xD7FF)   // Hangul Jamo Extended-B
+         || (cp >= 0xFFA0 && cp <= 0xFFDC);  // Halfwidth Hangul
+}
+
 // Returns true for Unicode combining diacritical marks that should not advance the cursor.
 inline bool utf8IsCombiningMark(const uint32_t cp) {
   return (cp >= 0x0300 && cp <= 0x036F)      // Combining Diacritical Marks

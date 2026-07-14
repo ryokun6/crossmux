@@ -98,15 +98,15 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry independent version counters:
-> Traditional (**70**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**71**). The byte
+> Traditional (**73**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**74**). The byte
 > layout is identical to the Latin version below; only the word-stream contents
 > differ (per-character CJK tokenization), so caches are not reusable across
-> flavors. TC **70** keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
-> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC **71**
+> flavors. TC **73** keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
+> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC **74**
 > remaps those marks to FE1x presentation forms like Japanese (corner-biased /
 > GB/T 直排偏右). Brackets and parentheses remap to FE3x/FE4x on all CJK SKUs.
 >
-> Japanese builds use version **72**; Korean builds use version **69**.
+> Japanese builds use version **75**; Korean builds use version **76**.
 >
 > Latin builds use version **54**. Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
@@ -137,7 +137,8 @@ if (parsedSize != fileSize) {
 > content edge without overlapping the next glyph. Compression runs before
 > kinsoku repair; edge trims apply on the final run bounds. Gated by Reader
 > setting `punctCompressionEnabled` (default on). Korean and Latin SKUs ignore
-> compression. Helpers live in `lib/Epub/Epub/CjkPunctCompression.h`.
+> compression. CJK **73/74/75/76** also preserve author source
+> spaces between CJK words (Korean word spacing / CSS Text segment-break heuristic). Helpers live in `lib/Epub/Epub/CjkPunctCompression.h`.
 >
 > CJK versions also enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
