@@ -37,6 +37,16 @@ class ChapterHtmlSlimParser {
   char partWordBuffer[MAX_WORD_SIZE + 1] = {};
   int partWordBufferIndex = 0;
   bool nextWordContinues = false;  // true when next flushed word attaches to previous (inline element boundary)
+#ifdef ENABLE_CJK_VERSION
+  // Source-whitespace tracking. CJK tokens otherwise join with a zero gap, which
+  // silently deletes the author's spaces (Korean is spaced; Chinese text may contain
+  // intentional spaces). A run with a real space/tab always yields a space; a run of
+  // only segment breaks (\r \n) is removed between two no-space CJK characters per
+  // CSS Text 4.1.2 segment-break transformation (Hangul is exempt and keeps a space).
+  bool pendingRealSpace = false;     // whitespace run contained ' ' or '\t'
+  bool pendingSegmentBreak = false;  // whitespace run contained '\r' or '\n'
+  uint32_t lastEmittedCp = 0;        // last codepoint of the previously flushed word
+#endif
   std::unique_ptr<ParsedText> currentTextBlock = nullptr;
   std::unique_ptr<Page> currentPage = nullptr;
   int16_t currentPageNextY = 0;
