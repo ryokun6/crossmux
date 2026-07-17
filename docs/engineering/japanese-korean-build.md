@@ -46,12 +46,16 @@ The 14pt pool unions Joyo so MEDIUM stays a strict superset of the minimal set
 
 | Tier | Sizes | Pool | Source |
 |---|---|---|---|
-| UI / SMALL / LARGE | 8/10/12/16/18 | modern jamo ∪ every glyph in `korean.yaml` | UI force-include via `--require-from` |
+| UI / SMALL | 8/10/12 | KS X 1001 완성형 2 350 common syllables ∪ modern jamo ∪ every glyph in `korean.yaml` | KS X 1001 (EUC-KR rows 0xB0–0xC8) + UI force-include via `--require-from` |
+| LARGE | 16/18 | modern jamo ∪ every glyph in `korean.yaml` | UI force-include via `--require-from` |
 | Reading MEDIUM | 14 | **All modern** Hangul (11 172) ∪ 기초 한자 1800 ∪ modern jamo ∪ i18n + EPUB symbols | Hangul Syllables block + MOE 한문 교육용 기초 한자 |
 
 Full Hangul is embedded only at 14pt (the default `FONT_SIZE::MEDIUM`) so the
-dual-OTA `0x640000` app slot fits; 8/10/12/16/18 stay i18n-only but still
-cover every `korean.yaml` UI glyph. Obsolete / ancient Hangul jamo are **not**
+dual-OTA `0x640000` app slot fits. UI sizes 8/10/12 additionally embed the
+KS X 1001 완성형 2 350 common-syllable set (`chars_ko_ks1001_2350.txt`) so
+file-browser and book-list entries render arbitrary Korean titles; 16/18
+stay i18n-only but still cover every `korean.yaml` UI glyph.
+Obsolete / ancient Hangul jamo are **not**
 embedded. Hangul syllables are listed in `chars_ko_hangul_all.txt` and fed via
 `--text-file`. Hanja uses the official educational 1800-character list — a
 deliberately **small** ideograph pool (no SC/TC conversion).
@@ -111,6 +115,7 @@ Use **separate build directories** per SKU — `gen_i18n.py` writes shared
 | `lib/EpdFont/scripts/chars_ja_kana.txt` | Hiragana + katakana |
 | `lib/EpdFont/scripts/build_ja_charset.py` | Emits `ja_common_chars.txt` / `ja_i18n_chars.txt` |
 | `lib/EpdFont/scripts/build-ja-builtin-fonts.sh` | GenSen JP → `notosans_ja_*.h` |
+| `lib/EpdFont/scripts/chars_ko_ks1001_2350.txt` | KS X 1001 완성형 2 350 common syllables (UI 8/10/12pt) |
 | `lib/EpdFont/scripts/chars_ko_hangul_all.txt` | All 11 172 modern Hangul syllables |
 | `lib/EpdFont/scripts/chars_ko_hanja_1800.txt` | 한문 교육용 기초 한자 1800 |
 | `lib/EpdFont/scripts/chars_ko_jamo.txt` | Modern combining + compatibility jamo (no obsolete) |
