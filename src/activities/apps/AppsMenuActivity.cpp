@@ -20,6 +20,7 @@ struct AppEntry {
 };
 
 constexpr AppEntry kAppEntries[] = {
+    {StrId::STR_AGENT_MONITOR_TITLE, UIIcon::Wifi, &ActivityManager::goToAgentMonitor},
     {StrId::STR_READING_STATS, UIIcon::Library, &ActivityManager::goToReadingStatsMenu},
 #ifdef ENABLE_CHINESE_VERSION
     {StrId::STR_WEREAD_TITLE, UIIcon::WeRead, &ActivityManager::goToWeRead},
