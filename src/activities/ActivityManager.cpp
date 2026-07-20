@@ -2,11 +2,13 @@
 
 #include <FontCacheManager.h>
 #include <HalPowerManager.h>
+#include <Memory.h>
 
 #include <algorithm>
 
 #include "OpdsServerStore.h"
 #include "apps/AppsMenuActivity.h"
+#include "apps/agent-monitor/AgentMonitorActivity.h"
 #ifdef ENABLE_CHINESE_VERSION
 #include "apps/weread/WeReadBookActivity.h"
 #include "apps/weread/WeReadMenuActivity.h"
@@ -240,6 +242,15 @@ void ActivityManager::goToApps() { replaceActivity(std::make_unique<AppsMenuActi
 
 void ActivityManager::goToReadingStatsMenu() {
   replaceActivity(std::make_unique<ReadingStatsMenuActivity>(renderer, mappedInput));
+}
+
+void ActivityManager::goToAgentMonitor() {
+  auto activity = makeUniqueNoThrow<AgentMonitorActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM opening Agent Monitor");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToStandby() { replaceActivity(std::make_unique<StandbyActivity>(renderer, mappedInput)); }
