@@ -3,12 +3,15 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESPmDNS.h>
+#include <HalPowerManager.h>
+#include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <esp_wifi.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 
 #include "../../../WifiCredentialStore.h"
@@ -20,6 +23,23 @@
 namespace {
 
 AgentMonitorActivity* s_instance = nullptr;
+std::atomic<bool> s_storageScanStarted{false};
+std::atomic<bool> s_storageScanReady{false};
+uint64_t s_storageFreeBytes = 0;
+
+void storageScanTask(void*) {
+  s_storageFreeBytes = Storage.freeBytes();
+  s_storageScanReady.store(true, std::memory_order_release);
+  vTaskDelete(nullptr);
+}
+
+void startStorageScan() {
+  if (s_storageScanReady.load(std::memory_order_acquire) || s_storageScanStarted.exchange(true)) return;
+  if (xTaskCreate(storageScanTask, "agmon-storage", 3072, nullptr, 1, nullptr) != pdPASS) {
+    s_storageScanStarted.store(false);
+    LOG_ERR("AGMON", "Could not start storage scan task");
+  }
+}
 
 // cppcheck-suppress constParameterCallback -- PubSubClient requires a mutable payload callback signature.
 void mqttCallback(char*, uint8_t* payload, unsigned int length) {
@@ -48,6 +68,9 @@ void AgentMonitorActivity::onEnter() {
   mqttReconnectMs = kMqttReconnectMinMs;
   displayedWifiOnline = WiFi.status() == WL_CONNECTED;
   displayedMqttOnline = false;
+  storageFreeReady = s_storageScanReady.load(std::memory_order_acquire);
+  if (storageFreeReady) storageFreeBytes = s_storageFreeBytes;
+  startStorageScan();
   payloadDirty = true;
   requestUpdate();
 }
@@ -246,6 +269,12 @@ void AgentMonitorActivity::onMqttPayload(const uint8_t* payload, size_t length) 
 void AgentMonitorActivity::loop() {
   pumpNetwork();
 
+  if (!storageFreeReady && s_storageScanReady.load(std::memory_order_acquire)) {
+    storageFreeBytes = s_storageFreeBytes;
+    storageFreeReady = true;
+    refreshForInput();
+  }
+
   if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
     activityManager.goToApps();
     return;
@@ -350,11 +379,29 @@ void AgentMonitorActivity::drawHeader(int sw) {
 }
 
 void AgentMonitorActivity::drawSystemMetrics(int y, int sw) {
-  char text[96];
-  snprintf(text, sizeof(text), "CPU %u%%   %s %u%%   %s %u%%", cpu, tr(STR_AGENT_MONITOR_MEMORY), memory,
-           tr(STR_AGENT_MONITOR_DISK), disk);
-  renderer.drawRoundedRect(16, y, sw - 32, 48, 2, 8, true);
-  renderer.drawCenteredText(UI_10_FONT_ID, y + 15, text, true, EpdFontFamily::BOLD);
+  constexpr int x = 16;
+  constexpr int height = 48;
+  constexpr int padding = 12;
+  const int width = sw - x * 2;
+
+  const uint32_t heapSize = ESP.getHeapSize();
+  const uint16_t heapUsedPercent =
+      heapSize == 0 ? 0 : static_cast<uint16_t>(100U - (ESP.getFreeHeap() * 100U / heapSize));
+  const uint64_t freeTenthsGiB = storageFreeBytes * 10ULL / (1024ULL * 1024ULL * 1024ULL);
+
+  char metrics[128];
+  if (storageFreeReady) {
+    snprintf(metrics, sizeof(metrics), "MAC: C%u%% M%u%%;  X4: C%u M%u%% SD%llu.%lluG B%u%%", cpu, memory,
+             getCpuFrequencyMhz(), heapUsedPercent, static_cast<unsigned long long>(freeTenthsGiB / 10ULL),
+             static_cast<unsigned long long>(freeTenthsGiB % 10ULL), powerManager.getBatteryPercentage());
+  } else {
+    snprintf(metrics, sizeof(metrics), "MAC: C%u%% M%u%%;  X4: C%u M%u%% SD... B%u%%", cpu, memory,
+             getCpuFrequencyMhz(), heapUsedPercent, powerManager.getBatteryPercentage());
+  }
+  const std::string fittedMetrics = renderer.truncatedText(SMALL_FONT_ID, metrics, width - padding * 2);
+
+  renderer.drawRoundedRect(x, y, width, height, 2, 8, true);
+  renderer.drawCenteredText(SMALL_FONT_ID, y + 15, fittedMetrics.c_str(), true, EpdFontFamily::BOLD);
 }
 
 void AgentMonitorActivity::drawAgentCard(const AgentRow& agent, int y, int width, bool isSelected) {

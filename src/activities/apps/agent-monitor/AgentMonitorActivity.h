@@ -17,7 +17,7 @@ class AgentMonitorActivity final : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override { return true; }
-  bool skipLoopDelay() override { return true; }
+  bool skipLoopDelay() override { return false; }
 
   void onMqttPayload(const uint8_t* payload, size_t length);
 
@@ -67,6 +67,7 @@ class AgentMonitorActivity final : public Activity {
   uint16_t cpu = 0;
   uint16_t memory = 0;
   uint16_t disk = 0;
+  uint64_t storageFreeBytes = 0;
   uint32_t lastPayloadMs = 0;
   uint32_t lastWifiAttemptMs = 0;
   uint32_t lastMqttAttemptMs = 0;
@@ -78,4 +79,5 @@ class AgentMonitorActivity final : public Activity {
   bool displayedWifiOnline = false;
   bool displayedMqttOnline = false;
   bool mdnsStarted = false;
+  bool storageFreeReady = false;
 };
