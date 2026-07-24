@@ -4,6 +4,10 @@ name: Build & Publish SD Card Fonts
 # pipeline are updated. Publishes .cpfont files + fonts.json as GitHub Release
 # assets on THIS repo under sd-fonts-* tags (separate from firmware version
 # tags so the two release streams stay distinguishable).
+#
+# Always publish font releases as prerelease. OTA uses GitHub's
+# /releases/latest, which ignores prereleases — so font tags never steal the
+# Latest badge from firmware version tags.
 on:
   workflow_dispatch:
 
@@ -86,6 +90,7 @@ jobs:
 
           gh release create "$VERSIONED" dist/* \
             --repo "${{ github.repository }}" \
+            --prerelease \
             --title "$TITLE" \
             --notes "Pre-built \`.cpfont\` font files for ryOS CrossMux.
 
@@ -106,6 +111,7 @@ jobs:
 
           gh release create "$BASE" dist/* \
             --repo "${{ github.repository }}" \
+            --prerelease \
             --title "SD Card Fonts (${BASE#sd-fonts-})" \
             --notes "Current font build for manifest v${{ steps.versions.outputs.metadata }}, binary format v${{ steps.versions.outputs.binary }}. Devices with this firmware version download from this release.
 

@@ -54,10 +54,11 @@ There are three ways to install fonts:
 
 ## Available Pre-Built Fonts
 
-Pre-built fonts are published as `sd-fonts-*` releases on this repository
-([Releases](https://github.com/ryokun6/crossmux/releases)). Each release
-includes the YAML families from `lib/EpdFont/scripts/sd-fonts.yaml` plus the
-four EB Garamond + Source Han Serif locale composites
+Pre-built fonts are published as `sd-fonts-*` **prereleases** on this
+repository ([Releases](https://github.com/ryokun6/crossmux/releases)) so they
+never become GitHub’s Latest release (firmware OTA uses `/releases/latest`).
+Each release includes the YAML families from `lib/EpdFont/scripts/sd-fonts.yaml`
+plus the four EB Garamond + Source Han Serif locale composites
 (`EBGaramondSHS-TC` / `-SC` / `-JA` / `-KO`) built by
 `lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh` (see below). Trigger a build
 with **Actions → Build & Publish SD Card Fonts → Run workflow**.
