@@ -1,21 +1,21 @@
 name: Build & Publish SD Card Fonts
 
 # Fonts change rarely — run manually when font sources or the conversion
-# pipeline are updated.  Publishes .cpfont files + fonts.json manifest as
-# GitHub Release assets on the crosspoint-fonts repo so font releases don't
-# clutter the firmware releases page.
-#
-# Requires a repository secret FONTS_REPO_TOKEN — a fine-grained PAT (or
-# classic PAT) with contents:write permission on the target fonts repo.
+# pipeline are updated. Publishes .cpfont files + fonts.json as GitHub Release
+# assets on THIS repo under sd-fonts-* tags (separate from firmware version
+# tags so the two release streams stay distinguishable).
 on:
   workflow_dispatch:
 
-env:
-  FONTS_REPO: crosspoint-reader/crosspoint-fonts
+permissions:
+  contents: write
 
 jobs:
   build-fonts:
     runs-on: ubuntu-latest
+    # YAML Latin/Cyrillic families plus four full-glyph EBGaramondSHS locale
+    # composites; CJK rasterization dominates wall time.
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v6
@@ -42,6 +42,12 @@ jobs:
       - name: Build SD card fonts
         run: python3 lib/EpdFont/scripts/build-sd-fonts.py --clean --verbose -j 1
 
+      # Locale composites (EB Garamond + regional Source Han Serif). Sources are
+      # vendored under lib/EpdFont/scripts/source_fonts/; families are marked
+      # external in sd-fonts.yaml so the YAML builder skips them.
+      - name: Build EBGaramondSHS locale fonts (TC SC JA KO)
+        run: bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh tc sc ja ko
+
       - name: Flatten output for release assets
         run: |
           mkdir -p dist
@@ -50,13 +56,13 @@ jobs:
       - name: Compute release tags
         id: tags
         env:
-          GH_TOKEN: ${{ secrets.FONTS_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BASE="sd-fonts-m${{ steps.versions.outputs.metadata }}-b${{ steps.versions.outputs.binary }}"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
 
           # Find the highest existing revision for this m/b pair
-          LAST=$(gh release list --repo "${{ env.FONTS_REPO }}" \
+          LAST=$(gh release list --repo "${{ github.repository }}" \
             --json tagName --jq \
             '[.[] | select(.tagName | startswith("'"${BASE}-r"'")) | .tagName | split("-r")[1] | tonumber] | max // 0')
           NEXT=$((LAST + 1))
@@ -67,21 +73,23 @@ jobs:
         run: |
           python3 scripts/generate-font-manifest.py \
             --input dist \
-            --base-url "https://github.com/${{ env.FONTS_REPO }}/releases/download/${{ steps.tags.outputs.base }}/" \
+            --base-url "https://github.com/${{ github.repository }}/releases/download/${{ steps.tags.outputs.base }}/" \
             --output dist/fonts.json \
             --descriptions-from lib/EpdFont/scripts/sd-fonts.yaml
 
-      - name: Publish versioned release to fonts repo
+      - name: Publish versioned release
         env:
-          GH_TOKEN: ${{ secrets.FONTS_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           VERSIONED="${{ steps.tags.outputs.versioned }}"
           TITLE="SD Card Fonts (${VERSIONED#sd-fonts-})"
 
           gh release create "$VERSIONED" dist/* \
-            --repo "${{ env.FONTS_REPO }}" \
+            --repo "${{ github.repository }}" \
             --title "$TITLE" \
-            --notes "Pre-built \`.cpfont\` font files for CrossPoint Reader.
+            --notes "Pre-built \`.cpfont\` font files for ryOS CrossMux.
+
+          Includes Latin/Cyrillic/etc. families plus EB Garamond + Source Han Serif locale composites: \`EBGaramondSHS-TC\`, \`EBGaramondSHS-SC\`, \`EBGaramondSHS-JA\`, \`EBGaramondSHS-KO\`.
 
           Download individual files or use **Settings > System > Manage Fonts** on the device.
 
@@ -89,18 +97,18 @@ jobs:
 
       - name: Update stable tag for device downloads
         env:
-          GH_TOKEN: ${{ secrets.FONTS_REPO_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           BASE="${{ steps.tags.outputs.base }}"
 
           # Delete the old stable release for this m/b pair (the versioned releases are kept)
-          gh release delete "$BASE" --repo "${{ env.FONTS_REPO }}" --yes 2>/dev/null || true
+          gh release delete "$BASE" --repo "${{ github.repository }}" --yes 2>/dev/null || true
 
           gh release create "$BASE" dist/* \
-            --repo "${{ env.FONTS_REPO }}" \
+            --repo "${{ github.repository }}" \
             --title "SD Card Fonts (${BASE#sd-fonts-})" \
             --notes "Current font build for manifest v${{ steps.versions.outputs.metadata }}, binary format v${{ steps.versions.outputs.binary }}. Devices with this firmware version download from this release.
 
-          This is revision **${{ steps.tags.outputs.revision }}** — see [\`${{ steps.tags.outputs.versioned }}\`](https://github.com/${{ env.FONTS_REPO }}/releases/tag/${{ steps.tags.outputs.versioned }}) for the immutable copy.
+          This is revision **${{ steps.tags.outputs.revision }}** — see [\`${{ steps.tags.outputs.versioned }}\`](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tags.outputs.versioned }}) for the immutable copy.
 
           Download individual files or use **Settings > System > Manage fonts** on the device."

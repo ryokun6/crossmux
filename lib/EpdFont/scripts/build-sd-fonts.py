@@ -353,6 +353,20 @@ def main():
             print("ERROR: no matching families after --only filter", file=sys.stderr)
             sys.exit(1)
 
+    # Families marked external: true are description-only entries for
+    # fonts.json (e.g. EBGaramondSHS-*). A separate builder stages their
+    # .cpfont files into the same output tree before release publishing.
+    external = [f["name"] for f in families if f.get("external")]
+    families = [f for f in families if not f.get("external")]
+    if external:
+        print(
+            f"Skipping {len(external)} external famil{'y' if len(external) == 1 else 'ies'} "
+            f"(built separately): {', '.join(external)}"
+        )
+    if not families:
+        print("ERROR: no buildable families after filtering external entries", file=sys.stderr)
+        sys.exit(1)
+
     output_base = Path(args.output_dir)
 
     if args.clean and output_base.exists():
