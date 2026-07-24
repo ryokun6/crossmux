@@ -23,8 +23,8 @@ There are three ways to install fonts:
 
 ### Option 3: Manual SD card copy
 
-1. Download font files from the
-   [crosspoint-fonts repository](https://github.com/crosspoint-reader/crosspoint-fonts)
+1. Download font files from this repo’s
+   [Releases](https://github.com/ryokun6/crossmux/releases) (`sd-fonts-*` tags)
 2. Copy font family folders to one of two locations on your SD card:
 
    - `/.fonts/` — hidden directory (preferred; keeps the SD root tidy
@@ -54,12 +54,13 @@ There are three ways to install fonts:
 
 ## Available Pre-Built Fonts
 
-The current list of pre-built fonts is maintained in the
-[crosspoint-fonts repository](https://github.com/crosspoint-reader/crosspoint-fonts).
-Font releases include the YAML families from `lib/EpdFont/scripts/sd-fonts.yaml`
-plus the four EB Garamond + Source Han Serif locale composites
+Pre-built fonts are published as `sd-fonts-*` releases on this repository
+([Releases](https://github.com/ryokun6/crossmux/releases)). Each release
+includes the YAML families from `lib/EpdFont/scripts/sd-fonts.yaml` plus the
+four EB Garamond + Source Han Serif locale composites
 (`EBGaramondSHS-TC` / `-SC` / `-JA` / `-KO`) built by
-`lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh` (see below).
+`lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh` (see below). Trigger a build
+with **Actions → Build & Publish SD Card Fonts → Run workflow**.
 
 ## Converting Custom Fonts
 
