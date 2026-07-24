@@ -16,6 +16,9 @@ env:
 jobs:
   build-fonts:
     runs-on: ubuntu-latest
+    # YAML Latin/Cyrillic families plus four full-glyph EBGaramondSHS locale
+    # composites; CJK rasterization dominates wall time.
+    timeout-minutes: 360
 
     steps:
       - uses: actions/checkout@v6
@@ -41,6 +44,12 @@ jobs:
 
       - name: Build SD card fonts
         run: python3 lib/EpdFont/scripts/build-sd-fonts.py --clean --verbose -j 1
+
+      # Locale composites (EB Garamond + regional Source Han Serif). Sources are
+      # vendored under lib/EpdFont/scripts/source_fonts/; families are marked
+      # external in sd-fonts.yaml so the YAML builder skips them.
+      - name: Build EBGaramondSHS locale fonts (TC SC JA KO)
+        run: bash lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh tc sc ja ko
 
       - name: Flatten output for release assets
         run: |
@@ -82,6 +91,8 @@ jobs:
             --repo "${{ env.FONTS_REPO }}" \
             --title "$TITLE" \
             --notes "Pre-built \`.cpfont\` font files for CrossPoint Reader.
+
+          Includes Latin/Cyrillic/etc. families plus EB Garamond + Source Han Serif locale composites: \`EBGaramondSHS-TC\`, \`EBGaramondSHS-SC\`, \`EBGaramondSHS-JA\`, \`EBGaramondSHS-KO\`.
 
           Download individual files or use **Settings > System > Manage Fonts** on the device.
 

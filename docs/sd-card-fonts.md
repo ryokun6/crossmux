@@ -56,6 +56,10 @@ There are three ways to install fonts:
 
 The current list of pre-built fonts is maintained in the
 [crosspoint-fonts repository](https://github.com/crosspoint-reader/crosspoint-fonts).
+Font releases include the YAML families from `lib/EpdFont/scripts/sd-fonts.yaml`
+plus the four EB Garamond + Source Han Serif locale composites
+(`EBGaramondSHS-TC` / `-SC` / `-JA` / `-KO`) built by
+`lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh` (see below).
 
 ## Converting Custom Fonts
 
