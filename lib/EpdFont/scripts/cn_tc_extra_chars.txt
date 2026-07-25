@@ -1,0 +1,14 @@
+# Traditional-only characters the Simplified 7000 pool cannot produce.
+#
+# The 14pt tier derives its charset from chars_7000_common.txt through OpenCC, so
+# it can only contain Traditional forms that some Simplified character maps to.
+# Characters with no Simplified counterpart never appear no matter how the
+# conversion is widened: the Traditional pronouns 妳/牠/祢, older orthographic
+# forms (卽 旣 眞 敍 朶), Japanese shinjitai quoted in translated works (実 発 雑),
+# and given names such as 淼 (汪淼, 三體).
+#
+# Collected by scanning Traditional EPUBs for glyphs absent from the generated
+# 14pt coverage. Before adding a character here, check it is genuinely outside
+# the variant expansion in build-cn-builtin-fonts.sh — that path is preferred
+# because it generalises, while this list only covers what someone has hit.
+佉倣僾剏吔咵啣噘噠囘囬妳媿嬾実寖屄崧廯弶恇懥扞扢拏掽揑揹搆搧搰摀撚撢擕擡敍斵朶椏槅櫺欹氊泆淼渖漥熳牠牴瑷甦甯畠瘀瘂発皙盌瞇砲礡礮礽祇祢禛窰箎籐絜総緜罣舖衹褀觔訢諝賸蹚蹧躄輭辻迳迺逕遝鈽鏍鐪鐱雑飈鬬麐
