@@ -39,6 +39,10 @@ class ChapterHtmlSlimParser {
   bool nextWordContinues = false;  // true when next flushed word attaches to previous (inline element boundary)
   std::unique_ptr<ParsedText> currentTextBlock = nullptr;
   std::unique_ptr<Page> currentPage = nullptr;
+  // Latched when a Page or ParsedText allocation fails. Pagination cannot continue without
+  // them, so the XML handlers stop consuming input and parseAndBuildPages() reports failure
+  // rather than caching a chapter that is missing everything after the failed allocation.
+  bool allocationFailed = false;
   int16_t currentPageNextY = 0;
   int16_t currentPageNextX = 0;
   bool verticalBlockStartSpacingApplied = false;
@@ -104,6 +108,9 @@ class ChapterHtmlSlimParser {
   int wordsExtractedInBlock = 0;
 
   void updateEffectiveInlineStyle();
+  // Replaces currentPage with a fresh Page. Returns false and latches allocationFailed on OOM,
+  // in which case currentPage is left null and callers must return without touching it.
+  bool startNewPage();
   void startNewTextBlock(const BlockStyle& blockStyle);
   void flushPendingAnchor();
   void flushPartWordBuffer();
