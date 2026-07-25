@@ -14,8 +14,14 @@
 #include "network/OtaUpdater.h"
 
 namespace {
-// Same floor as FontDownloadActivity — OTA begin also needs mbedTLS + upgrade buf.
-constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 28 * 1024;
+// Same floor as FontDownloadActivity (see the derivation there) — OTA begin also
+// needs mbedTLS + upgrade buf. Lowered from 28KB now that
+// CONFIG_MBEDTLS_DYNAMIC_BUFFER sizes the record buffer per record instead of
+// pinning 16K in + 4K out, which leaves a 16KB record as the largest single
+// allocation; 20KB covers it with margin. Observed handshakes on this path open
+// with 38-53KB MaxAlloc, so the old floor only ever fired on arenas that were
+// still workable.
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 20 * 1024;
 }  // namespace
 
 void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {

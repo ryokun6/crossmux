@@ -26,7 +26,19 @@ constexpr UBaseType_t kDownloadTaskPriority = 1;
 // Contiguous DRAM a handshake needs (mbedTLS dynamic RX/TX + HTTP RX/TX).
 // Falling below it means the arena is fragmented, so defrag via silent-restart
 // rather than letting create_ssl_handle fail.
-constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 28 * 1024;
+//
+// Was 28KB, tuned when mbedTLS pinned 16K in + 4K out for the whole session.
+// CONFIG_MBEDTLS_DYNAMIC_BUFFER now allocates the record buffer per record and
+// frees it between reads, so the largest single request is one incoming record
+// (bounded by CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN = 16KB) coexisting with
+// HttpDownloader's 4KB HTTP RX buffer — 20KB covers that worst case. Device logs
+// back this off the other end too: mid-transfer this path runs happily at
+// 13-27KB MaxAlloc, so a 28KB floor was rebooting to defrag an arena that could
+// already have finished the download. Do not push it below the 16KB record
+// bound: the silent restart is the last thing standing between a fragmented
+// arena and a hard create_ssl_handle failure, and too low trades a reboot the
+// user barely notices for a download that just fails.
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 20 * 1024;
 constexpr const char* MANIFEST_TMP = "/fonts_manifest.tmp";
 }  // namespace
 
