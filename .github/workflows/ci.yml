@@ -71,8 +71,11 @@ jobs:
 
         run: |
           set -euo pipefail
-          ram_line="$(grep -E "RAM:\\s" -m1 pio.log || true)"
-          flash_line="$(grep -E "Flash:\\s" -m1 pio.log || true)"
+          # Last match, not first: `custom_sdkconfig` makes pioarduino link the
+          # `.dummy` Arduino-libs stub before the firmware, so the first RAM/Flash
+          # pair belongs to the stub (11.2% / 14.4%) rather than to CrossPoint.
+          ram_line="$(grep -E "RAM:\\s" pio.log | tail -1 || true)"
+          flash_line="$(grep -E "Flash:\\s" pio.log | tail -1 || true)"
           echo "ram_line=${ram_line}" >> "$GITHUB_OUTPUT"
           echo "flash_line=${flash_line}" >> "$GITHUB_OUTPUT"
           {
