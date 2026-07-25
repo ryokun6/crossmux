@@ -959,6 +959,14 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
 
     s.miniBitmap = new (std::nothrow) uint8_t[totalBitmapSize > 0 ? totalBitmapSize : 1];
     if (!s.miniBitmap) {
+      // One contiguous block sized by the page's glyph coverage (~28KB for a CJK
+      // page), so it is the first thing to fail once MaxAlloc drops while reading.
+      // Dropping the style here strands it on the stub font, which is a visible
+      // mid-page fallback — but keeping the metadata without the bitmap is worse:
+      // a prewarmed glyph is not an overflow glyph, so GfxRenderer::getGlyphBitmap
+      // would fall through to &fontData->bitmap[dataOffset] on a null base. The
+      // safe improvement is to retry with fewer codepoints so the survivors take
+      // the on-demand overflow path.
       LOG_ERR("SDCF", "Failed to allocate mini bitmap (%u bytes) for style %u", totalBitmapSize, styleIdx);
       delete[] readOrder;
       delete[] mappings;
@@ -1417,9 +1425,17 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
   // injected after the main scan. Match ADVANCE_CACHE_LIMIT so one build pass can
   // fill the table without immediately falling back to per-glyph SD opens.
   static constexpr uint32_t MAX_UNIQUE_CODEPOINTS = 4096;
-  uint32_t* codepoints = new (std::nothrow) uint32_t[MAX_UNIQUE_CODEPOINTS + 3];
+  static constexpr uint32_t RESERVED_SLOTS = 3;
+  // Grown on demand instead of allocated straight at the cap. 4096 entries is a
+  // 16KB contiguous request, and MaxAlloc drops to ~18KB while reading, so the
+  // flat allocation failed on device and took the whole advance table with it —
+  // every later measurement then pays an SD open. Most paragraphs need a few
+  // hundred codepoints.
+  uint32_t capacity = 256;
+  std::unique_ptr<uint32_t[]> codepoints(new (std::nothrow) uint32_t[capacity + RESERVED_SLOTS]);
   if (!codepoints) {
-    LOG_ERR("SDCF", "buildAdvanceTable: failed to allocate codepoint buffer (%u bytes)", MAX_UNIQUE_CODEPOINTS * 4);
+    LOG_ERR("SDCF", "buildAdvanceTable: failed to allocate codepoint buffer (%u bytes)",
+            (capacity + RESERVED_SLOTS) * 4);
     // Do not clearPersistentCache() here — wiping a warm table forces every later
     // measure through SD open/close and makes indexing look hung.
     return -1;
@@ -1428,12 +1444,32 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
   bool hitCap = false;
 
   for (auto it = begin; it != end && !hitCap; ++it) {
-    hitCap = collectUniqueCodepoints(asCStr(*it), codepoints, cpCount, MAX_UNIQUE_CODEPOINTS);
+    const char* text = asCStr(*it);
+    // Re-scanning the same item after a grow is idempotent: collectUniqueCodepoints
+    // dedups against what has already been collected.
+    while (collectUniqueCodepoints(text, codepoints.get(), cpCount, capacity)) {
+      if (capacity >= MAX_UNIQUE_CODEPOINTS) {
+        hitCap = true;
+        break;
+      }
+      const uint32_t grown = std::min(capacity * 2, MAX_UNIQUE_CODEPOINTS);
+      std::unique_ptr<uint32_t[]> bigger(new (std::nothrow) uint32_t[grown + RESERVED_SLOTS]);
+      if (!bigger) {
+        // Keep what we have: a partial table still beats abandoning the pass.
+        LOG_ERR("SDCF", "buildAdvanceTable: grow to %u bytes failed, measuring with %u codepoints",
+                (grown + RESERVED_SLOTS) * 4, cpCount);
+        hitCap = true;
+        break;
+      }
+      memcpy(bigger.get(), codepoints.get(), cpCount * sizeof(uint32_t));
+      codepoints = std::move(bigger);
+      capacity = grown;
+    }
   }
 
-  if (includeSpace && std::none_of(codepoints, codepoints + cpCount, [](uint32_t c) { return c == ' '; }))
+  if (includeSpace && std::none_of(codepoints.get(), codepoints.get() + cpCount, [](uint32_t c) { return c == ' '; }))
     codepoints[cpCount++] = ' ';
-  if (includeHyphen && std::none_of(codepoints, codepoints + cpCount, [](uint32_t c) { return c == '-'; }))
+  if (includeHyphen && std::none_of(codepoints.get(), codepoints.get() + cpCount, [](uint32_t c) { return c == '-'; }))
     codepoints[cpCount++] = '-';
 
 #ifdef ENABLE_CHINESE_VERSION
@@ -1446,17 +1482,16 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
   // paragraph probe hits the table with no SD I/O. Pure speedup — the resolved advance
   // is identical to what getAdvanceOrLoad would read, so layout geometry is unchanged.
   static constexpr uint32_t CJK_REFERENCE_CP = 0x6211;  // 我
-  if (std::none_of(codepoints, codepoints + cpCount, [](uint32_t c) { return c == CJK_REFERENCE_CP; }))
+  if (std::none_of(codepoints.get(), codepoints.get() + cpCount, [](uint32_t c) { return c == CJK_REFERENCE_CP; }))
     codepoints[cpCount++] = CJK_REFERENCE_CP;
 #endif
 
   if (hitCap) {
-    LOG_ERR("SDCF", "buildAdvanceTable: unique codepoint cap (%u) hit, layout may be approximate",
+    LOG_ERR("SDCF", "buildAdvanceTable: stopped at %u unique codepoints (cap %u), layout may be approximate", cpCount,
             MAX_UNIQUE_CODEPOINTS);
   }
-  std::sort(codepoints, codepoints + cpCount);
-  int totalMissed = fetchAdvancesForCodepoints(codepoints, cpCount, styleMask);
-  delete[] codepoints;
+  std::sort(codepoints.get(), codepoints.get() + cpCount);
+  int totalMissed = fetchAdvancesForCodepoints(codepoints.get(), cpCount, styleMask);
   stats_.prewarmTotalMs = millis() - startMs;
   return totalMissed;
 }
