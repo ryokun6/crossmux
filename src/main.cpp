@@ -747,7 +747,8 @@ void loop() {
   activityManager.loop();
   const unsigned long activityDuration = millis() - activityStartTime;
 
-  const unsigned long loopDuration = millis() - loopStartTime;
+  // Total = the input/sleep handling ahead of the activity, plus the activity itself.
+  const unsigned long loopDuration = (activityStartTime - loopStartTime) + activityDuration;
   if (loopDuration > maxLoopDuration) {
     maxLoopDuration = loopDuration;
     if (maxLoopDuration > 50) {
