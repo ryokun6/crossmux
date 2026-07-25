@@ -19,6 +19,8 @@ class EpubReaderActivity final : public Activity {
   // Set when navigating to a footnote href with a fragment (e.g. #note1).
   // Cleared on the next render after the new section loads and resolves it to a page.
   std::string pendingAnchor;
+  // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
+  // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
   int pagesUntilFullRefresh = 0;
   int cachedSpineIndex = 0;
   int cachedChapterTotalPageCount = 0;

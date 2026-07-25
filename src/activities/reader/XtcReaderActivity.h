@@ -18,6 +18,8 @@ class XtcReaderActivity final : public Activity {
   std::shared_ptr<Xtc> xtc;
 
   uint32_t currentPage = 0;
+  // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
+  // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
   int pagesUntilFullRefresh = 0;
 
   enum class StatusBarOverlayPosition { Bottom, Top };

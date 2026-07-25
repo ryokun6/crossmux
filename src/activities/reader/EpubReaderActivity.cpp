@@ -213,6 +213,10 @@ void EpubReaderActivity::onEnter() {
     return;
   }
 
+  // Start the refresh cadence at a full interval so opening a book paints with a FAST refresh
+  // instead of dropping straight into the slower HALF ghost-cleanup path.
+  pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+
   mappedInput.setPageProgressionRtl(epub->isPageProgressionRtl());
   mappedInput.setVerticalWritingRtl(effectiveWritingMode() == CrossPointSettings::VERTICAL_RL);
 

@@ -34,6 +34,10 @@ void XtcReaderActivity::onEnter() {
     return;
   }
 
+  // Start the refresh cadence at a full interval so opening a book paints with a FAST refresh
+  // instead of dropping straight into the slower HALF ghost-cleanup path.
+  pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+
   xtc->setupCacheDir();
 
   // Load saved progress
