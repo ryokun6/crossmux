@@ -15,6 +15,16 @@ WeReadFetchActivity::WeReadFetchActivity(std::string name, GfxRenderer& renderer
 
 void WeReadFetchActivity::onEnter() {
   Activity::onEnter();
+
+  // Every WeRead screen talks TLS through WeReadClient, and a resident SD
+  // reader font pins ~75KB of the ~224KB heap — the same starvation that left
+  // the web server unable to allocate a socket (hardware-constraints.md rule
+  // 10). Unconditional, including the cache hit below: refresh, opening a book
+  // and bulk sync all reach the network from here, and reloading the font
+  // mid-screen would cost more than holding it unloaded. These lists render
+  // with UI fonts only, so the unload is invisible.
+  fontUnload_.emplace(renderer);
+
   wifiOk_ = (WiFi.status() == WL_CONNECTED);
   keyOk_ = WeReadKeyStore::has();
   selected = 0;
@@ -45,6 +55,7 @@ void WeReadFetchActivity::onExit() {
   // taskHandle_ becomes stale after vTaskDelete(NULL) inside the task; nothing
   // for us to do here.
   taskHandle_ = nullptr;
+  fontUnload_.reset();
   Activity::onExit();
 }
 

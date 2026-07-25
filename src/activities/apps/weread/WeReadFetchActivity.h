@@ -6,11 +6,13 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "../../../components/themes/BaseTheme.h"  // for struct Rect (used in virtual signatures)
 #include "../../../util/ButtonNavigator.h"
 #include "../../Activity.h"
+#include "ScopedSdFontUnload.h"
 #include "WeReadClient.h"
 
 /**
@@ -109,6 +111,10 @@ class WeReadFetchActivity : public Activity {
   std::shared_ptr<Context> ctx_;
   TaskHandle_t taskHandle_ = nullptr;
   WeReadClient::Err lastErr_ = WeReadClient::Err::Ok;
+
+  // Engaged in onEnter for every subclass (shelf, search, reviews). Released
+  // when the activity is destroyed; these screens never reboot on exit.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   bool wifiOk_ = false;
   bool keyOk_ = false;

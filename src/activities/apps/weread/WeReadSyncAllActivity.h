@@ -6,11 +6,13 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "../../Activity.h"
+#include "ScopedSdFontUnload.h"
 #include "WeReadClient.h"
 
 /**
@@ -57,6 +59,9 @@ class WeReadSyncAllActivity final : public Activity {
 
   std::shared_ptr<Context> ctx_;
   TaskHandle_t taskHandle_ = nullptr;
+
+  // Engaged once the bulk sync actually starts; released on destruction.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   // (bookId, title) for every ebook on the shelf. Albums are skipped:
   // /book/* endpoints reject albumIds.

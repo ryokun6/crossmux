@@ -6,9 +6,11 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "../../Activity.h"
+#include "ScopedSdFontUnload.h"
 #include "WeReadClient.h"
 
 /**
@@ -59,6 +61,9 @@ class WeReadCacheBookActivity final : public Activity {
 
   std::shared_ptr<Context> ctx_;
   TaskHandle_t taskHandle_ = nullptr;
+
+  // Engaged once the five-step fetch actually starts; released on destruction.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   // Build request body + filter for `step_`, spawn the worker task.
   void spawnFetchForCurrentStep();

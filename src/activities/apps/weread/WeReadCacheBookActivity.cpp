@@ -42,10 +42,18 @@ void WeReadCacheBookActivity::onEnter() {
 void WeReadCacheBookActivity::onExit() {
   ctx_.reset();
   taskHandle_ = nullptr;
+  fontUnload_.reset();
   Activity::onExit();
 }
 
 void WeReadCacheBookActivity::spawnFetchForCurrentStep() {
+  // Guard lives here rather than in onEnter so retry-after-preflight-failure
+  // reaches it too. A resident SD reader font pins ~75KB of the ~224KB heap
+  // (hardware-constraints.md rule 10) and these are five chained HTTPS POSTs.
+  // Re-emplacing per step would reload the font between steps, so only engage
+  // it once; nesting is safe if the launching screen already holds one.
+  if (!fontUnload_) fontUnload_.emplace(renderer);
+
   ctx_.reset();
 
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());

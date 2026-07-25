@@ -44,6 +44,7 @@ void WeReadSyncAllActivity::onEnter() {
 void WeReadSyncAllActivity::onExit() {
   ctx_.reset();
   taskHandle_ = nullptr;
+  fontUnload_.reset();
   Activity::onExit();
 }
 
@@ -67,6 +68,13 @@ void WeReadSyncAllActivity::fetchTrampoline(void* arg) {
 }
 
 void WeReadSyncAllActivity::spawnShelfFetch() {
+  // Guard lives here rather than in onEnter so retry-after-preflight-failure
+  // reaches it too. A resident SD reader font pins ~75KB of the ~224KB heap
+  // (hardware-constraints.md rule 10) and this is the heaviest WeRead path:
+  // the whole shelf, five HTTPS POSTs per book. Nesting is safe if the menu
+  // already holds one.
+  if (!fontUnload_) fontUnload_.emplace(renderer);
+
   ctx_.reset();
 
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());
@@ -129,6 +137,10 @@ void WeReadSyncAllActivity::spawnShelfFetch() {
 }
 
 void WeReadSyncAllActivity::spawnBookStepFetch() {
+  // Same reasoning as spawnShelfFetch: the retry path can reach the network
+  // without having come through it.
+  if (!fontUnload_) fontUnload_.emplace(renderer);
+
   ctx_.reset();
 
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());

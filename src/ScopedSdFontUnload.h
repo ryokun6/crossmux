@@ -23,6 +23,10 @@ class GfxRenderer;
 ///  - silentRestart() in onExit() never returns, so on reboot paths the reload is
 ///    skipped entirely and the fresh boot's sdFontSystem.begin() does it instead.
 ///
+/// Nesting is safe. startActivityForResult keeps the parent alive, so a child
+/// screen may hold one while its parent still needs the font gone; the reload
+/// happens only when the outermost guard goes away.
+///
 /// A no-op when the user has no SD reader font selected: both unloadAll() and
 /// ensureLoaded() return immediately when nothing is loaded and nothing is
 /// wanted.
