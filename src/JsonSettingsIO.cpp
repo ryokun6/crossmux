@@ -22,8 +22,8 @@
 namespace {
 
 // Firmware language SKU marker, persisted in settings.json. Lets the next boot
-// detect a cross-SKU reflash (zh-tw / zh-cn / global) and reset the UI language
-// to this build's default — see loadSettings().
+// detect a cross-SKU reflash (zh-tw / zh-cn / ja / ko / global) and reset the UI
+// language to this build's default — see loadSettings().
 #ifdef ENABLE_CHINESE_VERSION
 #ifdef CHINESE_UI_SIMPLIFIED
 constexpr char BUILD_LANG_SKU[] = "zh-cn";
@@ -33,6 +33,10 @@ constexpr char BUILD_LANG_SKU[] = "zh-tw";
 constexpr char LEGACY_LANG_SKU_ZH[] = "zh";
 constexpr char LEGACY_LANG_SKU_CN[] = "cn";
 #endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+constexpr char BUILD_LANG_SKU[] = "ja";
+#elif defined(ENABLE_KOREAN_VERSION)
+constexpr char BUILD_LANG_SKU[] = "ko";
 #else
 constexpr char BUILD_LANG_SKU[] = "global";
 #endif

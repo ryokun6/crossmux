@@ -41,7 +41,9 @@ bool parseSha256Digest(const char* value, size_t len, uint8_t* out, size_t outSi
 
 ReleaseJsonParser::ReleaseJsonParser(const char* requestedFirmwareAssetName)
     : parser(JsonCallbacks{this, sOnKey, sOnString, sOnNumber, sOnBool, sOnNull, sOnObjectStart, sOnObjectEnd,
-                           sOnArrayStart, sOnArrayEnd}) {
+                           sOnArrayStart, sOnArrayEnd}),
+      assetCallback(nullptr),
+      assetCallbackCtx(nullptr) {
   const char* assetName = requestedFirmwareAssetName != nullptr ? requestedFirmwareAssetName : "firmware.bin";
   safeCopy(firmwareAssetName, sizeof(firmwareAssetName), assetName, strlen(assetName));
   reset();
@@ -69,6 +71,14 @@ void ReleaseJsonParser::reset() {
 
 void ReleaseJsonParser::feed(const char* data, size_t len) { parser.feed(data, len); }
 
+// Deliberately not cleared by reset(): the callback is wiring set up by the owner
+// once, while reset() only drops parsed content so the same parser can take a
+// second response.
+void ReleaseJsonParser::setAssetCallback(const AssetCallback callback, void* ctx) {
+  assetCallback = callback;
+  assetCallbackCtx = ctx;
+}
+
 bool ReleaseJsonParser::foundTag() const { return tagFound; }
 bool ReleaseJsonParser::foundFirmware() const { return firmwareFound; }
 const char* ReleaseJsonParser::getTagName() const { return tagName; }
@@ -78,6 +88,13 @@ bool ReleaseJsonParser::foundFirmwareDigest() const { return firmwareDigestFound
 const uint8_t* ReleaseJsonParser::getFirmwareDigest() const { return firmwareDigest; }
 
 void ReleaseJsonParser::commitAsset() {
+  // Announced before the scratch is cleared, and only for an asset that actually
+  // carried a name — a truncated response can close an object that never got one.
+  if (assetCallback != nullptr && currentAssetName[0] != '\0') {
+    const Asset asset{currentAssetName, currentAssetUrl, currentAssetSize, currentAssetDigest, currentAssetDigestFound};
+    assetCallback(assetCallbackCtx, asset);
+  }
+
   if (strcmp(currentAssetName, firmwareAssetName) == 0) {
     memcpy(firmwareUrl, currentAssetUrl, sizeof(firmwareUrl));
     firmwareSize = currentAssetSize;
@@ -186,6 +203,11 @@ void ReleaseJsonParser::sOnObjectStart(void* ctx) {
       self->currentAssetName[0] = '\0';
       self->currentAssetUrl[0] = '\0';
       self->currentAssetSize = 0;
+      // Cleared here too, not just in commitAsset(): every other scratch field is
+      // reset on entry, and a digest that outlived its own asset would be the one
+      // stale value with a security consequence.
+      self->currentAssetDigestFound = false;
+      memset(self->currentAssetDigest, 0, sizeof(self->currentAssetDigest));
       self->lastKey = LastKey::NONE;
       break;
     case Position::IN_ASSET_OBJECT:

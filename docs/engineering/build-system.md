@@ -86,6 +86,47 @@ Arduino-ESP32 prebuilt libs on the next `pio run` (slow once, then cached).
 `custom_component_remove` drops RainMaker/Insights so that hybrid rebuild does
 not require their embedded server certs.
 
+### Choosing a language build over OTA
+
+Settings > Check for updates can install **any** of the five language assets
+(`firmware.bin`, `firmware-{tc,sc,ja,ko}.bin`), not only the one matching the
+running SKU, and can reinstall the version already running. Both reach the same
+staged-download-then-verify path; only the target asset and the version gate
+differ.
+
+- **Asset discovery.** `ReleaseJsonParser` still latches the running SKU's asset
+  (that drives the ordinary "something newer is out" flow, unchanged), and now
+  also fires `setAssetCallback` once per asset in the array with that asset's
+  name, URL, size and digest together. `OtaUpdater::recordAsset` keeps the five
+  it recognizes in `skuAssets[]`. The callback exists so the parser does not have
+  to hold five 512-byte URL buffers it mostly has no use for; it hands out its
+  own scratch and the consumer copies what it wants.
+- **Digest binding.** Because name, URL and digest arrive in one call describing
+  one asset object, the digest verified in `verifyStagedDigest()` is always the
+  digest published for the file that was downloaded.
+  `selectSkuForInstall()` copies URL and digest from the same slot, so switching
+  target can never pair one image with another's hash. The parser also clears its
+  digest scratch on asset-object *entry* as well as on commit.
+- **Reinstall.** `installUpdate()` skips `isUpdateNewer()` only when
+  `selectSkuForInstall()` has run, which happens exclusively from the build-list
+  confirmation screen. A same-version install therefore takes a deliberate
+  Confirm → pick build → Install, and no path reaches a forced flash from a
+  single press.
+- **Slot fit.** `firmware_flash::nextSlotSize()` reports the destination app
+  slot; both `selectSkuForInstall()` and `installUpdate()` reject an asset larger
+  than it and surface `IMAGE_TOO_LARGE`. This matters going from a small SKU to a
+  large one — `firmware-tc.bin` is ~6.26 MB against a 6.25 MiB (6 553 600 B)
+  slot, so the margin is tens of KB, and discovering it after the download is a
+  wasted 6 MB transfer.
+- **What a switch changes on the card.** Nothing is deleted. `settings.json`
+  survives; its `langSku` marker no longer matches, so the UI language resets to
+  the new build's default while every other setting is kept (see
+  [../i18n.md](../i18n.md)). Section caches invalidate on their own because
+  `SECTION_FILE_VERSION` is per-flavor (see
+  [cache-management.md](cache-management.md)), so books repaginate on next open;
+  `progress.bin` holds spine index plus page number and is untouched, so the
+  chapter is exact and the page within it can shift.
+
 **`scripts/copy_upstream_mbedtls.py` — required for any `CONFIG_MBEDTLS_*` to
 work.** pioarduino's hybrid rebuild copies `build/esp-idf/<component>/lib<component>.a`
 into `framework-arduinoespressif32-libs`, walking only one directory deep. The

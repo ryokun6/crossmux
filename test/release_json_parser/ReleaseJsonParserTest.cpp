@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "lib/JsonParser/ReleaseJsonParser.h"
 
@@ -817,6 +818,177 @@ TEST(ReleaseJsonParser, ResetClearsDigest) {
 
   p.reset();
   EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+// --- Per-asset callback (multi-SKU asset selection) ----------------------------
+
+namespace {
+
+// What the OTA updater does with the callback: keep the handful of assets it
+// recognizes, each with the digest and size published for *that* asset.
+struct CollectedAsset {
+  std::string name;
+  std::string url;
+  size_t size = 0;
+  std::string digestHex;  // empty when the asset carried no usable digest
+};
+
+struct Collector {
+  std::vector<CollectedAsset> assets;
+
+  static void trampoline(void* ctx, const ReleaseJsonParser::Asset& asset) {
+    auto* self = static_cast<Collector*>(ctx);
+    CollectedAsset out;
+    out.name = asset.name;
+    out.url = asset.url;
+    out.size = asset.size;
+    if (asset.digestValid) out.digestHex = toHex(asset.digest, ReleaseJsonParser::DIGEST_SIZE);
+    self->assets.push_back(out);
+  }
+
+  const CollectedAsset* find(const std::string& name) const {
+    for (const CollectedAsset& a : assets) {
+      if (a.name == name) return &a;
+    }
+    return nullptr;
+  }
+};
+
+// One asset per SKU, each with a distinct digest, so a parser that leaks state
+// between assets pairs the wrong digest with the wrong file and the test fails.
+const char* kSkuNames[] = {"firmware.bin", "firmware-tc.bin", "firmware-sc.bin", "firmware-ja.bin", "firmware-ko.bin"};
+const size_t kSkuSizes[] = {5398800u, 6258736u, 6084688u, 5430448u, 5685520u};
+const char* kSkuDigests[] = {"510f1bd8ca6c178dde70d152dc141e8d8faefa57ed70833ad901d01971ae1e25",
+                             "aec8f31709161edbac359081615112ef9665529b44f3bd6feb0eebb907358dd7",
+                             "ae3f26a71df7511d540d3d670529c4df1e7a4d85e0cf0e77917fb41eaf11a2f7",
+                             "450c32283674c4e45db13dc91464b5b13e71e4901e08e92e2fbcd0f30ecd854e",
+                             "22da10b98837d260291625ae3e69cadfc4c7275c29f425b62150d01f2b612a2f"};
+
+// Shaped like a real release: bootloader/partitions around the five firmware
+// images, digests on every asset.
+std::string allSkuReleaseJson() {
+  std::string json = R"({"tag_name":"1.4.17","assets":[)";
+  json +=
+      R"({"name":"bootloader.bin","digest":"sha256:6e6b0d386095f0783e9f0513ea29ea2ce413790e7f7153a06a2b04e2b5f59fb6",)"
+      R"("browser_download_url":"https://example.com/bootloader.bin","size":18672},)";
+  for (size_t i = 0; i < 5; i++) {
+    json += std::string(R"({"name":")") + kSkuNames[i] + R"(","digest":"sha256:)" + kSkuDigests[i] +
+            R"(","browser_download_url":"https://example.com/)" + kSkuNames[i] + R"(","size":)" +
+            std::to_string(kSkuSizes[i]) + "},";
+  }
+  json += R"({"name":"partitions.bin","browser_download_url":"https://example.com/partitions.bin","size":3072}]})";
+  return json;
+}
+
+}  // namespace
+
+TEST(ReleaseJsonParser, AssetCallbackReportsEveryAssetWithItsOwnDigest) {
+  const std::string json = allSkuReleaseJson();
+
+  Collector collector;
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.setAssetCallback(&Collector::trampoline, &collector);
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_EQ(collector.assets.size(), 7u);
+  for (size_t i = 0; i < 5; i++) {
+    const CollectedAsset* asset = collector.find(kSkuNames[i]);
+    ASSERT_NE(asset, nullptr) << kSkuNames[i];
+    EXPECT_EQ(asset->url, std::string("https://example.com/") + kSkuNames[i]);
+    EXPECT_EQ(asset->size, kSkuSizes[i]);
+    EXPECT_EQ(asset->digestHex, kSkuDigests[i]) << kSkuNames[i];
+  }
+  // The asset with no digest must not inherit the previous one's.
+  const CollectedAsset* partitions = collector.find("partitions.bin");
+  ASSERT_NE(partitions, nullptr);
+  EXPECT_EQ(partitions->digestHex, "");
+}
+
+TEST(ReleaseJsonParser, AssetCallbackAgreesWithLatchedFirmware) {
+  const std::string json = allSkuReleaseJson();
+
+  Collector collector;
+  ReleaseJsonParser p("firmware-ko.bin");
+  p.setAssetCallback(&Collector::trampoline, &collector);
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_TRUE(p.foundFirmware());
+  ASSERT_TRUE(p.foundFirmwareDigest());
+  const CollectedAsset* asset = collector.find("firmware-ko.bin");
+  ASSERT_NE(asset, nullptr);
+  EXPECT_EQ(asset->url, std::string(p.getFirmwareUrl()));
+  EXPECT_EQ(asset->size, p.getFirmwareSize());
+  EXPECT_EQ(asset->digestHex, toHex(p.getFirmwareDigest(), ReleaseJsonParser::DIGEST_SIZE));
+}
+
+TEST(ReleaseJsonParser, AssetCallbackDigestNotCarriedToNextAsset) {
+  // firmware.bin has a digest, firmware-tc.bin does not: picking TC must come out
+  // unverifiable rather than silently adopting the international image's digest.
+  const std::string json = std::string(R"({"tag_name":"1.4.17","assets":[)") + R"({"name":"firmware.bin","digest":")" +
+                           "sha256:" + kSkuDigests[0] +
+                           R"(","browser_download_url":"https://example.com/firmware.bin","size":10},)" +
+                           R"({"name":"firmware-tc.bin","browser_download_url":"https://example.com/tc","size":20}]})";
+
+  Collector collector;
+  ReleaseJsonParser p;
+  p.setAssetCallback(&Collector::trampoline, &collector);
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_EQ(collector.assets.size(), 2u);
+  EXPECT_EQ(collector.assets[0].digestHex, kSkuDigests[0]);
+  EXPECT_EQ(collector.assets[1].digestHex, "");
+}
+
+TEST(ReleaseJsonParser, AssetCallbackChunkedAtEveryBoundary) {
+  const std::string json = allSkuReleaseJson();
+
+  for (size_t split = 0; split <= json.size(); ++split) {
+    Collector collector;
+    ReleaseJsonParser p("firmware-tc.bin");
+    p.setAssetCallback(&Collector::trampoline, &collector);
+    if (split > 0) p.feed(json.c_str(), split);
+    if (split < json.size()) p.feed(json.c_str() + split, json.size() - split);
+
+    ASSERT_EQ(collector.assets.size(), 7u) << "split=" << split;
+    for (size_t i = 0; i < 5; i++) {
+      const CollectedAsset* asset = collector.find(kSkuNames[i]);
+      ASSERT_NE(asset, nullptr) << "split=" << split << " " << kSkuNames[i];
+      EXPECT_EQ(asset->size, kSkuSizes[i]) << "split=" << split << " " << kSkuNames[i];
+      EXPECT_EQ(asset->digestHex, kSkuDigests[i]) << "split=" << split << " " << kSkuNames[i];
+    }
+  }
+}
+
+TEST(ReleaseJsonParser, AssetCallbackSkipsAssetsWithNoName) {
+  // A response cut mid-asset, and an asset object that carries no name at all:
+  // neither is something a consumer can act on, so neither is announced.
+  const char* json = R"({"tag_name":"1.4.17","assets":[)"
+                     R"({"size":1,"browser_download_url":"https://example.com/anon"},)"
+                     R"({"name":"firmware.bin","browser_download_url":"https://example.com/fw","size":2}]})";
+
+  Collector collector;
+  ReleaseJsonParser p;
+  p.setAssetCallback(&Collector::trampoline, &collector);
+  p.feed(json, strlen(json));
+
+  ASSERT_EQ(collector.assets.size(), 1u);
+  EXPECT_EQ(collector.assets[0].name, "firmware.bin");
+}
+
+TEST(ReleaseJsonParser, AssetCallbackSurvivesReset) {
+  const std::string json = allSkuReleaseJson();
+
+  Collector collector;
+  ReleaseJsonParser p;
+  p.setAssetCallback(&Collector::trampoline, &collector);
+  p.feed(json.c_str(), json.size());
+  ASSERT_EQ(collector.assets.size(), 7u);
+
+  // reset() drops parsed content, not the owner's wiring.
+  p.reset();
+  collector.assets.clear();
+  p.feed(json.c_str(), json.size());
+  EXPECT_EQ(collector.assets.size(), 7u);
 }
 
 TEST(ReleaseJsonParser, ChunkedRealisticEveryBoundary) {

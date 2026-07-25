@@ -58,6 +58,13 @@ Result flashFromSdPath(const char* sdPath, ProgressCb onProgress, void* ctx, boo
 // success so the caller can immediately reread it for flashing.
 Result validateImageFile(const char* sdPath, size_t partitionSize);
 
+// Size in bytes of the app slot `flashFromSdPath` would write to, or 0 when the
+// partition table has no next-update slot. Lets a caller reject an oversized
+// image before spending a multi-MB download on it — the SKU images differ by
+// nearly 900 KB and the largest is at 95% of the slot, so "does it fit" is a real
+// question and not a formality.
+size_t nextSlotSize();
+
 const char* resultName(Result r);
 
 }  // namespace firmware_flash

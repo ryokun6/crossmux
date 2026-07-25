@@ -14,27 +14,15 @@
 
 #include <WiFi.h>
 
+#include <algorithm>
 #include <cstring>
+#include <iterator>
 #include <string>
 
 #include "FirmwareFlasher.h"
 
 namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/ryokun6/crossmux/releases/latest";
-constexpr char firmwareAssetName[] =
-#ifdef ENABLE_CHINESE_VERSION
-#ifdef CHINESE_UI_SIMPLIFIED
-    "firmware-sc.bin";
-#else
-    "firmware-tc.bin";
-#endif
-#elif defined(ENABLE_JAPANESE_VERSION)
-    "firmware-ja.bin";
-#elif defined(ENABLE_KOREAN_VERSION)
-    "firmware-ko.bin";
-#else
-    "firmware.bin";
-#endif
 
 // The staged image lands on SD, not in a spare partition: partitions.csv has no
 // free room (dual 6.25 MiB app slots plus the rest fill the 16 MiB map), and the
@@ -58,15 +46,117 @@ struct StagedFileCleanup {
 };
 }  // namespace
 
+const char* OtaUpdater::skuAssetName(const Sku sku) {
+  switch (sku) {
+    case Sku::TRADITIONAL_CHINESE:
+      return "firmware-tc.bin";
+    case Sku::SIMPLIFIED_CHINESE:
+      return "firmware-sc.bin";
+    case Sku::JAPANESE:
+      return "firmware-ja.bin";
+    case Sku::KOREAN:
+      return "firmware-ko.bin";
+    case Sku::INTERNATIONAL:
+      break;
+  }
+  return "firmware.bin";
+}
+
+OtaUpdater::Sku OtaUpdater::runningSku() {
+#ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+  return Sku::SIMPLIFIED_CHINESE;
+#else
+  return Sku::TRADITIONAL_CHINESE;
+#endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+  return Sku::JAPANESE;
+#elif defined(ENABLE_KOREAN_VERSION)
+  return Sku::KOREAN;
+#else
+  return Sku::INTERNATIONAL;
+#endif
+}
+
+size_t OtaUpdater::getOtaSlotSize() { return firmware_flash::nextSlotSize(); }
+
+void OtaUpdater::recordAsset(const char* name, const char* url, const size_t size, const uint8_t* digest,
+                             const bool digestValid) {
+  for (size_t i = 0; i < SKU_COUNT; i++) {
+    if (strcmp(name, skuAssetName(static_cast<Sku>(i))) != 0) continue;
+    SkuAsset& slot = skuAssets[i];
+    slot.url = url;
+    slot.size = size;
+    slot.digestValid = digestValid;
+    // Copied together with the URL from the same asset object, so the pair can
+    // never come apart: whatever gets downloaded is hashed against the digest
+    // published for that exact file name.
+    memcpy(slot.digest, digest, sizeof(slot.digest));
+    return;
+  }
+}
+
+OtaUpdater::OtaUpdaterError OtaUpdater::selectSkuForInstall(const Sku sku) {
+  const SkuAsset& asset = skuAssets[static_cast<size_t>(sku)];
+  if (!asset.present()) {
+    LOG_ERR("OTA", "%s not published in this release", skuAssetName(sku));
+    return NO_UPDATE;
+  }
+
+  // Refused up front rather than after a ~6 MB download: the SKUs differ by
+  // nearly 900 KB and the largest sits at 95% of the slot, so a device whose
+  // partition table gives it less room must hear about it before it spends the
+  // transfer. flashFromSdPath would also catch this, but only once the image is
+  // already on the card.
+  const size_t slotSize = getOtaSlotSize();
+  if (slotSize > 0 && asset.size > slotSize) {
+    LOG_ERR("OTA", "%s is %u bytes, app slot is %u", skuAssetName(sku), static_cast<unsigned>(asset.size),
+            static_cast<unsigned>(slotSize));
+    return IMAGE_TOO_LARGE;
+  }
+
+  adoptTarget(asset);
+  userSelectedInstall = true;
+  LOG_INF("OTA", "Install target set to %s (%u bytes)", skuAssetName(sku), static_cast<unsigned>(otaSize));
+  return OK;
+}
+
+void OtaUpdater::resetInstallTarget() {
+  userSelectedInstall = false;
+  adoptTarget(skuAssets[static_cast<size_t>(runningSku())]);
+}
+
+void OtaUpdater::adoptTarget(const SkuAsset& asset) {
+  otaUrl = asset.url;
+  otaSize = asset.size;
+  totalSize = asset.size;
+  otaDigestValid = asset.digestValid;
+  // URL and digest are always taken from the same slot, so the bytes that get
+  // downloaded are always hashed against the digest published for that file.
+  memcpy(otaDigest, asset.digest, sizeof(otaDigest));
+}
+
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   LOG_DBG("OTA", "Checking for update (current: %s)", CROSSPOINT_VERSION);
+
+  std::fill(std::begin(skuAssets), std::end(skuAssets), SkuAsset{});
+  userSelectedInstall = false;
 
   // Stream the ~32KB release JSON straight into the parser as it arrives.
   // Buffering the whole body in a std::string would add a growing allocation
   // on top of the TLS session's heap during the fetch; with -fno-exceptions an
   // OOM there aborts. fetchUrl handles the verified-https GET, redirects, and
   // User-Agent (see HttpDownloader).
-  ReleaseJsonParser releaseParser(firmwareAssetName);
+  const char* runningAssetName = skuAssetName(runningSku());
+  ReleaseJsonParser releaseParser(runningAssetName);
+  // Every asset is offered to recordAsset, which keeps the five it recognizes.
+  // The parser's own latch still tracks the running SKU, so the default "is there
+  // something newer for what I am" path below reads exactly what it always did.
+  releaseParser.setAssetCallback(
+      [](void* ctx, const ReleaseJsonParser::Asset& asset) {
+        static_cast<OtaUpdater*>(ctx)->recordAsset(asset.name, asset.url, asset.size, asset.digest, asset.digestValid);
+      },
+      this);
   if (HttpDownloader::fetchUrl(latestReleaseUrl, [&releaseParser](const uint8_t* data, size_t len) {
         releaseParser.feed(reinterpret_cast<const char*>(data), len);
         return true;
@@ -83,16 +173,25 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
     return JSON_PARSE_ERROR;
   }
 
-  if (!releaseParser.foundFirmware()) {
-    LOG_ERR("OTA", "No %s asset found", firmwareAssetName);
-    return NO_UPDATE;
-  }
-
   latestVersion = releaseParser.getTagName();
-  otaUrl = releaseParser.getFirmwareUrl();
-  otaSize = releaseParser.getFirmwareSize();
+
+  // The install target starts as the running SKU's asset, so the plain "something
+  // newer is out" flow behaves exactly as before. selectSkuForInstall() overwrites
+  // these from skuAssets when the user picks a build; both views are filled from
+  // the same asset object as it streamed past, so they cannot disagree.
+  updateAvailable = releaseParser.foundFirmware();
+  if (updateAvailable) {
+    otaUrl = releaseParser.getFirmwareUrl();
+    otaSize = releaseParser.getFirmwareSize();
+  } else {
+    // A release that ships no asset for this SKU is not a dead end any more: the
+    // user can still move to a build it does publish, so only report NO_UPDATE
+    // when the release has none of them.
+    LOG_INF("OTA", "No %s asset in this release", runningAssetName);
+    otaUrl.clear();
+    otaSize = 0;
+  }
   totalSize = otaSize;
-  updateAvailable = true;
 
   // The digest arrives over the CA-verified api.github.com connection this
   // function just used, which is what makes it an authenticity anchor for the
@@ -100,16 +199,24 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   // HttpDownloader.cpp). Absence is recorded, not tolerated: installUpdate()
   // refuses to flash without one.
   static_assert(DIGEST_SIZE == ReleaseJsonParser::DIGEST_SIZE, "digest buffer size must match the parser");
-  otaDigestValid = releaseParser.foundFirmwareDigest();
+  otaDigestValid = updateAvailable && releaseParser.foundFirmwareDigest();
   if (otaDigestValid) {
     memcpy(otaDigest, releaseParser.getFirmwareDigest(), sizeof(otaDigest));
   } else {
     memset(otaDigest, 0, sizeof(otaDigest));
   }
 
-  LOG_DBG("OTA", "Found update: tag=%s size=%zu digest=%s", latestVersion.c_str(), otaSize,
-          otaDigestValid ? "yes" : "no");
-  LOG_DBG("OTA", "Firmware URL: %s", otaUrl.c_str());
+  bool anySkuPublished = false;
+  for (const SkuAsset& slot : skuAssets) {
+    if (slot.present()) anySkuPublished = true;
+  }
+  if (!anySkuPublished) {
+    LOG_ERR("OTA", "Release publishes no firmware asset at all");
+    return NO_UPDATE;
+  }
+
+  LOG_DBG("OTA", "Release %s: own asset=%s size=%zu digest=%s", latestVersion.c_str(), updateAvailable ? "yes" : "no",
+          otaSize, otaDigestValid ? "yes" : "no");
   return OK;
 }
 
@@ -225,8 +332,27 @@ OtaUpdater::OtaUpdaterError OtaUpdater::verifyStagedDigest(const char* path) con
 }
 
 OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgress, void* ctx, StageCallback onStage) {
-  if (!isUpdateNewer()) {
+  // The version gate only guards the automatic path. Once the user has named a
+  // build through selectSkuForInstall() the answer to "is this newer" is beside
+  // the point — reinstalling the current version and switching language build are
+  // both same-version installs by definition.
+  if (!userSelectedInstall && !isUpdateNewer()) {
     return UPDATE_OLDER_ERROR;
+  }
+
+  if (otaUrl.empty()) {
+    LOG_ERR("OTA", "No install target selected");
+    return NO_UPDATE;
+  }
+
+  // Second look at the fit, because the default path never went through
+  // selectSkuForInstall(). Cheap, and the alternative is discovering it after a
+  // 6 MB download when flashFromSdPath rejects the image.
+  const size_t slotSize = getOtaSlotSize();
+  if (slotSize > 0 && otaSize > slotSize) {
+    LOG_ERR("OTA", "image %u bytes exceeds app slot %u", static_cast<unsigned>(otaSize),
+            static_cast<unsigned>(slotSize));
+    return IMAGE_TOO_LARGE;
   }
 
   // Why SD staging instead of esp_https_ota: esp_https_ota_begin() rejects a
