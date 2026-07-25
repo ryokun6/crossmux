@@ -208,7 +208,8 @@ inline uint16_t clampAdvanceAfterTrim(const uint16_t advance, const int trim, co
 // are glued via wordContinues (Latin NBSP-style groups) and inseparable kinsoku pairs.
 // Line/column-start OpenBracket hangs via paint-origin shift in ParsedText using the
 // glyph's left bearing (leading blank); the opener's advance stays full.
-inline void applyAdjacentPunctCompression(const std::vector<std::string>& words, const std::vector<bool>& continuesVec,
+template <typename Words>
+inline void applyAdjacentPunctCompression(const Words& words, const std::vector<bool>& continuesVec,
                                           std::vector<uint16_t>& advances, const int emPx, const Profile profile) {
   if (profile == Profile::Off || advances.size() < 2 || emPx <= 0) return;
   const size_t n = std::min(words.size(), advances.size());
@@ -235,8 +236,9 @@ struct EdgeTrim {
   int endTrim = 0;
 };
 
-inline EdgeTrim lineEdgeTrimPx(const std::vector<std::string>& words, const size_t runStart, const size_t runEnd,
-                               const Profile profile, const int emPx) {
+template <typename Words>
+inline EdgeTrim lineEdgeTrimPx(const Words& words, const size_t runStart, const size_t runEnd, const Profile profile,
+                               const int emPx) {
   EdgeTrim out;
   if (profile == Profile::Off || runEnd <= runStart || emPx <= 0 || runEnd > words.size()) {
     return out;

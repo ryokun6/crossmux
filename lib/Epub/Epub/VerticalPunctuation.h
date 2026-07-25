@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace VerticalPunctuation {
 
@@ -41,11 +42,12 @@ inline bool occupiesVerticalCell(const uint32_t cp) { return presentationCodepoi
 // remapped to vertical forms. Count every upright glyph in such a token so
 // sequences like U+FE19 U+FE19 U+FE42 (two ellipses plus a closing quote) use
 // three cells instead of being painted together in one cell.
-inline size_t stackedRunLength(const std::string& word) {
+inline size_t stackedRunLength(const std::string_view word) {
   size_t count = 0;
   bool followsStackedGlyph = false;
-  const auto* ptr = reinterpret_cast<const unsigned char*>(word.c_str());
-  while (true) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(word.data());
+  const auto* const end = ptr + word.size();
+  while (ptr < end) {
     const uint32_t cp = utf8NextCodepoint(&ptr);
     if (cp == 0) break;
     if (isVariationSelector(cp) && followsStackedGlyph) {

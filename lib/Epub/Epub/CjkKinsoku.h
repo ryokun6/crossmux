@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // CJK line-break prohibition (禁則 / kinsoku) classification.
@@ -281,16 +282,20 @@ inline bool hasCjkBreakOpportunityBetween(const uint32_t leftCp, const uint32_t 
   return isLegalBreakBetween(leftCp, rightCp);
 }
 
-inline uint32_t firstCodepoint(const std::string& text) {
-  const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str());
+inline uint32_t firstCodepoint(const std::string_view text) {
+  if (text.empty()) return 0;
+  const auto* ptr = reinterpret_cast<const unsigned char*>(text.data());
   return utf8NextCodepoint(&ptr);
 }
 
-inline uint32_t lastCodepoint(const std::string& text) {
-  const auto* ptr = reinterpret_cast<const unsigned char*>(text.c_str());
+inline uint32_t lastCodepoint(const std::string_view text) {
+  const auto* ptr = reinterpret_cast<const unsigned char*>(text.data());
+  const auto* const end = ptr + text.size();
   uint32_t last = 0;
-  while (*ptr) {
-    last = utf8NextCodepoint(&ptr);
+  while (ptr < end) {
+    const uint32_t cp = utf8NextCodepoint(&ptr);
+    if (cp == 0) break;
+    last = cp;
   }
   return last;
 }
@@ -302,8 +307,11 @@ inline uint32_t lastCodepoint(const std::string& text) {
 // Repair only retreats the break. It must never absorb a token that did not fit:
 // doing so would exceed the line/column measure. If the run contains only one
 // token, keeping the bounded break is the only safe fallback.
-inline size_t repairBreakIndex(const std::vector<std::string>& words, const std::vector<bool>& continuesVec,
-                               const size_t runStart, size_t breakAt) {
+// Templated on the token container so the packed WordList used by layout and a
+// plain std::vector<std::string> both work.
+template <typename Words>
+inline size_t repairBreakIndex(const Words& words, const std::vector<bool>& continuesVec, const size_t runStart,
+                               size_t breakAt) {
   if (breakAt <= runStart || breakAt > words.size()) {
     return breakAt;
   }
