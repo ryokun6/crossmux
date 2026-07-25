@@ -30,9 +30,24 @@ buffers to 16KB in / 4KB out and turns on `CONFIG_MBEDTLS_DYNAMIC_BUFFER`, so
 mbedTLS allocates RX/TX per record and frees cert state after the handshake
 instead of pinning ~32KB for the whole session — without it an X3 font download
 has ~5KB `MaxAlloc` mid-transfer and cannot allocate a 2KB read buffer.
-`CONFIG_ESP_TLS_INSECURE` lets GitHub font/OTA GETs omit CA verify (X3 OOMs in
-CDN RSA verify; GitHub refuses plain http); other HTTPS (OPDS, WeRead,
-KOReader) still attaches the CA bundle. Changing these lines rebuilds the
+Every HTTPS client now attaches the CA bundle, GitHub release hosts included —
+without `CONFIG_SECURE_BOOT` the TLS chain is the *only* thing establishing that
+a firmware image or font CRC came from us, since `esp_image_verify` checks only a
+checksum and SHA256 carried inside the downloaded image. `CONFIG_ESP_TLS_INSECURE`
+/ `CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY` are still set but no longer used by
+any call site; they are deliberately left in place so a verification failure
+surfaces as an ordinary handshake error rather than an esp-tls setup failure.
+**Follow-up:** remove both once CA verification is confirmed on real X3 *and* X4
+hardware (the exemption originally existed because X3 OOMed in the release CDN's
+RSA verify, `0x4290` = `MPI_ALLOC_FAILED`, which `CONFIG_MBEDTLS_DYNAMIC_BUFFER`
+is expected to have fixed). Two constraints the same block created, documented at
+the top of `src/network/HttpDownloader.cpp`:
+`CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n` makes `mbedtls_ssl_get_peer_cert()`
+return NULL, which Arduino's `verify_ssl_dn()` dereferences unchecked, so
+`WiFiClientSecure::verify()` / `setFingerprint()` must not be adopted; and
+`CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT` nulls `conf->ca_chain` after each
+handshake, so building a fresh client per hop/request is load-bearing and
+connection pooling is foreclosed. Changing these lines rebuilds the
 Arduino-ESP32 prebuilt libs on the next `pio run` (slow once, then cached).
 `custom_component_remove` drops RainMaker/Insights so that hybrid rebuild does
 not require their embedded server certs.
