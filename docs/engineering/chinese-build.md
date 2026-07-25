@@ -59,14 +59,12 @@ both app slots, and a failed update can auto-revert.
 The CN build keeps two size strategies stacked together to land in that
 budget:
 
-1. **`-flto=auto`** in `[env:gh_release_tc]` / `[env:gh_release_sc]`. Saves ~140 KB on `.text` via
-   cross-TU dead-code elimination. The framework's default `-fno-lto`
-   linker flag is stripped via `build_unflags` so the linker plugin
-   picks up LTO IR in project objects; pre-built framework `.a` libs
-   stay non-LTO and the GCC linker plugin handles the mix. `-Oz` was
-   tested and produced byte-identical output to the framework's default
-   `-Os` on this codebase, so it is *not* enabled (would only add
-   configuration complexity).
+1. **LTO currently off** on CJK envs. `-flto=auto` used to save ~140 KB on
+   `.text`, but with `[base]` `custom_sdkconfig` (smaller mbedTLS buffers for
+   X3 HTTPS) hybrid LTO of rebuilt IDF libs breaks the link. Re-enable once
+   mbedtls overrides no longer require a hybrid rebuild. `-Oz` was tested and
+   produced byte-identical output to the framework's default `-Os` on this
+   codebase, so it is *not* enabled (would only add configuration complexity).
 2. **Per-size CJK character coverage** in `build-cn-builtin-fonts.sh`
    (see "Regenerating the CJK fonts" below). 8/10/12pt carry the small
    ~3500-char UI subset; **14pt carries the reader-default 7000 通用汉字
