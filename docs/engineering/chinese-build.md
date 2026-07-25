@@ -59,12 +59,20 @@ both app slots, and a failed update can auto-revert.
 The CN build keeps two size strategies stacked together to land in that
 budget:
 
-1. **LTO currently off** on CJK envs. `-flto=auto` used to save ~140 KB on
-   `.text`, but with `[base]` `custom_sdkconfig` (smaller mbedTLS buffers for
-   X3 HTTPS) hybrid LTO of rebuilt IDF libs breaks the link. Re-enable once
-   mbedtls overrides no longer require a hybrid rebuild. `-Oz` was tested and
-   produced byte-identical output to the framework's default `-Os` on this
-   codebase, so it is *not* enabled (would only add configuration complexity).
+1. **LTO on** for all CJK envs, worth ~186 KB of flash (TC went 96.1% → 93.2%
+   of the app slot). It is enabled by putting `-fno-lto` in `build_unflags`
+   and **nothing** in `build_flags`: pioarduino reacts to that unflag by adding
+   `-flto=auto` to the framework's compile flags and `-flto` to its
+   `LINKFLAGS`, and it only does so in the Arduino pass. Adding `-flto=auto`
+   to `build_flags` as well is what used to break the link — `build_flags`
+   reach every pass, including the hybrid ESP-IDF pass that
+   `custom_sdkconfig` triggers, so that pass emitted slim LTO objects and then
+   linked them without the LTO plugin. It was previously misdiagnosed as
+   "hybrid LTO of rebuilt IDF libs breaks the link"; the `undefined reference
+   to 'end'` and missing `call_start_cpu0` were downstream symptoms of slim
+   objects carrying no machine code. `-Oz` was tested and produced
+   byte-identical output to the framework's default `-Os` on this codebase, so
+   it is *not* enabled (would only add configuration complexity).
 2. **Per-size CJK character coverage** in `build-cn-builtin-fonts.sh`
    (see "Regenerating the CJK fonts" below). 8/10/12pt carry the small
    ~3500-char UI subset; **14pt carries the reader-default 7000 通用汉字
