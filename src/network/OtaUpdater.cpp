@@ -8,15 +8,16 @@
 #include "HttpDownloader.h"
 #include <Logging.h>
 #include <ReleaseJsonParser.h>
-#include <esp_crt_bundle.h>
-#include <esp_http_client.h>
-#include <esp_https_ota.h>
 #include <esp_wifi.h>
+#include <mbedtls/sha256.h>
 // clang-format on
 
 #include <WiFi.h>
 
+#include <cstring>
 #include <string>
+
+#include "FirmwareFlasher.h"
 
 namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/ryokun6/crossmux/releases/latest";
@@ -35,9 +36,26 @@ constexpr char firmwareAssetName[] =
     "firmware.bin";
 #endif
 
-esp_err_t http_client_set_header_cb(esp_http_client_handle_t http_client) {
-  return esp_http_client_set_header(http_client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
-}
+// The staged image lands on SD, not in a spare partition: partitions.csv has no
+// free room (dual 6.25 MiB app slots plus the rest fill the 16 MiB map), and the
+// largest SKU image is already 93% of one app slot.
+constexpr char stagedFirmwarePath[] = "/firmware_ota.tmp";
+
+// SHA-256 read buffer. 512 bytes matches the SD sector size (so SdFat serves each
+// read straight from its existing sector cache with no extra buffering) and lives
+// on the caller's stack — the alternative, a heap block, would be claimed at the
+// worst moment for the arena, right after a multi-MB TLS transfer.
+constexpr size_t HASH_CHUNK = 512;
+
+// Removes the staged download on every exit path — mismatch, cancel, flash
+// failure, or success. A 6 MB orphan on the user's card is a real cost.
+struct StagedFileCleanup {
+  ~StagedFileCleanup() {
+    if (Storage.exists(stagedFirmwarePath)) {
+      Storage.remove(stagedFirmwarePath);
+    }
+  }
+};
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
@@ -76,7 +94,21 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   totalSize = otaSize;
   updateAvailable = true;
 
-  LOG_DBG("OTA", "Found update: tag=%s size=%zu", latestVersion.c_str(), otaSize);
+  // The digest arrives over the CA-verified api.github.com connection this
+  // function just used, which is what makes it an authenticity anchor for the
+  // asset fetch (that hop skips CA verify — see shouldAttachCrtBundle in
+  // HttpDownloader.cpp). Absence is recorded, not tolerated: installUpdate()
+  // refuses to flash without one.
+  static_assert(DIGEST_SIZE == ReleaseJsonParser::DIGEST_SIZE, "digest buffer size must match the parser");
+  otaDigestValid = releaseParser.foundFirmwareDigest();
+  if (otaDigestValid) {
+    memcpy(otaDigest, releaseParser.getFirmwareDigest(), sizeof(otaDigest));
+  } else {
+    memset(otaDigest, 0, sizeof(otaDigest));
+  }
+
+  LOG_DBG("OTA", "Found update: tag=%s size=%zu digest=%s", latestVersion.c_str(), otaSize,
+          otaDigestValid ? "yes" : "no");
   LOG_DBG("OTA", "Firmware URL: %s", otaUrl.c_str());
   return OK;
 }
@@ -126,110 +158,175 @@ bool OtaUpdater::isUpdateNewer() const {
 
 const std::string& OtaUpdater::getLatestVersion() const { return latestVersion; }
 
-OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgress, void* ctx) {
+void OtaUpdater::flashProgressTrampoline(size_t written, size_t total, void* ctx) {
+  auto* self = static_cast<OtaUpdater*>(ctx);
+  self->processedSize = written;
+  self->totalSize = total;
+  if (self->progressCb) self->progressCb(self->progressCtx);
+}
+
+// Streams the staged file through mbedtls_sha256 and compares against the digest
+// the release API published. mbedtls_sha256 is the same primitive the structural
+// image check uses (FirmwareFlasher.cpp:129-132); the chunked read mirrors the
+// font CRC32 loop (FontDownloadActivity.cpp:394-409) so a 6 MB file never needs
+// to be resident.
+OtaUpdater::OtaUpdaterError OtaUpdater::verifyStagedDigest(const char* path) const {
+  if (!otaDigestValid) {
+    // Fail closed. Degrading to "no verification" would defeat the point of
+    // staging: the asset hop runs without CA verification, so the digest is the
+    // only thing tying these bytes to the release.
+    LOG_ERR("OTA", "No sha256 digest in release JSON — refusing to flash");
+    return DIGEST_MISSING;
+  }
+
+  HalFile file;
+  if (!Storage.openFileForRead("OTA", path, file) || !file) {
+    LOG_ERR("OTA", "verify: cannot open staged file");
+    return STORAGE_ERROR;
+  }
+
+  const size_t fileSize = file.fileSize();
+  if (otaSize > 0 && fileSize != otaSize) {
+    LOG_ERR("OTA", "verify: size %u != expected %u", static_cast<unsigned>(fileSize), static_cast<unsigned>(otaSize));
+    file.close();
+    return DIGEST_MISMATCH;
+  }
+
+  uint8_t buf[HASH_CHUNK];
+  mbedtls_sha256_context shaCtx;
+  mbedtls_sha256_init(&shaCtx);
+  mbedtls_sha256_starts(&shaCtx, /*is224=*/0);
+  size_t remaining = fileSize;
+  while (remaining > 0) {
+    const size_t want = remaining < sizeof(buf) ? remaining : sizeof(buf);
+    const int got = file.read(buf, want);
+    if (got <= 0 || static_cast<size_t>(got) != want) {
+      LOG_ERR("OTA", "verify: short read with %u bytes left", static_cast<unsigned>(remaining));
+      mbedtls_sha256_free(&shaCtx);
+      file.close();
+      return STORAGE_ERROR;
+    }
+    mbedtls_sha256_update(&shaCtx, buf, want);
+    remaining -= want;
+  }
+
+  uint8_t computed[DIGEST_SIZE];
+  mbedtls_sha256_finish(&shaCtx, computed);
+  mbedtls_sha256_free(&shaCtx);
+  file.close();
+
+  if (memcmp(computed, otaDigest, sizeof(computed)) != 0) {
+    LOG_ERR("OTA", "verify: sha256 mismatch (expected %02x%02x…, got %02x%02x…)", otaDigest[0], otaDigest[1],
+            computed[0], computed[1]);
+    return DIGEST_MISMATCH;
+  }
+  LOG_INF("OTA", "verify: sha256 OK (%u bytes)", static_cast<unsigned>(fileSize));
+  return OK;
+}
+
+OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgress, void* ctx, StageCallback onStage) {
   if (!isUpdateNewer()) {
     return UPDATE_OLDER_ERROR;
   }
 
-  esp_https_ota_handle_t ota_handle = NULL;
-  esp_err_t esp_err;
-
-  // CA verification matters more here than anywhere else in the firmware.
+  // Why SD staging instead of esp_https_ota: esp_https_ota_begin() rejects a
+  // config with no CA attached (ESP_ERR_INVALID_ARG from
+  // is_server_verification_enabled) unless CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP is
+  // set, and it is not — so on X3 it necessarily verifies the asset CDN's
+  // RSA-4096 root and dies with 0x4290 MPI_ALLOC_FAILED (see
+  // shouldAttachCrtBundle in HttpDownloader.cpp for the measurements).
+  // HttpDownloader's downloadToFile is the X3-proven path and is already tuned
+  // for this exact hazard, so the download goes there and authenticity is
+  // restored out-of-band: the sha256 digest below came from a CA-verified
+  // api.github.com fetch, and the bytes cannot be substituted without breaking
+  // it. Both boards take this identical path; X4 gains the digest cross-check.
+  //
   // CONFIG_SECURE_BOOT is not enabled (the sdkconfig has only
   // SECURE_BOOT_V2_RSA_SUPPORTED/_PREFERRED, no CONFIG_SECURE_SIGNED_APPS_*), so
-  // esp_image_verify only walks the header/segments and checks a checksum plus a
-  // SHA256 that are both carried *inside the downloaded image*. That proves the
-  // download was not corrupted in transit; it proves nothing about who produced
-  // it. Authenticity on this path comes solely from the TLS chain below, so an
-  // unverified fetch means anyone on the network path can install arbitrary
-  // firmware. Hence crt_bundle_attach, and no skip_cert_common_name_check.
-  //
-  // Unlike HttpDownloader, this path cannot simply skip the bundle for GitHub
-  // hosts to dodge X3's RSA-verify OOM: esp_https_ota_begin() rejects a config
-  // with no cert_pem / use_global_ca_store / crt_bundle_attach outright
-  // (ESP_ERR_INVALID_ARG, esp_https_ota.c is_server_verification_enabled) unless
-  // CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP is set, and it is not. So on X3 expect the
-  // release-assets CDN hop to fail the same 0x4290 MPI_ALLOC_FAILED way font
-  // downloads measurably do (see shouldAttachCrtBundle in HttpDownloader.cpp);
-  // dropping the bundle would only move the failure earlier while also giving up
-  // authenticity. Making OTA install work on X3 needs either that Kconfig option
-  // plus an accepted security tradeoff, or a per-device policy that keeps
-  // verification on X4 where the heap headroom exists.
-  //
-  // keep_alive_enable stays true only because esp_https_ota re-inits the SSL
-  // transport per connect; a genuinely pooled connection would break under
-  // CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT, which nulls conf->ca_chain after the
-  // first handshake (HttpDownloader deliberately sets false for that reason).
-  esp_http_client_config_t client_config = {
-      .url = otaUrl.c_str(),
-      .timeout_ms = 15000,
-      // 4096 holds the github->CDN redirect headers (the 512 default truncates
-      // them). TX must fit the signed release-assets GET (~900+ char path); 1024
-      // truncated it and produced garbage HTTP status codes on X3.
-      .buffer_size = 4096,
-      .buffer_size_tx = 3072,
-      .crt_bundle_attach = esp_crt_bundle_attach,
-      .keep_alive_enable = true,
-  };
+  // the image's own checksum + SHA256 trailer — what flashFromSdPath validates —
+  // proves only that the file is internally consistent, never who produced it.
+  // That is defense-in-depth on top of the digest, not a substitute for it.
 
-  esp_https_ota_config_t ota_config = {
-      .http_config = &client_config,
-      .http_client_init_cb = http_client_set_header_cb,
-  };
+  // Checked here as well as in verifyStagedDigest so a release without a usable
+  // digest costs the user nothing instead of a ~6 MB download that can only be
+  // thrown away.
+  if (!otaDigestValid) {
+    LOG_ERR("OTA", "No sha256 digest for %s — refusing to download unverifiable firmware", otaUrl.c_str());
+    return DIGEST_MISSING;
+  }
+
+  progressCb = onProgress;
+  progressCtx = ctx;
+  StagedFileCleanup cleanup;
 
   /* For better timing and connectivity, we disable power saving for WiFi */
   esp_wifi_set_ps(WIFI_PS_NONE);
 
   // Same X3 MaxAlloc pressure as HttpDownloader: free scan debris, then log the
-  // contiguous block size that decides whether mbedTLS + OTA buffers fit.
+  // contiguous block size that decides whether the mbedTLS buffers fit.
   WiFi.scanDelete();
   LOG_INF("OTA", "Install prep Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
           static_cast<unsigned>(ESP.getMaxAllocHeap()));
 
-  esp_err = esp_https_ota_begin(&ota_config, &ota_handle);
-  if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "HTTP OTA Begin Failed: %s (Free=%u MaxAlloc=%u)", esp_err_to_name(esp_err),
-            static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
-    return INTERNAL_UPDATE_ERROR;
-  }
+  if (onStage) onStage(ctx, Stage::DOWNLOADING);
+  processedSize = 0;
+  totalSize = otaSize;
 
+  // Report on whole-percent change only. Firing per chunk wakes the render task,
+  // whose framebuffer work contends with TLS on the same internal arena, and
+  // e-ink cannot repaint faster than a percent tick anyway.
   int lastReportedPct = -1;
-  do {
-    esp_err = esp_https_ota_perform(ota_handle);
-    processedSize = esp_https_ota_get_image_len_read(ota_handle);
-    // Fire the callback only on whole-percent change. Without this it fired
-    // every ~100ms perform iteration, waking the render task whose framebuffer
-    // work contends with TLS on the same internal arena. E-ink can't repaint
-    // faster than a percent tick anyway.
-    if (onProgress && totalSize > 0) {
-      const int pct = static_cast<int>(static_cast<uint64_t>(processedSize) * 100 / totalSize);
-      if (pct != lastReportedPct) {
+  const auto downloadResult = HttpDownloader::downloadToFile(
+      otaUrl, stagedFirmwarePath, [this, &lastReportedPct](size_t downloaded, size_t total) {
+        processedSize = downloaded;
+        if (total > 0) totalSize = total;
+        if (!progressCb || totalSize == 0) return;
+        const int pct = static_cast<int>(static_cast<uint64_t>(downloaded) * 100 / totalSize);
+        if (pct == lastReportedPct) return;
         lastReportedPct = pct;
-        onProgress(ctx);
-      }
-    }
-    delay(100);  // TODO: should we replace this with something better?
-  } while (esp_err == ESP_ERR_HTTPS_OTA_IN_PROGRESS);
+        progressCb(progressCtx);
+      });
 
   /* Return back to default power saving for WiFi in case of failing */
   esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
 
-  if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "esp_https_ota_perform Failed: %s", esp_err_to_name(esp_err));
-    esp_https_ota_finish(ota_handle);
-    return HTTP_ERROR;
+  if (downloadResult != HttpDownloader::OK) {
+    LOG_ERR("OTA", "staging download failed: %d (Free=%u MaxAlloc=%u)", downloadResult,
+            static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
+    // FILE_ERROR is a short SD write, which in practice means the card ran out
+    // of room for a ~6 MB image. HalStorage exposes no free-space query, so the
+    // failed write *is* the pre-flight check. downloadToFile already deleted the
+    // partial file; the cleanup guard covers the rest.
+    return downloadResult == HttpDownloader::FILE_ERROR ? STORAGE_ERROR : HTTP_ERROR;
   }
 
-  if (!esp_https_ota_is_complete_data_received(ota_handle)) {
-    LOG_ERR("OTA", "esp_https_ota_is_complete_data_received Failed: %s", esp_err_to_name(esp_err));
-    esp_https_ota_finish(ota_handle);
-    return INTERNAL_UPDATE_ERROR;
+  if (onStage) onStage(ctx, Stage::VERIFYING);
+  const OtaUpdaterError verifyResult = verifyStagedDigest(stagedFirmwarePath);
+  if (verifyResult != OK) {
+    return verifyResult;  // staged file removed by the cleanup guard
   }
 
-  esp_err = esp_https_ota_finish(ota_handle);
-  if (esp_err != ESP_OK) {
-    LOG_ERR("OTA", "esp_https_ota_finish Failed: %s", esp_err_to_name(esp_err));
-    return INTERNAL_UPDATE_ERROR;
+  // Wi-Fi down before the erase/write loop: it holds LWIP/mbedTLS debris that
+  // the flash path has no use for, and the partition writes are long enough that
+  // a live radio is pure risk.
+  WiFi.disconnect(true);
+  delay(30);
+  WiFi.mode(WIFI_OFF);
+  LOG_INF("OTA", "Pre-flash Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
+
+  if (onStage) onStage(ctx, Stage::FLASHING);
+  processedSize = 0;
+  // alreadyValidated=false: keep the structural pass (header, segment table, XOR
+  // checksum, SHA256 trailer) as defense-in-depth even though the digest already
+  // matched — it is cheap next to the write and catches an SD read that goes bad
+  // between hashing and flashing.
+  const auto flashResult =
+      firmware_flash::flashFromSdPath(stagedFirmwarePath, &OtaUpdater::flashProgressTrampoline, this,
+                                      /*alreadyValidated=*/false);
+  if (flashResult != firmware_flash::Result::OK) {
+    LOG_ERR("OTA", "flash failed: %s", firmware_flash::resultName(flashResult));
+    return FLASH_ERROR;
   }
 
   LOG_INF("OTA", "Update completed");

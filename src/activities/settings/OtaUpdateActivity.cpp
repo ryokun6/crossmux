@@ -79,6 +79,28 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   }
 }
 
+void OtaUpdateActivity::setFailure(const OtaUpdater::OtaUpdaterError error) {
+  RenderLock lock(*this);
+  state = FAILED;
+  switch (error) {
+    case OtaUpdater::DIGEST_MISSING:
+    case OtaUpdater::DIGEST_MISMATCH:
+      // The download completed but the bytes are not the published release, so
+      // say so rather than leaving the user to retry into the same wall.
+      errorMessage_ = tr(STR_UPDATE_VERIFY_FAILED);
+      break;
+    case OtaUpdater::STORAGE_ERROR:
+      errorMessage_ = tr(STR_UPDATE_NO_SD_SPACE);
+      break;
+    case OtaUpdater::FLASH_ERROR:
+      errorMessage_ = tr(STR_FIRMWARE_WRITE_FAILED);
+      break;
+    default:
+      errorMessage_ = nullptr;
+      break;
+  }
+}
+
 void OtaUpdateActivity::onEnter() {
   Activity::onEnter();
 
@@ -120,9 +142,11 @@ void OtaUpdateActivity::render(RenderLock&&) {
   const auto top = (pageHeight - height) / 2;
 
   float updaterProgress = 0;
-  if (state == UPDATE_IN_PROGRESS) {
+  if (state == UPDATE_IN_PROGRESS || state == FLASHING) {
     LOG_DBG("OTA", "Update progress: %d / %d", updater.getProcessedSize(), updater.getTotalSize());
-    updaterProgress = static_cast<float>(updater.getProcessedSize()) / static_cast<float>(updater.getTotalSize());
+    updaterProgress = updater.getTotalSize() > 0
+                          ? static_cast<float>(updater.getProcessedSize()) / static_cast<float>(updater.getTotalSize())
+                          : 0.0f;
     // Only update every 2% at the most
     if (static_cast<int>(updaterProgress * 50) == lastUpdaterPercentage / 2) {
       return;
@@ -141,8 +165,8 @@ void OtaUpdateActivity::render(RenderLock&&) {
 
     const auto labels = mappedInput.mapLabels(tr(STR_CANCEL), tr(STR_UPDATE), "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  } else if (state == UPDATE_IN_PROGRESS) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATING));
+  } else if (state == UPDATE_IN_PROGRESS || state == FLASHING) {
+    renderer.drawCenteredText(UI_10_FONT_ID, top, state == FLASHING ? tr(STR_UPDATING) : tr(STR_DOWNLOADING));
 
     int y = top + height + metrics.verticalSpacing;
     GUI.drawProgressBar(
@@ -154,15 +178,28 @@ void OtaUpdateActivity::render(RenderLock&&) {
     // Percent label is drawn by BaseTheme::drawProgressBar; this slot is left intentionally empty
     // so the bytes line below stays at the same Y it was at when the activity drew its own percent.
     y += height + metrics.verticalSpacing;
-    renderer.drawCenteredText(
-        UI_10_FONT_ID, y,
-        (std::to_string(updater.getProcessedSize()) + " / " + std::to_string(updater.getTotalSize())).c_str());
+    // Writing the OTA partition is the only phase where losing power leaves the
+    // device without a bootable app, so the warning is scoped to it.
+    if (state == FLASHING) {
+      renderer.drawCenteredText(UI_10_FONT_ID, y, tr(STR_FIRMWARE_UPDATE_DO_NOT_POWER_OFF));
+    } else {
+      renderer.drawCenteredText(
+          UI_10_FONT_ID, y,
+          (std::to_string(updater.getProcessedSize()) + " / " + std::to_string(updater.getTotalSize())).c_str());
+    }
+  } else if (state == VERIFYING) {
+    // Hashing ~6 MB off the SD card takes long enough that a static "Updating…"
+    // would read as a hang.
+    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_VERIFYING_UPDATE));
   } else if (state == NO_UPDATE) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_NO_UPDATE), true, EpdFontFamily::BOLD);
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == FAILED) {
     renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_FAILED), true, EpdFontFamily::BOLD);
+    if (errorMessage_ != nullptr) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, errorMessage_);
+    }
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   } else if (state == FINISHED) {
@@ -189,14 +226,32 @@ void OtaUpdateActivity::loop() {
             // installUpdate() blocks this task.
             static_cast<OtaUpdateActivity*>(ctx)->requestUpdate(true);
           },
-          this);
+          this,
+          [](void* ctx, OtaUpdater::Stage stage) {
+            auto* self = static_cast<OtaUpdateActivity*>(ctx);
+            {
+              RenderLock lock(*self);
+              switch (stage) {
+                case OtaUpdater::Stage::DOWNLOADING:
+                  self->state = UPDATE_IN_PROGRESS;
+                  break;
+                case OtaUpdater::Stage::VERIFYING:
+                  self->state = VERIFYING;
+                  break;
+                case OtaUpdater::Stage::FLASHING:
+                  self->state = FLASHING;
+                  break;
+              }
+              // Each phase restarts its progress at 0%, so drop the throttle
+              // baseline or the first frame of the new phase is skipped.
+              self->lastUpdaterPercentage = UNINITIALIZED_PERCENTAGE;
+            }
+            self->requestUpdate(true);
+          });
 
       if (res != OtaUpdater::OK) {
         LOG_DBG("OTA", "Update failed: %d", res);
-        {
-          RenderLock lock(*this);
-          state = FAILED;
-        }
+        setFailure(res);
         requestUpdate();
         return;
       }

@@ -130,7 +130,17 @@ CDC (`/dev/tty.usbmodem*` / `ttyACM*`).
 (`MaxAlloc`). The build shrinks TLS record buffers via `custom_sdkconfig` in
 `platformio.ini` (16K in / 4K out). Manage Fonts / Check for updates also unload
 the resident SD font and may briefly silent-restart once when `MaxAlloc` is
-still too low (see `SilentRestart.h` + those activities).
+still too low (see `SilentRestart.h` + those activities). The CA-verify skip
+(`shouldAttachCrtBundle()` in `src/network/HttpDownloader.cpp`) is **not**
+device-gated: it keys off the host, so X3 and X4 share one TLS trust posture. It
+covers only GitHub's asset CDN (`release-assets.githubusercontent.com`,
+`objects.githubusercontent.com`), whose RSA-4096 root verify cannot fit X3's heap;
+`github.com` and `api.github.com` serve cheap EC chains and stay verified. OTA
+install therefore stages the asset to SD via `HttpDownloader::downloadToFile()`
+and checks its SHA-256 against the digest from the CA-verified
+`api.github.com` release JSON before flashing through
+`firmware_flash::flashFromSdPath()`. Do not add a per-device policy there — see
+[build-system.md](build-system.md).
 
 ## Build & flash for X3
 

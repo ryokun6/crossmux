@@ -8,7 +8,9 @@ class OtaUpdateActivity : public Activity {
     WIFI_SELECTION,
     CHECKING_FOR_UPDATE,
     WAITING_CONFIRMATION,
-    UPDATE_IN_PROGRESS,
+    UPDATE_IN_PROGRESS,  // downloading the asset to the SD staging file
+    VERIFYING,           // hashing the staged file against the published digest
+    FLASHING,            // writing the OTA partition
     NO_UPDATE,
     FAILED,
     FINISHED,
@@ -22,8 +24,12 @@ class OtaUpdateActivity : public Activity {
   unsigned int lastUpdaterPercentage = UNINITIALIZED_PERCENTAGE;
   OtaUpdater updater;
   bool resumedAfterDefrag_ = false;
+  // Points at a tr() string, so it stays valid without owning storage. Null when
+  // the failure has no more specific message than "Update failed".
+  const char* errorMessage_ = nullptr;
 
   void onWifiSelectionComplete(bool success);
+  void setFailure(OtaUpdater::OtaUpdaterError error);
 
  public:
   // resumedAfterDefrag: silent-restart resume path — skip the MaxAlloc defrag
@@ -34,6 +40,8 @@ class OtaUpdateActivity : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool preventAutoSleep() override { return state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS; }
+  bool preventAutoSleep() override {
+    return state == CHECKING_FOR_UPDATE || state == UPDATE_IN_PROGRESS || state == VERIFYING || state == FLASHING;
+  }
   bool skipLoopDelay() override { return true; }  // Prevent power-saving mode
 };

@@ -30,30 +30,50 @@ buffers to 16KB in / 4KB out and turns on `CONFIG_MBEDTLS_DYNAMIC_BUFFER`, so
 mbedTLS allocates RX/TX per record and frees cert state after the handshake
 instead of pinning ~32KB for the whole session — without it an X3 font download
 has ~5KB `MaxAlloc` mid-transfer and cannot allocate a 2KB read buffer.
-Every HTTPS client attaches the CA bundle **except** the GitHub release hosts,
-which `shouldAttachCrtBundle()` in `src/network/HttpDownloader.cpp` exempts.
+Every HTTPS client attaches the CA bundle **except** GitHub's asset-serving CDN
+hosts — `release-assets.githubusercontent.com` and
+`objects.githubusercontent.com` — which `shouldAttachCrtBundle()` in
+`src/network/HttpDownloader.cpp` exempts by exact host match (it parses the
+authority so a crafted path or userinfo cannot spoof it).
 Verification there was re-tested on X3 after `CONFIG_MBEDTLS_DYNAMIC_BUFFER` and
 `KEEP_PEER_CERTIFICATE=n` landed — the theory being that those freed enough heap
 to afford it — and it still fails: `release-assets.githubusercontent.com` returns
 `PK verify failed with error 0x4290` on every attempt, i.e.
 `RSA_PUBLIC_FAILED` + `MPI_ALLOC_FAILED`, an allocation failure during the RSA
 verify rather than a trust failure (the same log line confirms `Certificate
-matched`). `github.com` itself verifies fine; only the CDN hop fails. Attempts
+matched`). Attempts
 start at `Free=46968 MaxAlloc=32756` and the handshake drives the heap to
 `MinFree=1824 MaxAlloc=9716`, against an idle post-boot ceiling of
 `MaxAlloc=34804` — so this is a heap-size wall, not fragmentation, and no
-`MIN_MAX_ALLOC_FOR_TLS` floor can gate around it. Do not remove the exemption
-again without new evidence; X4's larger headroom may afford verification, but
-that needs a per-device policy and its own measurement.
+`MIN_MAX_ALLOC_FOR_TLS` floor can gate around it.
+
+The cause is chain-specific, which is why the exemption is scoped to those two
+hosts. The asset hosts serve RSA-2048 leaf ← RSA-2048 intermediate ←
+**RSA-4096** root. The C3's RSA accelerator caps at 3072 bits
+(`SOC_RSA_MAX_BIT_LEN` in `soc_caps.h`), so `CONFIG_MBEDTLS_LARGE_KEY_SOFTWARE_MPI`
+routes the 4096-bit verify through software modexp, needing one contiguous
+~2564-byte MPI block against `MinFree=1824`. RSA-2048 needs ~1284 bytes and fits.
+`github.com` **and `api.github.com` are not exempt and must keep the bundle**:
+they serve an all-EC chain (P-256 leaf ← P-256 Sectigo E36 ← P-384 Sectigo Root
+E46) that verifies cheaply — the measured `hop=0 github.com verify OK, 302` is
+that chain passing. Do not widen the exemption back to a substring match on
+`github.com` (which also matches `api.github.com`), and do not remove it without
+new evidence. It is host-based and applies on **both**
+X3 and X4 by decision, not by omission: one image serves both variants via
+runtime detection, so gating TLS trust per device would mean a security posture
+that silently differs by board plus a verify path that cannot be exercised on the
+other board.
 
 `CONFIG_ESP_TLS_INSECURE` / `CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY` are
 therefore load-bearing: with no CA attached, esp-tls falls back to
-`MBEDTLS_SSL_VERIFY_NONE` instead of failing setup. Fonts still CRC32-check and
-OTA still hash-checks the image, so the exemption costs authenticity, not
-integrity. `OtaUpdater` cannot take the same exemption —
-`esp_https_ota_begin()` rejects a config with no CA outright unless
-`CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP` is set, and it is not — so it keeps the bundle
-and OTA install is expected to hit the same `0x4290` on X3.
+`MBEDTLS_SSL_VERIFY_NONE` instead of failing setup. Fonts still CRC32-check, so
+the exemption costs authenticity, not integrity. OTA restores authenticity
+out-of-band: `OtaUpdater` no longer uses `esp_https_ota_*` (which rejects a
+config with no CA outright unless `CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP` is set, and
+it is not, so on X3 it necessarily hit the same `0x4290`). It stages the asset to
+SD through `HttpDownloader::downloadToFile()`, then verifies the staged file's
+SHA-256 against the per-asset `digest` published by `api.github.com` over a
+CA-verified connection, and refuses to flash on a missing or mismatched digest.
 Two constraints the same block created, documented at
 the top of `src/network/HttpDownloader.cpp`:
 `CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n` makes `mbedtls_ssl_get_peer_cert()`

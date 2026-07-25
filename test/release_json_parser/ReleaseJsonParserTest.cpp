@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <cctype>
+#include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -656,6 +659,164 @@ TEST(ReleaseJsonParser, MinimalValidJson) {
   EXPECT_STREQ(p.getTagName(), "v0");
   EXPECT_STREQ(p.getFirmwareUrl(), "u");
   EXPECT_EQ(p.getFirmwareSize(), 1u);
+}
+
+// --- Asset digest ("digest": "sha256:<64 hex>") --------------------------------
+
+namespace {
+
+// Live shape from the release API: asset firmware-tc.bin, size 6309648.
+const char* kDigestHex = "d0f18ad5d5a1841489ff56ef7a6cefe94a568b48d3cd019bb611c8617f5e342e";
+
+std::string digestJson(const std::string& digestValue) {
+  std::string json = R"({"tag_name":"1.5.0","assets":[{"name":"firmware-tc.bin",)";
+  if (!digestValue.empty()) json += "\"digest\":\"" + digestValue + "\",";
+  json += R"("browser_download_url":"https://example.com/firmware-tc.bin","size":6309648}]})";
+  return json;
+}
+
+std::string toHex(const uint8_t* bytes, size_t len) {
+  std::string out;
+  out.reserve(len * 2);
+  for (size_t i = 0; i < len; i++) {
+    char pair[3];
+    snprintf(pair, sizeof(pair), "%02x", bytes[i]);
+    out += pair;
+  }
+  return out;
+}
+
+}  // namespace
+
+TEST(ReleaseJsonParser, DigestPresentAndWellFormed) {
+  const std::string json = digestJson(std::string("sha256:") + kDigestHex);
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_TRUE(p.foundFirmware());
+  EXPECT_EQ(p.getFirmwareSize(), 6309648u);
+  ASSERT_TRUE(p.foundFirmwareDigest());
+  EXPECT_EQ(toHex(p.getFirmwareDigest(), ReleaseJsonParser::DIGEST_SIZE), kDigestHex);
+}
+
+TEST(ReleaseJsonParser, DigestUppercaseHexAccepted) {
+  std::string upper(kDigestHex);
+  for (char& c : upper) c = static_cast<char>(toupper(c));
+  const std::string json = digestJson("sha256:" + upper);
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_TRUE(p.foundFirmwareDigest());
+  EXPECT_EQ(toHex(p.getFirmwareDigest(), ReleaseJsonParser::DIGEST_SIZE), kDigestHex);
+}
+
+TEST(ReleaseJsonParser, DigestAbsent) {
+  const std::string json = digestJson("");
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_TRUE(p.foundFirmware());
+  EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestNullValue) {
+  const char* json = R"({"tag_name":"1.5.0","assets":[{"name":"firmware.bin","digest":null,)"
+                     R"("browser_download_url":"https://example.com/fw.bin","size":100}]})";
+
+  ReleaseJsonParser p;
+  p.feed(json, strlen(json));
+
+  ASSERT_TRUE(p.foundFirmware());
+  EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestWrongPrefix) {
+  const std::string json = digestJson(std::string("sha512:") + kDigestHex);
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+
+  ASSERT_TRUE(p.foundFirmware());
+  EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestMissingPrefix) {
+  const std::string json = digestJson(kDigestHex);
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+
+  EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestWrongLength) {
+  std::string tooShort(kDigestHex);
+  tooShort.pop_back();
+  const std::string shortJson = digestJson("sha256:" + tooShort);
+
+  ReleaseJsonParser shortParser("firmware-tc.bin");
+  shortParser.feed(shortJson.c_str(), shortJson.size());
+  EXPECT_FALSE(shortParser.foundFirmwareDigest());
+
+  const std::string longJson = digestJson(std::string("sha256:") + kDigestHex + "ab");
+  ReleaseJsonParser longParser("firmware-tc.bin");
+  longParser.feed(longJson.c_str(), longJson.size());
+  EXPECT_FALSE(longParser.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestNonHexCharacters) {
+  std::string bad(kDigestHex);
+  bad[10] = 'z';
+  const std::string json = digestJson("sha256:" + bad);
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+
+  EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestOfNonMatchingAssetIsNotAdopted) {
+  // The source zip has a digest, the firmware asset does not: the parser must not
+  // carry the previous asset's digest over.
+  const char* json = R"({"tag_name":"1.5.0","assets":[)"
+                     R"({"name":"source.zip","digest":"sha256:)"
+                     "d0f18ad5d5a1841489ff56ef7a6cefe94a568b48d3cd019bb611c8617f5e342e"
+                     R"(","browser_download_url":"https://example.com/src.zip","size":10},)"
+                     R"({"name":"firmware.bin","browser_download_url":"https://example.com/fw.bin","size":20}]})";
+
+  ReleaseJsonParser p;
+  p.feed(json, strlen(json));
+
+  ASSERT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/fw.bin");
+  EXPECT_FALSE(p.foundFirmwareDigest());
+}
+
+TEST(ReleaseJsonParser, DigestChunkedAtEveryBoundary) {
+  const std::string json = digestJson(std::string("sha256:") + kDigestHex);
+
+  for (size_t split = 0; split <= json.size(); ++split) {
+    ReleaseJsonParser p("firmware-tc.bin");
+    if (split > 0) p.feed(json.c_str(), split);
+    if (split < json.size()) p.feed(json.c_str() + split, json.size() - split);
+
+    ASSERT_TRUE(p.foundFirmwareDigest()) << "split=" << split;
+    EXPECT_EQ(toHex(p.getFirmwareDigest(), ReleaseJsonParser::DIGEST_SIZE), kDigestHex) << "split=" << split;
+  }
+}
+
+TEST(ReleaseJsonParser, ResetClearsDigest) {
+  const std::string json = digestJson(std::string("sha256:") + kDigestHex);
+
+  ReleaseJsonParser p("firmware-tc.bin");
+  p.feed(json.c_str(), json.size());
+  ASSERT_TRUE(p.foundFirmwareDigest());
+
+  p.reset();
+  EXPECT_FALSE(p.foundFirmwareDigest());
 }
 
 TEST(ReleaseJsonParser, ChunkedRealisticEveryBoundary) {

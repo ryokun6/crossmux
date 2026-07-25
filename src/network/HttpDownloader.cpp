@@ -51,11 +51,13 @@ void reclaimWifiScanHeap() {
 //    no CA to verify against. Safe here only because a fresh esp_http_client is
 //    built per hop (see runGet) — this forecloses connection pooling.
 
-// X3 cannot afford CA verification on the GitHub release CDN. Do not "fix" this
-// by attaching the bundle unconditionally — that has now been tried and measured
-// twice, most recently *after* CONFIG_MBEDTLS_DYNAMIC_BUFFER and
-// KEEP_PEER_CERTIFICATE=n were in place, which was the theory for why it had
-// become affordable. It has not. Measured on X3 (gh_release_tc), font download:
+// CA verification is skipped on GitHub's *asset-serving CDN hosts only*. The
+// policy is host-based, not device-based: the check below has no device gating,
+// so X3 and X4 get identical treatment. Do not "fix" this by attaching the
+// bundle unconditionally — that has now been tried and measured twice, most
+// recently *after* CONFIG_MBEDTLS_DYNAMIC_BUFFER and KEEP_PEER_CERTIFICATE=n
+// were in place, which was the theory for why it had become affordable. It has
+// not. Measured on X3 (gh_release_tc), font download:
 //
 //   hop=0 github.com                          verify OK, 302
 //   hop=1 release-assets.githubusercontent.com 6/6 attempts:
@@ -70,17 +72,78 @@ void reclaimWifiScanHeap() {
 // MaxAlloc=32756, and the handshake itself drives the heap to Free=14584 /
 // MinFree=1824 / MaxAlloc=9716, which is where the verify has to run.
 //
-// Raising the MaxAlloc floor in FontDownloadActivity cannot help: a freshly
-// booted X3 idles at MaxAlloc=34804, so 32756 is already near this board's
-// ceiling and no floor short of an unreachable one would gate it. The heap is
-// not fragmented; it is simply too small.
+// Why only the CDN, and why this can never be tuned away: the asset hosts serve
+// an RSA-2048 leaf under an RSA-2048 intermediate under an *RSA-4096* root. The
+// C3's RSA accelerator caps at 3072 bits (SOC_RSA_MAX_BIT_LEN in soc_caps.h), so
+// CONFIG_MBEDTLS_LARGE_KEY_SOFTWARE_MPI routes the 4096-bit verify through
+// pure-software modexp, which needs one contiguous ~2564-byte MPI block against
+// the MinFree=1824 above. RSA-2048 would need ~1284 bytes and would fit. That is
+// a total-free-heap wall, not fragmentation: a freshly booted X3 idles at
+// MaxAlloc=34804, so no MaxAlloc floor short of an unreachable one gates it.
 //
-// Fonts keep their CRC32 check and OTA keeps the image hash, so this costs
-// authenticity on GitHub paths only (see OtaUpdater.cpp for what that means for
-// firmware). X4 has more headroom and may be able to verify — that would need a
-// per-device policy and its own on-device measurement.
+// github.com and api.github.com are *not* exempt and must keep the bundle: they
+// serve an all-EC chain (P-256 leaf ← P-256 Sectigo E36 ← P-384 Sectigo Root
+// E46) that verifies cheaply on X3 — the "hop=0 github.com verify OK, 302" line
+// above is exactly that chain passing. Only the asset CDN is expensive, so only
+// the asset CDN is listed.
+//
+// Fonts keep their CRC32 check and OTA verifies the release-API SHA-256 digest
+// fetched over a *verified* api.github.com connection (see OtaUpdater.cpp), so
+// this costs authenticity on the asset fetch only, and OTA re-establishes it
+// out-of-band. The skip stays uniform across both variants by decision, not by
+// omission: one image serves X3 and X4 through runtime detection, so gating
+// trust per device would mean a security posture that silently differs by board
+// plus a verify path that cannot be exercised on the other board. This is not an
+// untested X4 gap awaiting measurement.
+constexpr const char* CERT_VERIFY_EXEMPT_HOSTS[] = {
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+};
+
+// Locate the host inside an absolute URL's authority: scheme://[userinfo@]host[:port]/path.
+// Returns false when there is no "://" (relative or malformed URL), which the
+// caller must treat as "not exempt". Offsets into `url` rather than returning a
+// std::string so a per-hop check costs no allocation.
+bool findUrlHost(const std::string& url, size_t& hostBegin, size_t& hostLen) {
+  const size_t schemeEnd = url.find("://");
+  if (schemeEnd == std::string::npos) return false;
+  const size_t authBegin = schemeEnd + 3;
+  size_t authEnd = url.find_first_of("/?#", authBegin);
+  if (authEnd == std::string::npos) authEnd = url.size();
+  if (authBegin >= authEnd) return false;
+
+  // The host is what follows the *last* '@' in the authority, so a crafted
+  // "https://release-assets.githubusercontent.com@evil.com/x" resolves to
+  // evil.com and stays unexempt. Same reason this is a host comparison and not
+  // a substring search: "https://evil.com/release-assets.githubusercontent.com"
+  // must not match either.
+  size_t begin = authBegin;
+  const size_t at = url.rfind('@', authEnd - 1);
+  if (at != std::string::npos && at >= authBegin) begin = at + 1;
+  if (begin >= authEnd) return false;
+
+  // Strip ":port". A bracketed IPv6 literal keeps its brackets and so simply
+  // never equals one of the exempt names.
+  size_t end = authEnd;
+  if (url[begin] != '[') {
+    const size_t colon = url.find(':', begin);
+    if (colon != std::string::npos && colon < authEnd) end = colon;
+  }
+  hostBegin = begin;
+  hostLen = end - begin;
+  return hostLen > 0;
+}
+
 bool shouldAttachCrtBundle(const std::string& url) {
-  return url.find("github.com") == std::string::npos && url.find("githubusercontent.com") == std::string::npos;
+  size_t hostBegin = 0;
+  size_t hostLen = 0;
+  if (!findUrlHost(url, hostBegin, hostLen)) return true;
+  for (const char* exempt : CERT_VERIFY_EXEMPT_HOSTS) {
+    const size_t exemptLen = strlen(exempt);
+    // DNS names are case-insensitive; length equality makes this an exact match.
+    if (hostLen == exemptLen && strncasecmp(url.c_str() + hostBegin, exempt, exemptLen) == 0) return false;
+  }
+  return true;
 }
 
 // Modem sleep turns multi‑MB GitHub GETs into ~100 B/s (font download looked
@@ -224,16 +287,17 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       config.buffer_size = HTTP_RX_BUF;
       config.buffer_size_tx = txBuf;
       config.timeout_ms = openTimeoutMs;
-      // Verified HTTPS via CA bundle for every host except the GitHub release
-      // hosts, which OOM inside RSA verify on X3 (see shouldAttachCrtBundle for
-      // the measurements). Plain http needs no cert config. Skipping needs
+      // Verified HTTPS via CA bundle for every host except GitHub's asset CDN,
+      // whose RSA-4096 root verify OOMs (measured on X3; the skip is host-based
+      // and applies on every device — see shouldAttachCrtBundle for the
+      // measurements). Plain http needs no cert config. Skipping needs
       // CONFIG_ESP_TLS_INSECURE + CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY: with no
       // CA configured esp-tls then falls back to MBEDTLS_SSL_VERIFY_NONE instead
       // of failing setup.
       if (shouldAttachCrtBundle(currentUrl)) {
         config.crt_bundle_attach = esp_crt_bundle_attach;
       } else {
-        LOG_INF("HTTP", "TLS without CA verify (GitHub/X3 heap)");
+        LOG_INF("HTTP", "TLS without CA verify (GitHub asset CDN host)");
       }
       config.keep_alive_enable = false;
       config.event_handler = captureLocationHeader;
