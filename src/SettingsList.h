@@ -45,9 +45,8 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   std::vector<std::string> allStringValues;
   if (sdFontCount > 0) {
     allStringValues.reserve(enumValues.size() + enumStringValues.size());
-    for (const StrId id : enumValues) {
-      allStringValues.push_back(I18N.get(id));
-    }
+    std::transform(enumValues.begin(), enumValues.end(), std::back_inserter(allStringValues),
+                   [](const StrId id) { return std::string(I18N.get(id)); });
     allStringValues.insert(allStringValues.end(), enumStringValues.begin(), enumStringValues.end());
   }
 
