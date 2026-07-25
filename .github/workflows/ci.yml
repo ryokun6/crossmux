@@ -2,7 +2,9 @@ name: CI (build)
 
 on:
   push:
-    branches: [master]
+    # `main` is this fork's default branch; `master` is upstream's, kept so the
+    # filter stays a superset of upstream's on every sync merge.
+    branches: [main, master]
   pull_request:
 
 permissions:
