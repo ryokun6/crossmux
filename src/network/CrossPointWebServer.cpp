@@ -284,6 +284,39 @@ void CrossPointWebServer::stop() {
   LOG_DBG("WEB", "[MEM] Free heap final: %d bytes", ESP.getFreeHeap());
 }
 
+// Known and deliberately deferred: one idle TCP connection stalls this server for seconds.
+//
+// Arduino's WebServer::handleClient() (framework package, WebServer.cpp:409-467) services exactly
+// one client at a time. A new accept is gated on _currentStatus == HC_NONE, and an accepted client
+// that sends nothing is held for the full HTTP_MAX_DATA_WAIT (5000 ms) before it is dropped and the
+// next connection is looked at. The listen backlog is only 4 (NetworkServer(port, max_clients = 4))
+// and every response carries Connection: close, so a page load needs a fresh connection per asset,
+// which makes the head-of-line block easy to hit.
+//
+// Measured on X3 (1.4.14-tc), holding exactly one idle socket open to port 80 sending nothing:
+//
+//   control, no idle socket          total 0.145 s
+//   idle socket held, request 1      total 3.783 s
+//   idle socket held, requests 2-4   total 0.036-0.082 s
+//   after holder released            total 0.129 s
+//
+// The idle socket had been open ~1.5 s when the request arrived, leaving ~3.5 s of the 5000 ms
+// window, and the stall measured 3.78 s — a direct match. time_connect stayed fast (0.024 s) while
+// total ballooned: the handshake completes in the listen backlog, so this is not a connect-level
+// failure. The application burns the rest of HTTP_MAX_DATA_WAIT on the idle client before servicing
+// the real request. Browsers open speculative preconnect sockets, so real-world use hits multi-
+// second stalls even though sequential curl requests complete in 20-119 ms.
+//
+// This is a SEPARATE issue from the heap-starvation bug fixed elsewhere (a resident SD font pinned
+// ~75 KB and left MaxAlloc at 2292 B — below what lwIP needs for a socket — wedging the server
+// entirely: 0 of 21 requests succeeded, all timing out with time_connect never advancing). The heap
+// fix resolves sequential use; it does not address concurrency. Do not conflate the two.
+//
+// Fix route for whoever picks it up: HTTP_MAX_DATA_WAIT is an unguarded #define in the framework
+// and cannot be overridden with -D, but handleClient() is virtual and _nullDelay defaults to true,
+// so subclassing WebServer to bound the idle-socket wait is viable without patching the framework.
+// Deferring this was a deliberate decision, not an oversight: it is a larger, riskier change that
+// deserves its own measurement.
 void CrossPointWebServer::handleClient() {
   static unsigned long lastDebugPrint = 0;
 
