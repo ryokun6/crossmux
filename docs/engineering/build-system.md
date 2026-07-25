@@ -25,12 +25,32 @@
 * `platformio.local.ini`: Local overrides (gitignored, create if needed)
 * `partitions.csv`: ESP32 flash partition layout
 
-**`custom_sdkconfig` (mbedTLS buffers):** `[base]` sets asymmetric TLS record
-buffers to 8KB in / 4KB out so X3 HTTPS (Manage Fonts, OTA) can allocate during
-Wi‑Fi sessions where `MaxAlloc` is ~32KB. Changing these lines rebuilds the
+**`custom_sdkconfig` (mbedTLS / TLS):** `[base]` sets asymmetric TLS record
+buffers to 16KB in / 4KB out and turns on `CONFIG_MBEDTLS_DYNAMIC_BUFFER`, so
+mbedTLS allocates RX/TX per record and frees cert state after the handshake
+instead of pinning ~32KB for the whole session — without it an X3 font download
+has ~5KB `MaxAlloc` mid-transfer and cannot allocate a 2KB read buffer.
+`CONFIG_ESP_TLS_INSECURE` lets GitHub font/OTA GETs omit CA verify (X3 OOMs in
+CDN RSA verify; GitHub refuses plain http); other HTTPS (OPDS, WeRead,
+KOReader) still attaches the CA bundle. Changing these lines rebuilds the
 Arduino-ESP32 prebuilt libs on the next `pio run` (slow once, then cached).
 `custom_component_remove` drops RainMaker/Insights so that hybrid rebuild does
 not require their embedded server certs.
+
+**`scripts/copy_upstream_mbedtls.py` — required for any `CONFIG_MBEDTLS_*` to
+work.** pioarduino's hybrid rebuild copies `build/esp-idf/<component>/lib<component>.a`
+into `framework-arduinoespressif32-libs`, walking only one directory deep. The
+mbedTLS *submodule* targets build a level lower
+(`build/esp-idf/mbedtls/mbedtls/library/lib{mbedtls,mbedcrypto,mbedx509}.a`,
+plus everest/p256-m) and were silently left stale, so options that change
+upstream mbedTLS code had no effect while `libesp-tls.a` *was* rebuilt against
+them — the two halves disagree, which shows up either as a bogus TLS memory
+profile or as an undefined-reference link error. This script copies the missing
+archives (upstream `libmbedtls.a` is packaged as `libmbedtls_2.a` to avoid
+colliding with the component archive) and fails the build if they are absent.
+It must stay a `pre:` script: it hooks `checkprogsize`, and SCons runs
+post-actions in registration order, so registering before the platform does is
+what gets it in ahead of the platform's own copy-then-`rmtree`.
 
 ## Build Environment
 * **Standard**: C++20 (`-std=c++2a`). No Exceptions, No RTTI.

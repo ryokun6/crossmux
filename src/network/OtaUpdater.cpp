@@ -8,7 +8,6 @@
 #include "HttpDownloader.h"
 #include <Logging.h>
 #include <ReleaseJsonParser.h>
-#include <esp_crt_bundle.h>
 #include <esp_http_client.h>
 #include <esp_https_ota.h>
 #include <esp_wifi.h>
@@ -134,16 +133,18 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   esp_https_ota_handle_t ota_handle = NULL;
   esp_err_t esp_err;
 
+  // No crt_bundle_attach: same X3 GitHub CDN RSA/MPI OOM as font downloads
+  // (0x4290). Requires CONFIG_ESP_TLS_INSECURE; image is still hash-checked by
+  // the OTA/app descriptor path after download.
   esp_http_client_config_t client_config = {
       .url = otaUrl.c_str(),
       .timeout_ms = 15000,
       // 4096 holds the github->CDN redirect headers (the 512 default truncates
-      // them); TX only carries our GET. Both are contiguous blocks contending
-      // with the TLS handshake on a tight internal arena, so keep them minimal.
+      // them). TX must fit the signed release-assets GET (~900+ char path); 1024
+      // truncated it and produced garbage HTTP status codes on X3.
       .buffer_size = 4096,
-      .buffer_size_tx = 1024,
+      .buffer_size_tx = 3072,
       .skip_cert_common_name_check = true,
-      .crt_bundle_attach = esp_crt_bundle_attach,
       .keep_alive_enable = true,
   };
 

@@ -12,8 +12,9 @@ class Stream;
 
 /**
  * HTTP client utility for fetching content and downloading files. Built on
- * esp_http_client: https is verified against the CA bundle, plain http is
- * used for local servers (transport is chosen from the URL scheme).
+ * esp_http_client: https is verified against the CA bundle (except GitHub
+ * release hosts on X3 — see HttpDownloader.cpp), plain http for local servers
+ * (transport is chosen from the URL scheme).
  */
 class HttpDownloader {
  public:

@@ -15,7 +15,7 @@
 
 namespace {
 // Same floor as FontDownloadActivity — OTA begin also needs mbedTLS + upgrade buf.
-constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 24 * 1024;
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 28 * 1024;
 }  // namespace
 
 void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {

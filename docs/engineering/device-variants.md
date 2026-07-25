@@ -128,7 +128,7 @@ CDC (`/dev/tty.usbmodem*` / `ttyACM*`).
 
 **HTTPS / OTA on X3:** Wi‑Fi + mbedTLS need a large contiguous heap block
 (`MaxAlloc`). The build shrinks TLS record buffers via `custom_sdkconfig` in
-`platformio.ini` (8K in / 4K out). Manage Fonts / Check for updates also unload
+`platformio.ini` (16K in / 4K out). Manage Fonts / Check for updates also unload
 the resident SD font and may briefly silent-restart once when `MaxAlloc` is
 still too low (see `SilentRestart.h` + those activities).
 

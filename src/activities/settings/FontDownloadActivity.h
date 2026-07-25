@@ -1,5 +1,9 @@
 #pragma once
 
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+
+#include <atomic>
 #include <string>
 #include <vector>
 
@@ -38,11 +42,7 @@ class FontDownloadActivity : public Activity {
   void loop() override;
   void render(RenderLock&&) override;
   bool preventAutoSleep() override {
-    return state_ == LOADING_MANIFEST || state_ == DOWNLOADING ||
-           // The download is synchronous and blocks the main loop until it
-           // completes, so activityManager.preventAutoSleep() is never polled
-           // during downloading.
-           state_ == COMPLETE || state_ == ERROR;
+    return state_ == LOADING_MANIFEST || state_ == DOWNLOADING || state_ == COMPLETE || state_ == ERROR;
   }
   bool skipLoopDelay() override { return true; }
 
@@ -54,6 +54,13 @@ class FontDownloadActivity : public Activity {
     DOWNLOADING,
     COMPLETE,
     ERROR,
+  };
+
+  enum class DownloadJob : uint8_t {
+    None,
+    OneFamily,
+    AllMissing,
+    AllUpdates,
   };
 
   struct ManifestFile {
@@ -91,11 +98,22 @@ class FontDownloadActivity : public Activity {
   std::string errorMessage_;
   bool cancelRequested_ = false;
 
+  // Download runs on a worker task so loop() can poll Cancel while HTTP is
+  // blocked. 8KB stack: TLS + HttpDownloader + SD write (same ballpark as
+  // other network fetch tasks; 4KB was too tight for github→CDN).
+  TaskHandle_t downloadTask_ = nullptr;
+  std::atomic<bool> downloadTaskRunning_{false};
+  DownloadJob downloadJob_ = DownloadJob::None;
+
   void onWifiSelectionComplete(bool success);
   bool fetchAndParseManifest();
   void downloadFamily(ManifestFamily& family);
   void downloadAll();
   void updateAll();
+  void startDownloadJob(DownloadJob job);
+  void stopDownloadTask();
+  static void downloadTaskTrampoline(void* arg);
+  void runDownloadJob();
   static bool computeFileCrc32(const char* path, uint32_t& outCrc);
   bool showDownloadAllRow() const;
   bool showUpdateAllRow() const;

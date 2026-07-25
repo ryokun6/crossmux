@@ -18,10 +18,16 @@
 #include "network/HttpDownloader.h"
 
 namespace {
-// Contiguous DRAM needed for verified HTTPS after asymmetric mbedTLS buffers
-// (8K in / 4K out via custom_sdkconfig) + HTTP client RX/TX. X3 post-WiFi
-// MaxAlloc often lands ~23–32KB; silent-restart once if still under this floor.
-constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 24 * 1024;
+// Download worker stack. 8KB left MaxAlloc ~36KB after spawn and
+// create_ssl_handle failed; 5KB is enough for TLS locals + SD write on this
+// path (WeRead uses 4KB) and keeps ~3KB more contiguous DRAM for mbedTLS.
+constexpr uint32_t kDownloadTaskStackBytes = 5120;
+constexpr UBaseType_t kDownloadTaskPriority = 1;
+// Contiguous DRAM a handshake needs (mbedTLS dynamic RX/TX + HTTP RX/TX).
+// Falling below it means the arena is fragmented, so defrag via silent-restart
+// rather than letting create_ssl_handle fail.
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 28 * 1024;
+constexpr const char* MANIFEST_TMP = "/fonts_manifest.tmp";
 }  // namespace
 
 FontDownloadActivity::FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -42,6 +48,8 @@ void FontDownloadActivity::onEnter() {
 }
 
 void FontDownloadActivity::onExit() {
+  stopDownloadTask();
+  Storage.remove(MANIFEST_TMP);
   Activity::onExit();
 
   // Restore the user's SD font if we unloaded it for HTTPS headroom.
@@ -102,19 +110,19 @@ void FontDownloadActivity::onWifiSelectionComplete(const bool success) {
 // --- Manifest fetching ---
 
 bool FontDownloadActivity::fetchAndParseManifest() {
-  // Download manifest to a temp file on SD card to avoid holding both
-  // TLS buffers and the full JSON string in RAM simultaneously.
-  static constexpr const char* MANIFEST_TMP = "/fonts_manifest.tmp";
-
-  auto result = HttpDownloader::downloadToFile(FONT_MANIFEST_URL, MANIFEST_TMP, nullptr);
-  if (result != HttpDownloader::OK) {
-    LOG_ERR("FONT", "Failed to fetch manifest from %s", FONT_MANIFEST_URL);
-    errorMessage_ = "Failed to fetch font list";
-    Storage.remove(MANIFEST_TMP);
-    return false;
+  // Manifest staged on SD so the TLS buffers and the JSON document never
+  // coexist. Re-used as-is after a defrag restart so the retry costs no second
+  // fonts.json round trip.
+  if (!(resumedAfterDefrag_ && Storage.exists(MANIFEST_TMP))) {
+    auto result = HttpDownloader::downloadToFile(FONT_MANIFEST_URL, MANIFEST_TMP, nullptr);
+    if (result != HttpDownloader::OK) {
+      LOG_ERR("FONT", "Failed to fetch manifest from %s", FONT_MANIFEST_URL);
+      errorMessage_ = "Failed to fetch font list";
+      Storage.remove(MANIFEST_TMP);
+      return false;
+    }
   }
 
-  // HTTP client is now closed — TLS buffers freed. Parse JSON from file.
   HalFile manifestFile;
   if (!Storage.openFileForRead("FONT", MANIFEST_TMP, manifestFile)) {
     LOG_ERR("FONT", "Failed to open temp manifest");
@@ -126,7 +134,8 @@ bool FontDownloadActivity::fetchAndParseManifest() {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, manifestFile);
   manifestFile.close();
-  Storage.remove(MANIFEST_TMP);
+  // Keep MANIFEST_TMP so a failed .cpfont attempt can silent-restart and
+  // reload the list without another fonts.json HTTPS (heap stays cleaner).
 
   if (err) {
     LOG_ERR("FONT", "Manifest parse error: %s", err.c_str());
@@ -207,8 +216,99 @@ bool FontDownloadActivity::fetchAndParseManifest() {
 
 // --- Download ---
 
-void FontDownloadActivity::downloadAll() {
+void FontDownloadActivity::stopDownloadTask() {
+  if (!downloadTaskRunning_.load()) {
+    downloadTask_ = nullptr;
+    return;
+  }
+  cancelRequested_ = true;
+  // Worker checks cancel between 3s HTTP op timeouts; wait for clean exit so
+  // we don't vTaskDelete mid-HalFile write (SdFat is not thread-safe).
+  for (int i = 0; i < 40 && downloadTaskRunning_.load(); ++i) {
+    delay(100);
+  }
+  if (downloadTaskRunning_.load() && downloadTask_ != nullptr) {
+    LOG_ERR("FONT", "download task still running on exit — forcing delete");
+    vTaskDelete(downloadTask_);
+    downloadTask_ = nullptr;
+    downloadTaskRunning_.store(false);
+  }
+}
+
+void FontDownloadActivity::startDownloadJob(DownloadJob job) {
+  if (downloadTaskRunning_.load()) {
+    LOG_ERR("FONT", "download already running");
+    return;
+  }
+  WiFi.scanDelete();
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  LOG_INF("FONT", "Pre-job Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(maxAlloc));
+  if (maxAlloc < MIN_MAX_ALLOC_FOR_TLS) {
+    // Defrag and reload the cached manifest (kept on SD until onExit).
+    LOG_INF("FONT", "MaxAlloc %u < %u — silent-restart before retry", static_cast<unsigned>(maxAlloc),
+            static_cast<unsigned>(MIN_MAX_ALLOC_FOR_TLS));
+    WiFi.disconnect(true);
+    delay(30);
+    WiFi.mode(WIFI_OFF);
+    silentRestartToFontDownload();
+    return;
+  }
+
+  downloadJob_ = job;
   cancelRequested_ = false;
+  {
+    RenderLock lock(*this);
+    state_ = DOWNLOADING;
+    fileProgress_ = 0;
+    fileTotal_ = 0;
+  }
+  requestUpdate();
+
+  downloadTaskRunning_.store(true);
+  // Heap: task TCB + stack in internal DRAM — required so loop() can poll
+  // Cancel while HTTPS is blocked (sync download starved gpio.update()).
+  const BaseType_t rc = xTaskCreate(&downloadTaskTrampoline, "FontDL", kDownloadTaskStackBytes, this,
+                                    kDownloadTaskPriority, &downloadTask_);
+  if (rc != pdPASS) {
+    LOG_ERR("FONT", "xTaskCreate FontDL failed");
+    downloadTask_ = nullptr;
+    downloadTaskRunning_.store(false);
+    RenderLock lock(*this);
+    state_ = ERROR;
+    errorMessage_ = "Failed to start download";
+  }
+}
+
+void FontDownloadActivity::downloadTaskTrampoline(void* arg) {
+  auto* self = static_cast<FontDownloadActivity*>(arg);
+  self->runDownloadJob();
+  self->downloadTask_ = nullptr;
+  self->downloadTaskRunning_.store(false);
+  self->requestUpdate(true);
+  vTaskDelete(nullptr);
+}
+
+void FontDownloadActivity::runDownloadJob() {
+  switch (downloadJob_) {
+    case DownloadJob::OneFamily:
+      if (downloadingFamilyIndex_ >= 0 && downloadingFamilyIndex_ < static_cast<int>(families_.size())) {
+        downloadFamily(families_[downloadingFamilyIndex_]);
+      }
+      break;
+    case DownloadJob::AllMissing:
+      downloadAll();
+      break;
+    case DownloadJob::AllUpdates:
+      updateAll();
+      break;
+    case DownloadJob::None:
+      break;
+  }
+  downloadJob_ = DownloadJob::None;
+}
+
+void FontDownloadActivity::downloadAll() {
   for (size_t i = 0; i < families_.size(); i++) {
     if (families_[i].installed) continue;
     downloadFamily(families_[i]);
@@ -222,7 +322,6 @@ void FontDownloadActivity::downloadAll() {
 }
 
 void FontDownloadActivity::updateAll() {
-  cancelRequested_ = false;
   for (size_t i = 0; i < families_.size(); i++) {
     if (!families_[i].hasUpdate) continue;
     downloadFamily(families_[i]);
@@ -304,9 +403,14 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
     downloadingFamilyIndex_ = static_cast<int>(&family - families_.data());
     fileProgress_ = 0;
     fileTotal_ = 0;
-    cancelRequested_ = false;
   }
-  requestUpdateAndWait();
+  requestUpdate(true);
+
+  if (cancelRequested_) {
+    RenderLock lock(*this);
+    state_ = FAMILY_LIST;
+    return;
+  }
 
   if (!fontInstaller_.ensureFamilyDir(family.name.c_str())) {
     RenderLock lock(*this);
@@ -316,6 +420,15 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
   }
 
   for (size_t i = 0; i < family.files.size(); i++) {
+    if (cancelRequested_) {
+      fontInstaller_.deleteFamily(family.name.c_str());
+      family.installed = false;
+      family.hasUpdate = false;
+      RenderLock lock(*this);
+      state_ = FAMILY_LIST;
+      return;
+    }
+
     const auto& file = family.files[i];
 
     {
@@ -323,23 +436,33 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
       fileProgress_ = 0;
       fileTotal_ = file.size;
     }
-    requestUpdateAndWait();
+    requestUpdate(true);
+    // E-ink refresh fragments the arena; drop Wi‑Fi scan debris and give the
+    // heap a moment before github→CDN TLS. CDN PK verify 0x4290 is MPI OOM.
+    WiFi.scanDelete();
+    delay(100);
+    LOG_INF("FONT", "Pre-file Free=%u MaxAlloc=%u (%s)", static_cast<unsigned>(ESP.getFreeHeap()),
+            static_cast<unsigned>(ESP.getMaxAllocHeap()), file.name.c_str());
 
     char destPath[128];
     FontInstaller::buildFontPath(family.name.c_str(), file.name.c_str(), destPath, sizeof(destPath));
 
     std::string url = baseUrl_ + file.name;
 
+    // Redraw at most every 5% (plus 100%). Cancel is polled from loop() on the
+    // main task — do not touch mappedInput here (download worker).
+    int lastReportedPct = -1;
     auto result = HttpDownloader::downloadToFile(
         url, destPath,
-        [this](size_t downloaded, size_t total) {
+        [this, &lastReportedPct](size_t downloaded, size_t total) {
           fileProgress_ = downloaded;
           fileTotal_ = total;
-          mappedInput.update();
-          if (mappedInput.isPressed(MappedInputManager::Button::Back) ||
-              mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-            cancelRequested_ = true;
+          const int pct = total > 0 ? static_cast<int>((downloaded * 100ULL) / total) : 0;
+          if (pct == lastReportedPct || (pct != 100 && pct / 5 == lastReportedPct / 5 && lastReportedPct >= 0)) {
+            return;
           }
+          lastReportedPct = pct;
+          LOG_INF("FONT", "progress %d%% (%zu/%zu)", pct, downloaded, total);
           requestUpdate(true);
         },
         &cancelRequested_);
@@ -356,10 +479,19 @@ void FontDownloadActivity::downloadFamily(ManifestFamily& family) {
     }
 
     if (result != HttpDownloader::OK) {
-      LOG_ERR("FONT", "Download failed: %s (%d)", file.name.c_str(), result);
+      LOG_ERR("FONT", "Download failed: %s (%d) Free=%u MaxAlloc=%u", file.name.c_str(), result,
+              static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
       fontInstaller_.deleteFamily(family.name.c_str());
       family.installed = false;
       family.hasUpdate = false;
+      if (ESP.getMaxAllocHeap() < MIN_MAX_ALLOC_FOR_TLS && Storage.exists(MANIFEST_TMP)) {
+        LOG_INF("FONT", "Defrag after failed file TLS");
+        WiFi.disconnect(true);
+        delay(30);
+        WiFi.mode(WIFI_OFF);
+        silentRestartToFontDownload();
+        return;
+      }
       RenderLock lock(*this);
       state_ = ERROR;
       errorMessage_ = "Download failed: " + file.name;
@@ -493,28 +625,36 @@ void FontDownloadActivity::loop() {
           for (const auto& f : families_) {
             if (!f.installed) currentFileTotal_ += f.files.size();
           }
-
-          downloadAll();
+          startDownloadJob(DownloadJob::AllMissing);
         } else if (isUpdateAllRow(selectedIndex_)) {
           currentFileIndex_ = 0;
           currentFileTotal_ = 0;
           for (const auto& f : families_) {
             if (f.hasUpdate) currentFileTotal_ += f.files.size();
           }
-          updateAll();
+          startDownloadJob(DownloadJob::AllUpdates);
         } else {
           auto& family = families_[familyIndexFromList(selectedIndex_)];
           if (!family.installed || family.hasUpdate) {
             currentFileIndex_ = 0;
             currentFileTotal_ = family.files.size();
-            downloadFamily(family);
+            downloadingFamilyIndex_ = familyIndexFromList(selectedIndex_);
+            startDownloadJob(DownloadJob::OneFamily);
           } else {
             promptDeleteSelectedFamily();
             return;
           }
         }
-        requestUpdateAndWait();
         return;
+      }
+    }
+  } else if (state_ == DOWNLOADING) {
+    // Main loop keeps running while FontDL task blocks on HTTPS — Cancel works.
+    if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
+        mappedInput.isPressed(MappedInputManager::Button::Back)) {
+      if (!cancelRequested_) {
+        LOG_INF("FONT", "Cancel requested");
+        cancelRequested_ = true;
       }
     }
   } else if (state_ == COMPLETE) {
@@ -535,8 +675,9 @@ void FontDownloadActivity::loop() {
       requestUpdate();
     } else if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
       if (downloadingFamilyIndex_ >= 0 && downloadingFamilyIndex_ < static_cast<int>(families_.size())) {
-        downloadFamily(families_[downloadingFamilyIndex_]);
-        requestUpdateAndWait();
+        currentFileIndex_ = 0;
+        currentFileTotal_ = families_[downloadingFamilyIndex_].files.size();
+        startDownloadJob(DownloadJob::OneFamily);
         return;
       } else {
         {
@@ -635,11 +776,15 @@ void FontDownloadActivity::render(RenderLock&&) {
       progress = static_cast<float>(fileProgress_) / static_cast<float>(fileTotal_);
     }
 
-    int barY = centerY + metrics.verticalSpacing;
+    // Same layout as OTA: bar, percent (from drawProgressBar), then size line.
+    int y = centerY + metrics.verticalSpacing;
     GUI.drawProgressBar(
         renderer,
-        Rect{metrics.contentSidePadding, barY, pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
+        Rect{metrics.contentSidePadding, y, pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
         static_cast<int>(progress * 100), 100);
+    y += metrics.progressBarHeight + metrics.verticalSpacing;
+    y += lineHeight + metrics.verticalSpacing;
+    renderer.drawCenteredText(UI_10_FONT_ID, y, (formatSize(fileProgress_) + " / " + formatSize(fileTotal_)).c_str());
 
     const auto labels = mappedInput.mapLabels(tr(STR_CANCEL), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

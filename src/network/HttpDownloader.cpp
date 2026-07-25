@@ -1,5 +1,8 @@
 #include "HttpDownloader.h"
 
+// clang-format off
+// WiFi.h/SdFat macros collide with lwip unless esp_wifi is ordered carefully
+// (same pattern as OtaUpdater.cpp).
 #include <Arduino.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -8,6 +11,8 @@
 #include <base64.h>
 #include <esp_crt_bundle.h>
 #include <esp_http_client.h>
+#include <esp_wifi.h>
+// clang-format on
 
 #include <cstring>
 #include <functional>
@@ -17,11 +22,12 @@ namespace {
 // RX holds the response headers. 4096 fits real OPDS servers; GitHub's release
 // CDN sends more and logs HTTP_HEADER "Buffer length is small", but that's
 // non-fatal: the headers we read (Location, Content-Length) come first and
-// survive. Smaller keeps contiguous heap free while WiFi and TLS are up. TX
-// carries the request body for POST (and just the request line for GET); the
-// response body streams in READ_CHUNK pieces.
+// survive. Smaller keeps contiguous heap free while WiFi and TLS are up.
+// TX must fit the full request line + headers for GitHub CDN GETs: signed
+// release-assets URLs are ~900+ chars in the path alone, so 1024 truncated
+// the request and produced garbage status codes (e.g. 618) on X3.
 constexpr int HTTP_RX_BUF = 4096;
-constexpr int HTTP_TX_BUF = 1024;
+constexpr int HTTP_TX_BUF = 3072;
 
 // Drop lingering AP-scan rows before a TLS handshake. Those small allocations
 // fragment the internal DRAM arena; X3 OTA/fonts fail when MaxAlloc can't fit
@@ -31,11 +37,34 @@ void reclaimWifiScanHeap() {
   LOG_DBG("HTTP", "TLS prep Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
           static_cast<unsigned>(ESP.getMaxAllocHeap()));
 }
+
+// GitHub release CDN RSA verify OOMs on X3 (0x4290 = MPI_ALLOC_FAILED) even
+// with asymmetric mbedTLS buffers. Plain http is not an option — GitHub
+// redirects to https. Skip CA verify for those hosts only (needs
+// CONFIG_ESP_TLS_INSECURE); fonts still CRC32-check, OTA has image hashes.
+// OPDS / WeRead / KOReader keep the CA bundle.
+bool shouldAttachCrtBundle(const std::string& url) {
+  return url.find("github.com") == std::string::npos && url.find("githubusercontent.com") == std::string::npos;
+}
+
+// Modem sleep turns multi‑MB GitHub GETs into ~100 B/s (font download looked
+// stuck at 0–1%). Match OTA: disable PS for the transfer, restore after.
+struct WifiPsBoost {
+  WifiPsBoost() { esp_wifi_set_ps(WIFI_PS_NONE); }
+  ~WifiPsBoost() { esp_wifi_set_ps(WIFI_PS_MIN_MODEM); }
+};
+
 // Per-socket-op timeout. Some OPDS download endpoints are slow to send headers
 // (>15s) and chunked catalogs stall mid-body, so 15s killed them. 60s gives
-// slow servers room. esp_http_client's timeout_ms is uint32, so unlike Arduino
-// HTTPClient's uint16 setTimeout it doesn't silently truncate.
+// slow servers room. When a cancelFlag is provided we use a shorter op timeout
+// so Cancel can land between blocked open/read calls (font download).
+// esp_http_client's timeout_ms is uint32, so unlike Arduino HTTPClient's uint16
+// setTimeout it doesn't silently truncate.
 constexpr int HTTP_TIMEOUT_MS = 60000;
+// Cancelable downloads: short body-read timeout so Cancel is polled; open /
+// fetch_headers need longer — 3s caused CDN hop status=-1 on X3.
+constexpr int HTTP_CANCELABLE_OPEN_TIMEOUT_MS = 15000;
+constexpr int HTTP_CANCELABLE_READ_TIMEOUT_MS = 3000;
 constexpr size_t READ_CHUNK = 2048;
 
 struct Sink {
@@ -46,8 +75,46 @@ struct Sink {
   size_t downloaded = 0;
 };
 
+bool isCancelled(const Sink& sink) { return sink.cancelFlag != nullptr && *sink.cancelFlag; }
+
 bool isRedirect(int status) {
   return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+}
+
+// GitHub 302 Location is ~900+ chars and arrives while TLS+HTTP buffers are
+// live. esp_http_client builds it with realloc(); on X3 that often returns
+// null and http_utils_append_string assert(old_str) panics. Hold a contiguous
+// cushion after open() and free it on the first response header so realloc has
+// a block. Also reserve the std::string we copy Location into.
+constexpr size_t HEADER_HEAP_CUSHION = 3072;
+constexpr size_t LOCATION_RESERVE = 1280;
+
+struct HeaderCapture {
+  std::string* location = nullptr;
+  void* cushion = nullptr;
+};
+
+void releaseHeaderCushion(HeaderCapture* cap) {
+  if (cap == nullptr || cap->cushion == nullptr) return;
+  free(cap->cushion);
+  cap->cushion = nullptr;
+}
+
+// Location is kept in esp_http_client's private `location` field, not the
+// generic header map, so get_header("Location") is unreliable. Capture it from
+// the ON_HEADER event instead (includes the GitHub CDN JWT query string).
+esp_err_t captureLocationHeader(esp_http_client_event_t* evt) {
+  auto* cap = static_cast<HeaderCapture*>(evt->user_data);
+  if (cap == nullptr) return ESP_OK;
+  // Release before any header-value realloc inside esp_http_client.
+  if (evt->event_id == HTTP_EVENT_ON_HEADER || evt->event_id == HTTP_EVENT_ON_DATA) {
+    releaseHeaderCushion(cap);
+  }
+  if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->header_key != nullptr && evt->header_value != nullptr &&
+      cap->location != nullptr && strcasecmp(evt->header_key, "Location") == 0) {
+    cap->location->assign(evt->header_value);
+  }
+  return ESP_OK;
 }
 
 // Streams a GET body through sink.write in READ_CHUNK pieces. Uses the manual
@@ -57,104 +124,201 @@ bool isRedirect(int status) {
 // large/slow files and surfaces a short read directly.
 HttpDownloader::DownloadError runGet(const std::string& url, const std::string& username, const std::string& password,
                                      Sink& sink) {
-  reclaimWifiScanHeap();
+  WifiPsBoost wifiPsBoost;
+  // Fresh client per hop: github.com → release-assets.githubusercontent.com.
+  // Reusing one client after close() still left X3's TLS heap tight enough that
+  // the CDN hop's cert verify failed (PK 0x4290 / mbedtls -0x3000) while the
+  // smaller fonts.json fetch on a cleaner heap succeeded.
+  std::string currentUrl = url;
+  std::string locationHeader;
+  locationHeader.reserve(LOCATION_RESERVE);
+  HeaderCapture headerCapture;
+  headerCapture.location = &locationHeader;
 
-  esp_http_client_config_t config = {};
-  config.url = url.c_str();
-  config.buffer_size = HTTP_RX_BUF;
-  config.buffer_size_tx = HTTP_TX_BUF;
-  config.timeout_ms = HTTP_TIMEOUT_MS;
-  // Verify HTTPS against the bundled CA roots. This build has esp-tls
-  // CONFIG_ESP_TLS_INSECURE off, so an unverified TLS handshake can't be set
-  // up at all; the model is public servers over verified https and local
-  // servers over plain http (esp_http_client picks the transport from the URL
-  // scheme, so http:// needs no cert config). The prior setInsecure() worked
-  // only because Arduino's ssl_client drives mbedtls directly.
-  config.crt_bundle_attach = esp_crt_bundle_attach;
-  config.keep_alive_enable = true;
+  const int openTimeoutMs = sink.cancelFlag ? HTTP_CANCELABLE_OPEN_TIMEOUT_MS : HTTP_TIMEOUT_MS;
+  const int readTimeoutMs = sink.cancelFlag ? HTTP_CANCELABLE_READ_TIMEOUT_MS : HTTP_TIMEOUT_MS;
 
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-  if (!client) {
-    LOG_ERR("HTTP", "client init failed");
-    return HttpDownloader::HTTP_ERROR;
-  }
-
-  esp_http_client_set_header(client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
-  if (!username.empty() && !password.empty()) {
-    // Preemptive Basic auth, like the prior addHeader; don't wait for a 401.
-    const std::string credentials = username + ":" + password;
-    const String header = "Basic " + base64::encode(credentials.c_str());
-    esp_http_client_set_header(client, "Authorization", header.c_str());
-  }
-
-  // open()/read() does not auto-follow redirects (only perform() does), so step
-  // 30x responses manually. OPDS download endpoints and the GitHub release CDN
-  // both redirect.
-  esp_err_t err = esp_http_client_open(client, 0);
-  if (err != ESP_OK) {
-    LOG_ERR("HTTP", "open failed: %s", esp_err_to_name(err));
-    esp_http_client_cleanup(client);
-    return HttpDownloader::HTTP_ERROR;
-  }
-  int64_t contentLength = esp_http_client_fetch_headers(client);
-  int status = esp_http_client_get_status_code(client);
-  for (int hop = 0; isRedirect(status) && hop < 5; ++hop) {
-    if (esp_http_client_set_redirection(client) != ESP_OK) break;
-    err = esp_http_client_open(client, 0);
-    if (err != ESP_OK) {
-      LOG_ERR("HTTP", "redirect open failed: %s", esp_err_to_name(err));
-      esp_http_client_cleanup(client);
-      return HttpDownloader::HTTP_ERROR;
-    }
-    contentLength = esp_http_client_fetch_headers(client);
-    status = esp_http_client_get_status_code(client);
-  }
-  if (status != 200) {
-    LOG_ERR("HTTP", "unexpected status: %d", status);
-    esp_http_client_cleanup(client);
-    // 401/403: missing or wrong Basic auth (OPDS / ryOS Books).
-    if (status == 401 || status == 403) return HttpDownloader::AUTH_FAILED;
-    return HttpDownloader::HTTP_ERROR;
-  }
-
-  // fetch_headers returns 0 for a chunked response (no Content-Length); leave
-  // total at 0 so progress stays silent and the size check is skipped.
-  sink.total = contentLength > 0 ? static_cast<size_t>(contentLength) : 0;
-
+  // Claim the read buffer while the heap is still clean: an established TLS
+  // session leaves X3 with ~5KB MaxAlloc, so allocating after open() fails.
   auto buf = makeUniqueNoThrow<char[]>(READ_CHUNK);
   if (!buf) {
     LOG_ERR("HTTP", "OOM: %u byte read buffer", (unsigned)READ_CHUNK);
-    esp_http_client_cleanup(client);
     return HttpDownloader::HTTP_ERROR;
   }
 
-  while (true) {
-    if (sink.cancelFlag && *sink.cancelFlag) {
-      esp_http_client_cleanup(client);
-      return HttpDownloader::ABORTED;
+  for (int hop = 0; hop < 6; ++hop) {
+    if (isCancelled(sink)) return HttpDownloader::ABORTED;
+    reclaimWifiScanHeap();
+    locationHeader.clear();
+    locationHeader.reserve(LOCATION_RESERVE);
+    releaseHeaderCushion(&headerCapture);
+    // After github.com → CDN, give the Wi‑Fi/LwIP tasks a beat to free the
+    // previous socket's DRAM before the next mbedtls_ssl_setup. X3's PK verify
+    // (0x4290 = RSA_VERIFY + MPI_ALLOC_FAILED) is an OOM during cert crypto,
+    // not a bad CA — list GETs succeed with ~15KB more Free than file GETs.
+    if (hop > 0) {
+      delay(150);
+      reclaimWifiScanHeap();
     }
-    const int read = esp_http_client_read(client, buf.get(), READ_CHUNK);
-    if (read < 0) {
-      LOG_ERR("HTTP", "read error after %zu bytes", sink.downloaded);
-      esp_http_client_cleanup(client);
+
+    esp_err_t err = ESP_FAIL;
+    esp_http_client_handle_t client = nullptr;
+    // Fresh client every attempt: close()+reopen on the same handle still kept
+    // enough TLS debris that CDN RSA verify OOMed on X3 (MinFree ~1.3KB).
+    // Cancelable path uses short timeouts. Cap retries: repeated
+    // create_ssl_handle failures fragment the arena (Free drops each try).
+    const int maxOpenAttempts = sink.cancelFlag ? 6 : 3;
+    // hop0 github.com URLs are short; save TX DRAM for Location realloc.
+    const int txBuf = (hop == 0) ? 1536 : HTTP_TX_BUF;
+    for (int attempt = 0; attempt < maxOpenAttempts; ++attempt) {
+      if (isCancelled(sink)) {
+        if (client) esp_http_client_cleanup(client);
+        releaseHeaderCushion(&headerCapture);
+        return HttpDownloader::ABORTED;
+      }
+      if (client) {
+        esp_http_client_cleanup(client);
+        client = nullptr;
+        reclaimWifiScanHeap();
+        delay(100);
+      }
+
+      esp_http_client_config_t config = {};
+      config.url = currentUrl.c_str();
+      config.buffer_size = HTTP_RX_BUF;
+      config.buffer_size_tx = txBuf;
+      config.timeout_ms = openTimeoutMs;
+      // Verified HTTPS via CA bundle, except GitHub release hosts (see
+      // shouldAttachCrtBundle). Plain http needs no cert config.
+      if (shouldAttachCrtBundle(currentUrl)) {
+        config.crt_bundle_attach = esp_crt_bundle_attach;
+      } else {
+        LOG_INF("HTTP", "TLS without CA verify (GitHub/X3 heap)");
+      }
+      config.keep_alive_enable = false;
+      config.event_handler = captureLocationHeader;
+      config.user_data = &headerCapture;
+
+      client = esp_http_client_init(&config);
+      if (!client) {
+        LOG_ERR("HTTP", "client init failed");
+        releaseHeaderCushion(&headerCapture);
+        return HttpDownloader::HTTP_ERROR;
+      }
+
+      esp_http_client_set_header(client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+      if (!username.empty() && !password.empty()) {
+        // Preemptive Basic auth, like the prior addHeader; don't wait for a 401.
+        const std::string credentials = username + ":" + password;
+        const String header = "Basic " + base64::encode(credentials.c_str());
+        esp_http_client_set_header(client, "Authorization", header.c_str());
+      }
+
+      LOG_INF("HTTP", "open hop=%d try=%d Free=%u MaxAlloc=%u", hop, attempt, static_cast<unsigned>(ESP.getFreeHeap()),
+              static_cast<unsigned>(ESP.getMaxAllocHeap()));
+      err = esp_http_client_open(client, 0);
+      if (err == ESP_OK) break;
+      LOG_ERR("HTTP", "open failed: %s (hop=%d try=%d)", esp_err_to_name(err), hop, attempt);
+    }
+    if (err != ESP_OK) {
+      if (client) esp_http_client_cleanup(client);
+      releaseHeaderCushion(&headerCapture);
       return HttpDownloader::HTTP_ERROR;
     }
-    if (read == 0) break;  // all data received
-    if (!sink.write(reinterpret_cast<const uint8_t*>(buf.get()), read)) {
-      esp_http_client_cleanup(client);
-      return HttpDownloader::FILE_ERROR;
+
+    // After TLS/HTTP buffers are allocated, park a contiguous block and free it
+    // when the first response header arrives so Location realloc can succeed.
+    // Skip when MaxAlloc is already tight — the cushion itself caused
+    // MaxAlloc~8KB mid-hop and CDN fetch_headers returned status=-1.
+    releaseHeaderCushion(&headerCapture);
+    if (ESP.getMaxAllocHeap() >= HEADER_HEAP_CUSHION + 24 * 1024) {
+      headerCapture.cushion = malloc(HEADER_HEAP_CUSHION);
+      if (!headerCapture.cushion) {
+        LOG_ERR("HTTP", "header heap cushion alloc failed (need %u)", (unsigned)HEADER_HEAP_CUSHION);
+      }
+    } else {
+      LOG_INF("HTTP", "skip header cushion MaxAlloc=%u", static_cast<unsigned>(ESP.getMaxAllocHeap()));
     }
-    sink.downloaded += read;
-    if (sink.progress && sink.total > 0) sink.progress(sink.downloaded, sink.total);
+
+    const int64_t contentLength = esp_http_client_fetch_headers(client);
+    releaseHeaderCushion(&headerCapture);
+    const int status = esp_http_client_get_status_code(client);
+    LOG_INF("HTTP", "hop=%d status=%d", hop, status);
+
+    if (isRedirect(status)) {
+      if (locationHeader.empty()) {
+        // Location lives in a private client field; without the ON_HEADER
+        // capture we refuse to follow (esp_http_client_get_url drops ?query).
+        LOG_ERR("HTTP", "redirect missing Location header (status=%d)", status);
+        esp_http_client_cleanup(client);
+        return HttpDownloader::HTTP_ERROR;
+      }
+      LOG_INF("HTTP", "redirect Location len=%u", static_cast<unsigned>(locationHeader.size()));
+      currentUrl = std::move(locationHeader);
+      esp_http_client_cleanup(client);
+      continue;
+    }
+
+    if (status != 200) {
+      LOG_ERR("HTTP", "unexpected status: %d (hop=%d)", status, hop);
+      esp_http_client_cleanup(client);
+      // 401/403: missing or wrong Basic auth (OPDS / ryOS Books).
+      if (status == 401 || status == 403) return HttpDownloader::AUTH_FAILED;
+      return HttpDownloader::HTTP_ERROR;
+    }
+
+    // fetch_headers returns 0 for a chunked response (no Content-Length); leave
+    // total at 0 so progress stays silent and the size check is skipped.
+    sink.total = contentLength > 0 ? static_cast<size_t>(contentLength) : 0;
+
+    // Body reads: shorter timeout when cancelable so Back is polled ~3s.
+    if (sink.cancelFlag) {
+      esp_http_client_set_timeout_ms(client, readTimeoutMs);
+    }
+
+    while (true) {
+      if (isCancelled(sink)) {
+        esp_http_client_cleanup(client);
+        return HttpDownloader::ABORTED;
+      }
+      const int read = esp_http_client_read(client, buf.get(), READ_CHUNK);
+      if (read < 0) {
+        // Short op timeout (cancelable downloads) surfaces as read error while
+        // the body is still in flight — retry so Cancel can be polled and slow
+        // Wi‑Fi can catch up instead of failing the whole transfer.
+        if (isCancelled(sink)) {
+          esp_http_client_cleanup(client);
+          return HttpDownloader::ABORTED;
+        }
+        const bool bodyPending = (sink.total > 0 && sink.downloaded < sink.total) ||
+                                 (sink.total == 0 && !esp_http_client_is_complete_data_received(client));
+        if (bodyPending && sink.cancelFlag != nullptr) {
+          continue;
+        }
+        LOG_ERR("HTTP", "read error after %zu bytes", sink.downloaded);
+        esp_http_client_cleanup(client);
+        return HttpDownloader::HTTP_ERROR;
+      }
+      if (read == 0) break;  // all data received
+      if (!sink.write(reinterpret_cast<const uint8_t*>(buf.get()), read)) {
+        esp_http_client_cleanup(client);
+        return HttpDownloader::FILE_ERROR;
+      }
+      sink.downloaded += read;
+      if (sink.progress && sink.total > 0) sink.progress(sink.downloaded, sink.total);
+    }
+
+    const bool complete = esp_http_client_is_complete_data_received(client);
+    esp_http_client_cleanup(client);
+    if (!complete) {
+      LOG_ERR("HTTP", "incomplete: got %zu of %zu bytes", sink.downloaded, sink.total);
+      return HttpDownloader::HTTP_ERROR;
+    }
+    return HttpDownloader::OK;
   }
 
-  const bool complete = esp_http_client_is_complete_data_received(client);
-  esp_http_client_cleanup(client);
-  if (!complete) {
-    LOG_ERR("HTTP", "incomplete: got %zu of %zu bytes", sink.downloaded, sink.total);
-    return HttpDownloader::HTTP_ERROR;
-  }
-  return HttpDownloader::OK;
+  LOG_ERR("HTTP", "too many redirects");
+  return HttpDownloader::HTTP_ERROR;
 }
 
 // Pull-style Stream wrapper around esp_http_client_read. Backed by a small
@@ -319,21 +483,33 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   if (Storage.exists(destPath.c_str())) {
     Storage.remove(destPath.c_str());
   }
-  HalFile file;
-  if (!Storage.openFileForWrite("HTTP", destPath.c_str(), file)) {
-    LOG_ERR("HTTP", "Failed to open file for writing");
-    return FILE_ERROR;
-  }
 
+  // Defer the SD write open until the first body byte. Opening FAT/exFAT for
+  // write before TLS holds sector buffers through github→CDN handshakes; on X3
+  // that ~15KB Free gap tipped CDN RSA verify into MPI_ALLOC_FAILED (0x4290)
+  // while the smaller fonts.json GET (no prior write handle) succeeded.
+  HalFile file;
+  bool fileOpen = false;
   Sink sink;
   sink.progress = std::move(progress);
   sink.cancelFlag = cancelFlag;
-  sink.write = [&file](const uint8_t* data, size_t len) { return file.write(data, len) == len; };
+  sink.write = [&file, &fileOpen, &destPath](const uint8_t* data, size_t len) {
+    if (!fileOpen) {
+      if (!Storage.openFileForWrite("HTTP", destPath.c_str(), file)) {
+        LOG_ERR("HTTP", "Failed to open file for writing");
+        return false;
+      }
+      fileOpen = true;
+    }
+    return file.write(data, len) == len;
+  };
 
   const DownloadError result = runGet(url, username, password, sink);
   // Close before any remove() on the same path; DESTRUCTOR_CLOSES_FILE would
   // otherwise close only after the remove.
-  file.close();
+  if (fileOpen) {
+    file.close();
+  }
 
   if (result != OK) {
     Storage.remove(destPath.c_str());
