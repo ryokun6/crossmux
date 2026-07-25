@@ -16,7 +16,7 @@ class FontCacheManager {
   void setFontDecompressor(FontDecompressor* d);
 
   void clearCache();
-  void prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F);
+  void prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F, bool addRegularFallback = true);
   void logStats(const char* label = "render");
   void resetStats();
 
@@ -52,6 +52,10 @@ class FontCacheManager {
   enum class ScanMode : uint8_t { None, Scanning };
   ScanMode scanMode_ = ScanMode::None;
   std::string scanText_;
+  // Text recorded per non-regular style (index 1..3; 0 is unused because regular
+  // always prewarms the whole page). Lets bold/italic size their glyph bitmaps to
+  // the runs that actually use them instead of the entire page.
+  std::string scanStyledText_[4];
   uint32_t scanStyleCounts_[4] = {};
   int scanFontId_ = -1;
 };

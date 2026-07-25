@@ -716,12 +716,20 @@ int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) 
 
 // --- Prewarm ---
 
-int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly) {
+int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly, bool addRegularFallback) {
   if (!loaded_) return -1;
   styleMask = resolveStyleMask(styleMask);
   // Hybrid SD fonts keep CJK on regular only. If the page uses bold/italic,
   // still prewarm regular so glyph-fallback bitmaps are resident.
-  if (styleMask & ~0x01u) styleMask |= 0x01u;
+  if (addRegularFallback) {
+    if (styleMask & ~0x01u) styleMask |= 0x01u;
+  } else {
+    // The caller prewarms regular itself from the full page, so never rebuild it
+    // from a styled subset here. An absent styled face resolves to regular, which
+    // would otherwise empty regular's coverage down to just the styled runs; the
+    // mask going empty is the correct outcome, since regular already covers them.
+    styleMask &= ~0x01u;
+  }
   if (styleMask == 0) return 0;
 
   unsigned long startMs = millis();
