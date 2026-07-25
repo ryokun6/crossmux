@@ -39,6 +39,8 @@ class HalStorage::StorageLock {
   HalStorage::StorageLock lock;               \
   return SDCard.method(__VA_ARGS__);
 
+uint64_t HalStorage::freeBytes() { HAL_STORAGE_WRAPPED_CALL(freeBytes); }
+
 std::vector<String> HalStorage::listFiles(const char* path, int maxFiles) {
   HAL_STORAGE_WRAPPED_CALL(listFiles, path, maxFiles);
 }
