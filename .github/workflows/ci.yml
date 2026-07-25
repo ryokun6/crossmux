@@ -35,36 +35,6 @@ jobs:
           PATH="/usr/lib/llvm-21/bin:$PATH" ./bin/clang-format-fix
           git diff --exit-code || (echo "Please run 'bin/clang-format-fix' to fix formatting issues" && exit 1)
 
-  cppcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: recursive
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.14'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-          enable-cache: false
-
-      - name: Install PlatformIO Core
-        run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
-
-      - name: Cache PlatformIO packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.platformio
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
-
-      - name: Run cppcheck
-        run: pio check --fail-on-defect low --fail-on-defect medium --fail-on-defect high
-
   build:
     runs-on: ubuntu-latest
     steps:
@@ -118,6 +88,21 @@ jobs:
           path: .pio/build/default/firmware.bin
           if-no-files-found: error
 
+      # cppcheck runs inside this job, after `pio run`, on purpose. `pio check`
+      # derives cppcheck's include paths from a `pio run -t __idedata` dump, and
+      # `custom_sdkconfig` in platformio.ini makes pioarduino swap PROJECT_SRC_DIR
+      # for its `.dummy` Arduino-libs stub on any workspace without a settled
+      # `sdkconfig.defaults` — i.e. every fresh CI checkout, since that file is
+      # generated and gitignored. A standalone cppcheck job therefore got an
+      # include set describing the stub, with no `src/` in it, and reported every
+      # project-internal `#include` as missingInclude (668 of them, at
+      # `information` severity, which `--fail-on-defect low` counts). `pio run`
+      # settles that state first, so the check sees the include paths of the
+      # firmware the build just validated, for ~1 minute instead of a second
+      # full build.
+      - name: Run cppcheck
+        run: pio check --fail-on-defect low --fail-on-defect medium --fail-on-defect high
+
   unit-tests:
     runs-on: ubuntu-latest
     steps:
@@ -152,7 +137,6 @@ jobs:
     needs:
       - build
       - clang-format
-      - cppcheck
       - unit-tests
     if: always()
     runs-on: ubuntu-latest
