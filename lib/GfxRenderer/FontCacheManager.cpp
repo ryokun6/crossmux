@@ -61,18 +61,35 @@ void FontCacheManager::resetStats() {
 
 bool FontCacheManager::isScanning() const { return scanMode_ == ScanMode::Scanning; }
 
+void FontCacheManager::resolveScanStyleFaces(int fontId) {
+  scanStyleFace_[0] = 0;
+  for (uint8_t i = 1; i < 4; i++) scanStyleFace_[i] = i;
+  auto it = fontMap_.find(fontId);
+  if (it == fontMap_.end()) return;
+  for (uint8_t i = 1; i < 4; i++) {
+    scanStyleFace_[i] = static_cast<uint8_t>(it->second.resolveStyle(static_cast<EpdFontFamily::Style>(i)));
+  }
+}
+
 void FontCacheManager::recordText(const char* text, int fontId, EpdFontFamily::Style style) {
   scanText_ += text;
-  if (scanFontId_ < 0) scanFontId_ = fontId;
-  const uint8_t baseStyle = static_cast<uint8_t>(style) & 0x03;
-  if (baseStyle != 0) scanStyledText_[baseStyle] += text;
+  if (scanFontId_ < 0) {
+    scanFontId_ = fontId;
+    resolveScanStyleFaces(fontId);
+  }
+  // Bucket by the face that will draw this run, not by the requested style. A
+  // font without a bold-italic face draws bold-italic through the bold face; if
+  // both bucketed separately, the bold-italic prewarm pass would rebuild the bold
+  // face from its own runs alone and drop every plain-bold glyph on the page.
+  const uint8_t face = scanStyleFace_[static_cast<uint8_t>(style) & 0x03];
+  if (face != 0) scanStyledText_[face] += text;
   const unsigned char* p = reinterpret_cast<const unsigned char*>(text);
   uint32_t cpCount = 0;
   while (*p) {
     if ((*p & 0xC0) != 0x80) cpCount++;
     p++;
   }
-  scanStyleCounts_[baseStyle] += cpCount;
+  scanStyleCounts_[face] += cpCount;
 }
 
 // --- PrewarmScope implementation ---
@@ -87,6 +104,7 @@ FontCacheManager::PrewarmScope::PrewarmScope(FontCacheManager& manager) : manage
     styled.clear();
   }
   memset(manager_->scanStyleCounts_, 0, sizeof(manager_->scanStyleCounts_));
+  for (uint8_t i = 0; i < 4; i++) manager_->scanStyleFace_[i] = i;
   manager_->scanFontId_ = -1;
 }
 
@@ -94,15 +112,18 @@ void FontCacheManager::PrewarmScope::endScanAndPrewarm() {
   manager_->scanMode_ = ScanMode::None;
   if (manager_->scanText_.empty()) return;
 
-  // Prewarm each style with only the text drawn in that style. A mini glyph bitmap
-  // is one contiguous block sized by the codepoints it covers, so prewarming every
+  // Prewarm each face with only the text drawn through it. A mini glyph bitmap is
+  // one contiguous block sized by the codepoints it covers, so prewarming every
   // style from the whole page made bold cost as much as body text even when only a
   // heading was bold — that block (~28KB on a dense CJK page) is the first thing to
   // fail once MaxAlloc drops, and a failed style falls back to the stub face.
   //
-  // Regular still takes the whole page: CJK faces commonly carry Han only in the
-  // regular face, so a bold Han run resolves through regular's glyphs and would
-  // otherwise land in the 8-entry overflow ring, which reopens the .cpfont per glyph.
+  // Regular still takes the whole page. A styled face is not required to cover
+  // everything drawn through it: EBGaramondSHS ships a Latin-only italic face, so
+  // italic Han resolves to regular's glyph (EpdFontFamily::getGlyphNoReplacement).
+  // Narrowing regular to its own runs would push that Han into the 8-entry overflow
+  // ring, which reopens the .cpfont per glyph. The cost of the conservative rule is
+  // small — the extra codepoints are the ones a heading uses and the body does not.
   manager_->prewarmCache(manager_->scanFontId_, manager_->scanText_.c_str(), 0x01);
   for (uint8_t i = 1; i < 4; i++) {
     if (manager_->scanStyleCounts_[i] == 0 || manager_->scanStyledText_[i].empty()) continue;

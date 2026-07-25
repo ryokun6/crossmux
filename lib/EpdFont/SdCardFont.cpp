@@ -719,9 +719,11 @@ int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) 
 int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly, bool addRegularFallback) {
   if (!loaded_) return -1;
   styleMask = resolveStyleMask(styleMask);
-  // Hybrid SD fonts keep CJK on regular only. If the page uses bold/italic,
-  // still prewarm regular so glyph-fallback bitmaps are resident.
   if (addRegularFallback) {
+    // A styled face need not cover everything drawn through it: the EBGaramondSHS
+    // composites ship a Latin-only italic face, so italic Han falls through to
+    // regular's glyph (see docs/sd-card-fonts.md). Keep regular resident alongside
+    // any styled face so those fallback bitmaps are there.
     if (styleMask & ~0x01u) styleMask |= 0x01u;
   } else {
     // The caller prewarms regular itself from the full page, so never rebuild it

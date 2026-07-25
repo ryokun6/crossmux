@@ -47,11 +47,14 @@ class SdCardFont {
   // Default 0x0F = all present styles.
   // When metadataOnly=true, only glyph metrics are loaded (no bitmap data).
   // Returns number of glyphs that couldn't be loaded (0 on full success).
-  // addRegularFallback pulls regular in alongside any styled face so hybrid CJK
-  // fonts (Han on regular only) still have fallback bitmaps resident. Pass false
-  // when regular is prewarmed separately from the full page text: the call then
-  // leaves regular alone entirely, instead of rebuilding it from just the styled
-  // runs and dropping the rest of the page.
+  // addRegularFallback pulls regular in alongside any styled face, so codepoints
+  // the styled face lacks (Latin-only italic on the CJK composites) still have
+  // their regular fallback bitmaps resident. Pass false when regular is prewarmed
+  // separately from the full page text: the call then leaves regular alone
+  // entirely, instead of rebuilding it from just the styled runs and dropping the
+  // rest of the page. Callers passing false must also group requested styles by
+  // resolved face (see EpdFontFamily::resolveStyle) — two calls that resolve to
+  // the same face make the second one discard the first one's glyphs.
   int prewarm(const char* utf8Text, uint8_t styleMask = 0x0F, bool metadataOnly = false,
               bool addRegularFallback = true);
 
