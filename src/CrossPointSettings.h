@@ -1,4 +1,5 @@
 #pragma once
+#include <CjkVersion.h>
 #include <HalStorage.h>
 
 #include <cstdint>
@@ -114,7 +115,17 @@ class CrossPointSettings {
   enum SIDE_BUTTON_LAYOUT { PREV_NEXT = 0, NEXT_PREV = 1, SIDE_BUTTONS_DISABLED = 2, SIDE_BUTTON_LAYOUT_COUNT };
 
   // Font family options (built-in fonts only; SD card fonts use sdFontFamilyName)
+  //
+  // CJK SKUs embed a single bitmap face per size and main.cpp aliases every
+  // Latin EpdFont global onto it, so "Noto Serif" and "Noto Sans" drew the
+  // exact same glyphs. Those builds expose one "System" entry instead.
+  // NOTOSERIF keeps value 0 so a persisted 0 (the default, and the id the page
+  // cache is keyed on) still resolves; a persisted 1 clamps back to it on load.
+#ifdef ENABLE_CJK_VERSION
+  enum FONT_FAMILY { NOTOSERIF = 0, SYSTEM_FONT = 0, FONT_FAMILY_COUNT = 1 };
+#else
   enum FONT_FAMILY { NOTOSERIF = 0, NOTOSANS = 1, FONT_FAMILY_COUNT };
+#endif
   static constexpr uint8_t LEGACY_OPENDYSLEXIC = 2;
   static constexpr uint8_t BUILTIN_FONT_COUNT = FONT_FAMILY_COUNT;
   // Font size options

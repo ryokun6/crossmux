@@ -328,6 +328,7 @@ float CrossPointSettings::getReaderLineCompression() const {
         case WIDE:
           return 1.1f;
       }
+#ifndef ENABLE_CJK_VERSION
     case NOTOSANS:
       switch (lineSpacing) {
         case TIGHT:
@@ -338,6 +339,7 @@ float CrossPointSettings::getReaderLineCompression() const {
         case WIDE:
           return 1.0f;
       }
+#endif
   }
 }
 
@@ -404,6 +406,7 @@ int CrossPointSettings::getBuiltinReaderFontId() const {
         case EXTRA_LARGE:
           return NOTOSERIF_18_FONT_ID;
       }
+#ifndef ENABLE_CJK_VERSION
     case NOTOSANS:
       switch (fontSize) {
         case SMALL:
@@ -416,5 +419,6 @@ int CrossPointSettings::getBuiltinReaderFontId() const {
         case EXTRA_LARGE:
           return NOTOSANS_18_FONT_ID;
       }
+#endif
   }
 }
