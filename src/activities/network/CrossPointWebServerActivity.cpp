@@ -66,7 +66,18 @@ int barsForRssi(int rssi, int currentBars) {
 void CrossPointWebServerActivity::onEnter() {
   Activity::onEnter();
 
-  LOG_DBG("WEBACT", "Free heap at onEnter: %d bytes", ESP.getFreeHeap());
+  // A resident SD reader font pins ~75KB of the 224KB heap. Serving with one
+  // loaded leaves the Wi‑Fi driver and lwIP so little that an X3 idles at
+  // MaxAlloc~2KB — under lwIP's ~5.7KB TCP send buffer — so responses crawl.
+  // OTA and font download drop it for the same reason (OtaUpdateActivity.cpp:36,
+  // FontDownloadActivity.cpp:84). Nothing on this screen draws reader body
+  // text; the QR/status UI uses the builtin UI fonts.
+  fontUnload_.emplace(renderer);
+
+  // LOG_INF, not LOG_DBG: release builds ship LOG_LEVEL=1, and this is the
+  // number that says whether the heap is healthy enough to serve.
+  LOG_INF("WEBACT", "onEnter Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
 
   // Reset state
   state = WebServerActivityState::MODE_SELECTION;
@@ -140,6 +151,12 @@ void CrossPointWebServerActivity::onExit() {
     delay(30);
     silentRestart();
   }
+
+  // Only reached when Wi‑Fi never came up (user backed out of mode selection),
+  // so the silentRestart() above did not run and nothing else will reload the
+  // reader font that onEnter() dropped. Explicit here so the onEnter emplace has
+  // a visible counterpart; the member destructor would be a no-op after this.
+  fontUnload_.reset();
 
   LOG_DBG("WEBACT", "Free heap at onExit end: %d bytes", ESP.getFreeHeap());
 }

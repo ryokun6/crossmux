@@ -2,9 +2,11 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "NetworkModeSelectionActivity.h"
+#include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
 #include "network/CrossPointWebServer.h"
 
@@ -71,6 +73,11 @@ class CrossPointWebServerActivity final : public Activity {
 
   // Cached signal-strength bracket (0..4) for the WiFi indicator.
   int lastWifiBars = 0;
+
+  // Engaged in onEnter and released when the activity is destroyed. onExit's
+  // silentRestart() usually reboots first (WiFi always comes up once the server
+  // runs), so the reload only runs when the user backed out before that.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void renderServerRunning() const;
   void renderWifiIndicator(int subHeaderTop) const;

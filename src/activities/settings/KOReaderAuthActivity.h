@@ -1,7 +1,9 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 
+#include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
 
 /**
@@ -26,6 +28,10 @@ class KOReaderAuthActivity final : public Activity {
   std::string statusMessage;
   std::string errorMessage;
   bool credentialFailure = false;
+
+  // Engaged only once Wi‑Fi is up and the handshake is about to run. onExit's
+  // silentRestart() normally reboots before the destructor reloads the font.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void onWifiSelectionComplete(bool success);
   void performAuthentication();

@@ -24,6 +24,11 @@ void KOReaderAuthActivity::onWifiSelectionComplete(const bool success) {
     return;
   }
 
+  // authenticate() is TLS to os.ryo.lu and is gated on 40KB free heap
+  // (KOReaderSyncClient.cpp:39); a resident SD reader font pins ~75KB and makes
+  // that gate unpassable. This screen only draws UI_10 status text.
+  fontUnload_.emplace(renderer);
+
   {
     RenderLock lock(*this);
     state = AUTHENTICATING;
@@ -75,6 +80,10 @@ void KOReaderAuthActivity::onExit() {
     delay(30);
     silentRestart();
   }
+
+  // Only reached when the silent reboot above didn't happen (Wi‑Fi never came up,
+  // or deep sleep is already committed); the reboot reloads the font otherwise.
+  fontUnload_.reset();
 }
 
 void KOReaderAuthActivity::render(RenderLock&&) {

@@ -120,6 +120,15 @@ void KOReaderSyncActivity::onWifiSelectionComplete(const bool success) {
 
   LOG_DBG("KOSync", "WiFi connected, starting sync");
 
+  // EpubReaderActivity already released the Epub + Section (~65KB) for this
+  // handshake (EpubReaderActivity.cpp:793), but a resident SD reader font still
+  // pins ~75KB, which keeps free heap under KOReaderSyncClient's 40KB TLS gate
+  // (KOReaderSyncClient.cpp:39) — the sync then fails before it opens a socket.
+  // Nothing here draws reader body text (render() uses UI_10/UI_12 only), and the
+  // section-cache LUTs performSync() reads afterwards are keyed by spine index,
+  // not by font, so page mapping is unaffected.
+  fontUnload_.emplace(renderer);
+
   {
     RenderLock lock(*this);
     state = SYNCING;
@@ -302,6 +311,10 @@ void KOReaderSyncActivity::onExit() {
     delay(30);
     silentRestartToReader();
   }
+
+  // Only reached without a reboot: the NO_CREDENTIALS screen (nothing to reload,
+  // the guard was never engaged) or a suppressed silent restart during deep sleep.
+  fontUnload_.reset();
 }
 
 void KOReaderSyncActivity::render(RenderLock&&) {
