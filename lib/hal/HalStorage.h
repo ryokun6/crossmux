@@ -16,13 +16,23 @@ class HalStorage {
   bool begin();
   bool ready() const;
   std::vector<String> listFiles(const char* path = "/", int maxFiles = 200);
-  // Read the entire file at `path` into a String. Returns empty string on failure.
+  // Largest file a whole-file read will accept. The contents have to live in one heap block
+  // next to whatever parses them, so bigger files are rejected rather than partially read.
+  static constexpr size_t MAX_WHOLE_FILE_SIZE = 64 * 1024;
+  // Read the entire file at `path` into `out`. Returns false and leaves `out` empty when the
+  // file is missing, exceeds `maxSize`, or cannot be read in full. A truncated read is always
+  // reported as a failure, so a true return means `out` holds the complete file.
+  bool readEntireFile(const char* path, String& out, size_t maxSize = MAX_WHOLE_FILE_SIZE);
+  // Read the entire file at `path` into a String. Returns an empty string on failure and for
+  // an empty file; use readEntireFile() when those need to be told apart. Never truncates.
   String readFile(const char* path);
   // Low-memory helpers:
   // Stream the file contents to a `Print` (e.g. `Serial`, or any `Print`-derived object).
   // Returns true on success, false on failure.
   bool readFileToStream(const char* path, Print& out, size_t chunkSize = 256);
   // Read up to `bufferSize-1` bytes into `buffer`, null-terminating it. Returns bytes read.
+  // Caveat: a file larger than the buffer is silently truncated, so the return value cannot
+  // distinguish a complete read from a partial one. Prefer readEntireFile() for whole files.
   size_t readFileToBuffer(const char* path, char* buffer, size_t bufferSize, size_t maxBytes = 0);
   // Write a string to `path` on the SD card. Overwrites existing file.
   // Returns true on success.

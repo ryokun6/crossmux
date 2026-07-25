@@ -633,9 +633,18 @@ bool JsonSettingsIO::saveReadingStats(const ReadingStatsStore& store, const char
   return saveJsonDocumentToFile("RST", path, doc);
 }
 
-bool JsonSettingsIO::loadReadingStats(ReadingStatsStore& store, const char* json) {
+// Deserialized straight from the file rather than from a whole-file String: reading_stats.json
+// grows for the life of the device (one readingDays entry per day, globally and per book), so
+// the load must not need a second full copy of the file in heap next to the document, nor be
+// bound by HalStorage's whole-file read limit.
+bool JsonSettingsIO::loadReadingStatsFromFile(ReadingStatsStore& store, const char* path) {
+  HalFile file;  // closed by its destructor on every exit path
+  if (!Storage.openFileForRead("RST", path, file)) {
+    return false;
+  }
+
   JsonDocument doc;
-  auto error = deserializeJson(doc, json);
+  const DeserializationError error = deserializeJson(doc, file);
   if (error) {
     LOG_ERR("RST", "JSON parse error: %s", error.c_str());
     return false;
@@ -732,17 +741,6 @@ bool JsonSettingsIO::loadReadingStats(ReadingStatsStore& store, const char* json
   store.rebuildAggregatedReadingDays();
   LOG_DBG("RST", "Reading stats loaded from file (%d books)", static_cast<int>(store.books.size()));
   return true;
-}
-
-bool JsonSettingsIO::loadReadingStatsFromFile(ReadingStatsStore& store, const char* path) {
-  if (!Storage.exists(path)) {
-    return false;
-  }
-  const String json = Storage.readFile(path);
-  if (json.isEmpty()) {
-    return false;
-  }
-  return loadReadingStats(store, json.c_str());
 }
 
 // ---- AchievementsStore ----

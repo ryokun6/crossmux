@@ -259,22 +259,41 @@ std::vector<String> HalStorage::listFiles(const char* path, int maxFiles) {
   return result;
 }
 
-String HalStorage::readFile(const char* path) {
+bool HalStorage::readEntireFile(const char* path, String& out, const size_t maxSize) {
+  out = String();
   StorageLock lock;
   std::string resolved = resolve(path);
   std::FILE* fp = std::fopen(resolved.c_str(), "rb");
-  if (!fp) return String();
+  if (!fp) return false;
   std::fseek(fp, 0, SEEK_END);
   long size = std::ftell(fp);
   std::fseek(fp, 0, SEEK_SET);
   if (size < 0) {
     std::fclose(fp);
-    return String();
+    return false;
+  }
+  if (static_cast<size_t>(size) > maxSize) {
+    std::fclose(fp);
+    LOG_ERR("HAL", "%s is %u bytes, above the %u byte whole-file read limit", path, static_cast<unsigned>(size),
+            static_cast<unsigned>(maxSize));
+    return false;
   }
   std::string content(static_cast<size_t>(size), '\0');
-  std::fread(content.data(), 1, static_cast<size_t>(size), fp);
+  const size_t read = std::fread(content.data(), 1, static_cast<size_t>(size), fp);
   std::fclose(fp);
-  return String(content);
+  if (read != static_cast<size_t>(size)) {
+    LOG_ERR("HAL", "Read of %s failed after %u of %u bytes", path, static_cast<unsigned>(read),
+            static_cast<unsigned>(size));
+    return false;
+  }
+  out = String(content);
+  return true;
+}
+
+String HalStorage::readFile(const char* path) {
+  String content;
+  readEntireFile(path, content);
+  return content;
 }
 
 bool HalStorage::readFileToStream(const char* path, Print& out, size_t chunkSize) {

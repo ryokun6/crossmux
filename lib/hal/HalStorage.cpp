@@ -4,6 +4,7 @@
 #include <Logging.h>
 #include <SDCardManager.h>
 
+#include <algorithm>
 #include <cassert>
 
 #define SDCard SDCardManager::getInstance()
@@ -43,7 +44,51 @@ std::vector<String> HalStorage::listFiles(const char* path, int maxFiles) {
   HAL_STORAGE_WRAPPED_CALL(listFiles, path, maxFiles);
 }
 
-String HalStorage::readFile(const char* path) { HAL_STORAGE_WRAPPED_CALL(readFile, path); }
+bool HalStorage::readEntireFile(const char* path, String& out, const size_t maxSize) {
+  out = String();
+  // Hold the lock across open + size + read so the file cannot move under us mid-read.
+  // The mutex is recursive, so the HalFile calls below re-taking it is fine.
+  StorageLock lock;
+  HalFile file;
+  if (!openFileForRead("SD", path, file)) {
+    return false;
+  }
+  const size_t size = file.size();
+  if (size > maxSize) {
+    LOG_ERR("HAL", "%s is %u bytes, above the %u byte whole-file read limit", path, static_cast<unsigned>(size),
+            static_cast<unsigned>(maxSize));
+    return false;
+  }
+  // Reserve the exact size once: Arduino String grows its buffer in 16-byte steps
+  // (WString.cpp: newSize = (maxStrLen + 16) & ~0xf), so appending without reserving first
+  // reallocs once per 16 bytes and fragments the heap. Reserving also means no second
+  // heap-allocated scratch buffer is needed, keeping the peak at one copy of the file.
+  if (size > 0 && !out.reserve(size)) {
+    LOG_ERR("HAL", "OOM reserving %u bytes for %s", static_cast<unsigned>(size), path);
+    return false;
+  }
+  // One SD sector per read: the payload already lives in `out`, so this stays on the stack.
+  char chunk[512];
+  size_t total = 0;
+  while (total < size) {
+    const size_t want = std::min(sizeof(chunk), size - total);
+    const int got = file.read(chunk, want);
+    if (got <= 0 || !out.concat(chunk, static_cast<unsigned int>(got))) {
+      LOG_ERR("HAL", "Read of %s failed after %u of %u bytes", path, static_cast<unsigned>(total),
+              static_cast<unsigned>(size));
+      out = String();
+      return false;
+    }
+    total += static_cast<size_t>(got);
+  }
+  return true;
+}
+
+String HalStorage::readFile(const char* path) {
+  String content;
+  readEntireFile(path, content);
+  return content;
+}
 
 bool HalStorage::readFileToStream(const char* path, Print& out, size_t chunkSize) {
   HAL_STORAGE_WRAPPED_CALL(readFileToStream, path, out, chunkSize);
