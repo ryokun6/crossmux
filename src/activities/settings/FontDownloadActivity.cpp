@@ -17,20 +17,35 @@
 #include "fontIds.h"
 #include "network/HttpDownloader.h"
 
-FontDownloadActivity::FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-    : Activity("FontDownload", renderer, mappedInput), fontInstaller_(sdFontSystem.registry()) {}
+namespace {
+// Contiguous DRAM needed for verified HTTPS after asymmetric mbedTLS buffers
+// (8K in / 4K out via custom_sdkconfig) + HTTP client RX/TX. X3 post-WiFi
+// MaxAlloc often lands ~23–32KB; silent-restart once if still under this floor.
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 24 * 1024;
+}  // namespace
+
+FontDownloadActivity::FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                           bool resumedAfterDefrag)
+    : Activity("FontDownload", renderer, mappedInput),
+      fontInstaller_(sdFontSystem.registry()),
+      resumedAfterDefrag_(resumedAfterDefrag) {}
 
 // --- Lifecycle ---
 
 void FontDownloadActivity::onEnter() {
   Activity::onEnter();
   WiFi.mode(WIFI_STA);
-  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
+  // autoConnect=true: after a defrag reboot this reconnects the last SSID without
+  // a full scan UI, which is what left MaxAlloc too small for TLS.
+  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, true),
                          [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
 }
 
 void FontDownloadActivity::onExit() {
   Activity::onExit();
+
+  // Restore the user's SD font if we unloaded it for HTTPS headroom.
+  sdFontSystem.ensureLoaded(renderer);
 
   if (WiFi.getMode() != WIFI_MODE_NULL) {
     WiFi.disconnect(false);
@@ -42,6 +57,24 @@ void FontDownloadActivity::onExit() {
 void FontDownloadActivity::onWifiSelectionComplete(const bool success) {
   if (!success) {
     finish();
+    return;
+  }
+
+  // Resident SD reader fonts fragment the internal heap; drop them before TLS.
+  sdFontSystem.unloadAll(renderer);
+  WiFi.scanDelete();
+
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  LOG_INF("FONT", "Post-WiFi Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(maxAlloc));
+  if (!resumedAfterDefrag_ && maxAlloc < MIN_MAX_ALLOC_FOR_TLS) {
+    // Tear Wi‑Fi down before reboot so onExit doesn't silentRestart() to home
+    // and clobber the font-download resume target.
+    LOG_INF("FONT", "MaxAlloc below TLS floor — silent-restart to defrag heap");
+    WiFi.disconnect(true);
+    delay(30);
+    WiFi.mode(WIFI_OFF);
+    silentRestartToFontDownload();
     return;
   }
 

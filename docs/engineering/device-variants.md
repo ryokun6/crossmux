@@ -96,7 +96,7 @@ To clear a wrong cached detection, **erase NVS** (full chip erase, or wipe the
 | Buffer allocation | `MAX_BUFFER_SIZE = 52272` (static, covers both) — [EInkDisplay.h:35](../../open-x4-sdk/libs/display/EInkDisplay/include/EInkDisplay.h) |
 | Geometry switch | default 800×480 | `setDisplayX3()` before `begin()` — [HalDisplay.cpp:15](../../lib/hal/HalDisplay.cpp) |
 | Battery | ADC on GPIO0 | BQ27220 fuel gauge (I²C) — [HalPowerManager.cpp](../../lib/hal/HalPowerManager.cpp) |
-| USB / charge detect | GPIO20 reads HIGH | sign of BQ27220 current — [HalGPIO.cpp:272-287](../../lib/hal/HalGPIO.cpp) |
+| USB / charge detect | GPIO20 reads HIGH | BQ27220 charge current > 0 — [HalGPIO.cpp:272-287](../../lib/hal/HalGPIO.cpp). At 100% SoC the gauge may report 0 mA even with a cable attached, so `isUsbConnected()` can be false while CDC serial still works. |
 | RTC clock | session-only (NTP; lost at power-off) | DS3231 persists UTC across sleep — [HalClock.cpp](../../lib/hal/HalClock.cpp) |
 | Tilt page-turn | none | QMI8658 gyro, X3-only — [HalTiltSensor.cpp:55](../../lib/hal/HalTiltSensor.cpp) |
 | Theme button layout | stacked on the right | up-left / down-right — [BaseTheme.cpp:194](../../src/components/themes/BaseTheme.cpp), [LyraTheme.cpp:399](../../src/components/themes/lyra/LyraTheme.cpp) |
@@ -110,6 +110,27 @@ All rendering reads geometry from `getScreenWidth()` / `getScreenHeight()`
 (never hardcoded 800/480), so layout follows the detected panel automatically —
 this is why X3 "just works" without per-screen code (see
 [ui-and-input.md](ui-and-input.md), golden rule #8).
+
+## USB serial / debug on X3 (pogo charger)
+
+The magnetic pogo dock is usually **charge-only**. For serial logs, `pio upload`,
+and the web flasher you need a **data-capable USB-C cable** into the device’s
+USB-C port (or a dock that forwards D+/D−). The ESP32-C3 exposes USB Serial/JTAG
+CDC (`/dev/tty.usbmodem*` / `ttyACM*`).
+
+- Release builds (`gh_release*`) define `ENABLE_SERIAL_LOG` — logs flow whenever
+  the host enumerates CDC; they are not gated on `isUsbConnected()`.
+- Monitor: `python3 scripts/debugging_monitor.py` (see
+  [testing-and-debugging.md](testing-and-debugging.md)).
+- If USB flashing is locked: hold **side-UP + Power** at boot to enter SD-card
+  firmware update recovery ([main.cpp](../../src/main.cpp) recovery path).
+- Crash reports also land on the SD card root without USB.
+
+**HTTPS / OTA on X3:** Wi‑Fi + mbedTLS need a large contiguous heap block
+(`MaxAlloc`). The build shrinks TLS record buffers via `custom_sdkconfig` in
+`platformio.ini` (8K in / 4K out). Manage Fonts / Check for updates also unload
+the resident SD font and may briefly silent-restart once when `MaxAlloc` is
+still too low (see `SilentRestart.h` + those activities).
 
 ## Build & flash for X3
 

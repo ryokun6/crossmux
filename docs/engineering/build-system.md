@@ -25,6 +25,13 @@
 * `platformio.local.ini`: Local overrides (gitignored, create if needed)
 * `partitions.csv`: ESP32 flash partition layout
 
+**`custom_sdkconfig` (mbedTLS buffers):** `[base]` sets asymmetric TLS record
+buffers to 8KB in / 4KB out so X3 HTTPS (Manage Fonts, OTA) can allocate during
+Wi‑Fi sessions where `MaxAlloc` is ~32KB. Changing these lines rebuilds the
+Arduino-ESP32 prebuilt libs on the next `pio run` (slow once, then cached).
+`custom_component_remove` drops RainMaker/Insights so that hybrid rebuild does
+not require their embedded server certs.
+
 ## Build Environment
 * **Standard**: C++20 (`-std=c++2a`). No Exceptions, No RTTI.
 * **Logging**: ALWAYS use `LOG_INF`, `LOG_DBG`, or `LOG_ERR` from `Logging.h`. Raw Serial output is deprecated.

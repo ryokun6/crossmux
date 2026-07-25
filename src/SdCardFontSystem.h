@@ -45,6 +45,10 @@ class SdCardFontSystem {
     }
   }
 
+  /// Drop the resident SD .cpfont so HTTPS/OTA can claim a larger MaxAlloc.
+  /// Call ensureLoaded() afterward to restore the user's selection.
+  void unloadAll(GfxRenderer& renderer) { manager_.unloadAll(renderer); }
+
  private:
   /// After a successful loadFamily, point the SD font at the builtin reader
   /// font so missing glyphs (CJK in a Latin-only .cpfont) still render.

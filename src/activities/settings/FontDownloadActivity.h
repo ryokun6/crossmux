@@ -28,7 +28,10 @@
 
 class FontDownloadActivity : public Activity {
  public:
-  explicit FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput);
+  // resumedAfterDefrag: silent-restart resume path — skip the MaxAlloc defrag
+  // reboot (already done) and auto-reconnect Wi‑Fi before fetching fonts.json.
+  explicit FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                bool resumedAfterDefrag = false);
 
   void onEnter() override;
   void onExit() override;
@@ -72,6 +75,7 @@ class FontDownloadActivity : public Activity {
   State state_ = WIFI_SELECTION;
   FontInstaller fontInstaller_;
   ButtonNavigator buttonNavigator_;
+  bool resumedAfterDefrag_ = false;
 
   // Manifest data
   std::string baseUrl_;

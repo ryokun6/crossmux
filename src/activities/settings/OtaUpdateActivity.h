@@ -21,12 +21,15 @@ class OtaUpdateActivity : public Activity {
   State state = WIFI_SELECTION;
   unsigned int lastUpdaterPercentage = UNINITIALIZED_PERCENTAGE;
   OtaUpdater updater;
+  bool resumedAfterDefrag_ = false;
 
   void onWifiSelectionComplete(bool success);
 
  public:
-  explicit OtaUpdateActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("OtaUpdate", renderer, mappedInput), updater() {}
+  // resumedAfterDefrag: silent-restart resume path — skip the MaxAlloc defrag
+  // reboot (already done) and auto-reconnect Wi‑Fi before the update check.
+  explicit OtaUpdateActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool resumedAfterDefrag = false)
+      : Activity("OtaUpdate", renderer, mappedInput), updater(), resumedAfterDefrag_(resumedAfterDefrag) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;

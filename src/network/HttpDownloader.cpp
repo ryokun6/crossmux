@@ -4,6 +4,7 @@
 #include <Logging.h>
 #include <Memory.h>
 #include <Stream.h>
+#include <WiFi.h>
 #include <base64.h>
 #include <esp_crt_bundle.h>
 #include <esp_http_client.h>
@@ -21,6 +22,15 @@ namespace {
 // response body streams in READ_CHUNK pieces.
 constexpr int HTTP_RX_BUF = 4096;
 constexpr int HTTP_TX_BUF = 1024;
+
+// Drop lingering AP-scan rows before a TLS handshake. Those small allocations
+// fragment the internal DRAM arena; X3 OTA/fonts fail when MaxAlloc can't fit
+// mbedTLS record buffers even though Free heap still looks healthy.
+void reclaimWifiScanHeap() {
+  WiFi.scanDelete();
+  LOG_DBG("HTTP", "TLS prep Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
+}
 // Per-socket-op timeout. Some OPDS download endpoints are slow to send headers
 // (>15s) and chunked catalogs stall mid-body, so 15s killed them. 60s gives
 // slow servers room. esp_http_client's timeout_ms is uint32, so unlike Arduino
@@ -47,6 +57,8 @@ bool isRedirect(int status) {
 // large/slow files and surfaces a short read directly.
 HttpDownloader::DownloadError runGet(const std::string& url, const std::string& username, const std::string& password,
                                      Sink& sink) {
+  reclaimWifiScanHeap();
+
   esp_http_client_config_t config = {};
   config.url = url.c_str();
   config.buffer_size = HTTP_RX_BUF;
@@ -295,6 +307,7 @@ HttpDownloader::DownloadError HttpDownloader::fetchUrl(const std::string& url, c
 bool HttpDownloader::postJson(const std::string& url, const std::string& payload, const std::string& bearerToken,
                               const std::function<bool(Stream&)>& onResponse, int timeoutMs) {
   LOG_DBG("HTTP", "POST: %s (body=%u bytes)", url.c_str(), static_cast<unsigned>(payload.size()));
+  reclaimWifiScanHeap();
   return runPostJson(url, payload, bearerToken, onResponse, timeoutMs);
 }
 

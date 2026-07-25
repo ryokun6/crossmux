@@ -2,14 +2,21 @@
 
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Logging.h>
 #include <WiFi.h>
 
 #include "MappedInputManager.h"
+#include "SdCardFontSystem.h"
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "network/OtaUpdater.h"
+
+namespace {
+// Same floor as FontDownloadActivity — OTA begin also needs mbedTLS + upgrade buf.
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 24 * 1024;
+}  // namespace
 
 void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   if (!success) {
@@ -19,6 +26,21 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
   }
 
   LOG_DBG("OTA", "WiFi connected, checking for update");
+
+  sdFontSystem.unloadAll(renderer);
+  WiFi.scanDelete();
+
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  LOG_INF("OTA", "Post-WiFi Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(maxAlloc));
+  if (!resumedAfterDefrag_ && maxAlloc < MIN_MAX_ALLOC_FOR_TLS) {
+    LOG_INF("OTA", "MaxAlloc below TLS floor — silent-restart to defrag heap");
+    WiFi.disconnect(true);
+    delay(30);
+    WiFi.mode(WIFI_OFF);
+    silentRestartToOtaUpdate();
+    return;
+  }
 
   {
     RenderLock lock(*this);
@@ -66,6 +88,8 @@ void OtaUpdateActivity::onEnter() {
 
 void OtaUpdateActivity::onExit() {
   Activity::onExit();
+
+  sdFontSystem.ensureLoaded(renderer);
 
   // Success path reboots via the SHUTTING_DOWN state's plain ESP.restart()
   // (loop() above) so the new firmware boots normally. Back-out paths land

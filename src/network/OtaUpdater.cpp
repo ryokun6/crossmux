@@ -14,6 +14,8 @@
 #include <esp_wifi.h>
 // clang-format on
 
+#include <WiFi.h>
+
 #include <string>
 
 namespace {
@@ -153,9 +155,16 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   /* For better timing and connectivity, we disable power saving for WiFi */
   esp_wifi_set_ps(WIFI_PS_NONE);
 
+  // Same X3 MaxAlloc pressure as HttpDownloader: free scan debris, then log the
+  // contiguous block size that decides whether mbedTLS + OTA buffers fit.
+  WiFi.scanDelete();
+  LOG_INF("OTA", "Install prep Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
+
   esp_err = esp_https_ota_begin(&ota_config, &ota_handle);
   if (esp_err != ESP_OK) {
-    LOG_DBG("OTA", "HTTP OTA Begin Failed: %s", esp_err_to_name(esp_err));
+    LOG_ERR("OTA", "HTTP OTA Begin Failed: %s (Free=%u MaxAlloc=%u)", esp_err_to_name(esp_err),
+            static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
     return INTERNAL_UPDATE_ERROR;
   }
 

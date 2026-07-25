@@ -209,7 +209,7 @@ void SdFirmwareUpdateActivity::performUpdate() {}
 
 #include "SdCardFontSystem.h"
 #include "activities/settings/FontDownloadActivity.h"
-FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m)
+FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m, bool)
     : Activity("FontDownload", r, m), fontInstaller_(sdFontSystem.registry()) {}
 STUB_ACTIVITY_BASE(FontDownloadActivity)
 
