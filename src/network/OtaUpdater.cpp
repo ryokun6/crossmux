@@ -8,6 +8,7 @@
 #include "HttpDownloader.h"
 #include <Logging.h>
 #include <ReleaseJsonParser.h>
+#include <esp_crt_bundle.h>
 #include <esp_http_client.h>
 #include <esp_https_ota.h>
 #include <esp_wifi.h>
@@ -133,9 +134,20 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   esp_https_ota_handle_t ota_handle = NULL;
   esp_err_t esp_err;
 
-  // No crt_bundle_attach: same X3 GitHub CDN RSA/MPI OOM as font downloads
-  // (0x4290). Requires CONFIG_ESP_TLS_INSECURE; image is still hash-checked by
-  // the OTA/app descriptor path after download.
+  // CA verification matters more here than anywhere else in the firmware.
+  // CONFIG_SECURE_BOOT is not enabled (the sdkconfig has only
+  // SECURE_BOOT_V2_RSA_SUPPORTED/_PREFERRED, no CONFIG_SECURE_SIGNED_APPS_*), so
+  // esp_image_verify only walks the header/segments and checks a checksum plus a
+  // SHA256 that are both carried *inside the downloaded image*. That proves the
+  // download was not corrupted in transit; it proves nothing about who produced
+  // it. Authenticity on this path comes solely from the TLS chain below, so an
+  // unverified fetch means anyone on the network path can install arbitrary
+  // firmware. Hence crt_bundle_attach, and no skip_cert_common_name_check.
+  //
+  // keep_alive_enable stays true only because esp_https_ota re-inits the SSL
+  // transport per connect; a genuinely pooled connection would break under
+  // CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT, which nulls conf->ca_chain after the
+  // first handshake (HttpDownloader deliberately sets false for that reason).
   esp_http_client_config_t client_config = {
       .url = otaUrl.c_str(),
       .timeout_ms = 15000,
@@ -144,7 +156,7 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
       // truncated it and produced garbage HTTP status codes on X3.
       .buffer_size = 4096,
       .buffer_size_tx = 3072,
-      .skip_cert_common_name_check = true,
+      .crt_bundle_attach = esp_crt_bundle_attach,
       .keep_alive_enable = true,
   };
 

@@ -87,7 +87,13 @@ esp_err_t httpEventHandler(esp_http_client_event_t* evt) {
   return ESP_OK;
 }
 
-// Create configured esp_http_client with small TLS buffers
+// Create configured esp_http_client with small TLS buffers.
+// One client per request, never pooled: CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT
+// nulls conf->ca_chain once a handshake completes, so a reused
+// mbedtls_ssl_config would fail its *second* handshake with no CA to verify
+// against. Every caller below pairs init with cleanup, which is what keeps that
+// safe — do not introduce connection reuse or keep-alive here while that
+// sdkconfig option is on.
 esp_http_client_handle_t createClient(const char* url, ResponseBuffer* buf,
                                       esp_http_client_method_t method = HTTP_METHOD_GET) {
   esp_http_client_config_t config = {};

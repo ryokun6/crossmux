@@ -38,14 +38,18 @@ void reclaimWifiScanHeap() {
           static_cast<unsigned>(ESP.getMaxAllocHeap()));
 }
 
-// GitHub release CDN RSA verify OOMs on X3 (0x4290 = MPI_ALLOC_FAILED) even
-// with asymmetric mbedTLS buffers. Plain http is not an option — GitHub
-// redirects to https. Skip CA verify for those hosts only (needs
-// CONFIG_ESP_TLS_INSECURE); fonts still CRC32-check, OTA has image hashes.
-// OPDS / WeRead / KOReader keep the CA bundle.
-bool shouldAttachCrtBundle(const std::string& url) {
-  return url.find("github.com") == std::string::npos && url.find("githubusercontent.com") == std::string::npos;
-}
+// Two hard constraints the mbedTLS sdkconfig (see custom_sdkconfig in
+// platformio.ini) imposes on every TLS client in this firmware:
+//
+// 1. CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n means mbedtls_ssl_get_peer_cert()
+//    always returns NULL. Arduino's ssl_client.cpp verify_ssl_dn() dereferences
+//    it with no NULL check, so WiFiClientSecure::verify() / setFingerprint()
+//    would crash; they are only absent from the image because nothing calls
+//    NetworkClientSecure::verify(). Do not adopt either while that option is off.
+// 2. CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT nulls conf->ca_chain after each
+//    handshake, so a reused mbedtls_ssl_config fails its *second* handshake with
+//    no CA to verify against. Safe here only because a fresh esp_http_client is
+//    built per hop (see runGet) — this forecloses connection pooling.
 
 // Modem sleep turns multi‑MB GitHub GETs into ~100 B/s (font download looked
 // stuck at 0–1%). Match OTA: disable PS for the transfer, restore after.
@@ -188,13 +192,15 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       config.buffer_size = HTTP_RX_BUF;
       config.buffer_size_tx = txBuf;
       config.timeout_ms = openTimeoutMs;
-      // Verified HTTPS via CA bundle, except GitHub release hosts (see
-      // shouldAttachCrtBundle). Plain http needs no cert config.
-      if (shouldAttachCrtBundle(currentUrl)) {
-        config.crt_bundle_attach = esp_crt_bundle_attach;
-      } else {
-        LOG_INF("HTTP", "TLS without CA verify (GitHub/X3 heap)");
-      }
+      // Every host gets CA verification, GitHub included. This used to be skipped
+      // for github.com / githubusercontent.com because the release CDN's RSA
+      // verify OOMed on X3 (0x4290 = MPI_ALLOC_FAILED), but that was under
+      // static 16K+16K record buffers with the peer DER retained; with
+      // CONFIG_MBEDTLS_DYNAMIC_BUFFER there is now room for the MPI temporaries.
+      // Attaching it unconditionally is what makes the CRC32 that fonts check —
+      // and the firmware image OTA installs — come from an authenticated source
+      // rather than whoever is on the network path. Plain http ignores this.
+      config.crt_bundle_attach = esp_crt_bundle_attach;
       config.keep_alive_enable = false;
       config.event_handler = captureLocationHeader;
       config.user_data = &headerCapture;
