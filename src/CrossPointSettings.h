@@ -251,7 +251,17 @@ class CrossPointSettings {
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
   uint8_t orientation = PORTRAIT;
   // 0 = horizontal, 1 = vertical right-to-left (tategaki columns)
+  // Traditional Chinese and Japanese default to vertical-rl, the conventional
+  // typesetting for those markets. Simplified Chinese, Korean and the
+  // international build stay horizontal. The condition names each SKU macro
+  // explicitly so a future SKU has to opt in rather than inherit this.
+  // EpubReaderActivity::effectiveWritingMode() still falls back to horizontal
+  // for any book whose dc:language is not CJK.
+#if (defined(ENABLE_CHINESE_VERSION) && !defined(CHINESE_UI_SIMPLIFIED)) || defined(ENABLE_JAPANESE_VERSION)
+  uint8_t writingMode = VERTICAL_RL;
+#else
   uint8_t writingMode = HORIZONTAL;
+#endif
   // Button layouts (front layout retained for migration only)
   uint8_t frontButtonLayout = BACK_CONFIRM_LEFT_RIGHT;
   uint8_t sideButtonLayout = PREV_NEXT;
@@ -266,17 +276,19 @@ class CrossPointSettings {
   uint8_t fontFamily = NOTOSERIF;
   uint8_t fontSize = MEDIUM;
   uint8_t lineSpacing = NORMAL;
-  uint8_t paragraphAlignment = JUSTIFIED;
+  // Left-aligned by default: justification stretches inter-word gaps on a
+  // 480px-wide page, and the alignment is ignored entirely in vertical-rl.
+  uint8_t paragraphAlignment = LEFT_ALIGN;
   // Auto-sleep timeout setting (default 10 minutes). Legacy sleepTimeout enum values are migration-only.
   uint8_t sleepTimeoutMinutes = 10;
   // E-ink refresh frequency (default 15 pages)
   uint8_t refreshFrequency = REFRESH_15;
-  uint8_t hyphenationEnabled = 0;
+  uint8_t hyphenationEnabled = 1;
   // CJK punctuation compression (標點擠壓). Default on; ignored on KO/Latin SKUs.
   uint8_t punctCompressionEnabled = 1;
 
-  // Reader screen margin settings
-  uint8_t screenMargin = 5;
+  // Reader screen margin settings (SettingsList range 5..40, step 5)
+  uint8_t screenMargin = 20;
   // OPDS browser settings
   char opdsServerUrl[128] = "";
   char opdsUsername[64] = "";
@@ -307,7 +319,7 @@ class CrossPointSettings {
   // Move epub to /Read/ folder on SD card when finished (0 = disabled, 1 = enabled)
   uint8_t moveFinishedToReadFolder = 0;
   // Image rendering mode in EPUB reader
-  uint8_t imageRendering = IMAGES_DISPLAY;
+  uint8_t imageRendering = IMAGES_LARGE_ONLY;
   // Tilt-based page turning (X3 only — requires QMI8658 IMU)
   uint8_t tiltPageTurn = TILT_OFF;
   // Language setting (Language enum index). First-boot default is ZH_TW (TC) or

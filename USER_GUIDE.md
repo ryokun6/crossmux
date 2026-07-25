@@ -229,13 +229,13 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Reader Line Spacing**: Adjust the spacing between lines; options are "Tight", "Normal" (default), or "Wide".
 
-- **Reader Screen Margin**: Controls the screen margins in Reading Mode between 5 and 40 pixels in 5-pixel increments.
+- **Reader Screen Margin**: Controls the screen margins in Reading Mode between 5 and 40 pixels in 5-pixel increments; the default is 20.
 
-- **Reader Paragraph Alignment**: Set the alignment of paragraphs; options are "Justified" (default), "Left", "Center", or "Right".
+- **Reader Paragraph Alignment**: Set the alignment of paragraphs; options are "Justified", "Left" (default), "Center", or "Right". Ignored in vertical writing mode, which lays text out in columns.
 
 - **Embedded Style**: Whether to use the EPUB file's embedded HTML and CSS stylisation and formatting; options are "ON" or "OFF".
 
-- **Hyphenation**: Whether to hyphenate text in Reading Mode; options are "ON" or "OFF".
+- **Hyphenation**: Whether to hyphenate text in Reading Mode; options are "ON" (default) or "OFF".
 
 - **Reading Orientation**: Set the screen orientation for reading EPUB files:
   
@@ -251,7 +251,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Text Anti-Aliasing**: Whether to show smooth grey edges (anti-aliasing) on text in reading mode. Note this slows down page turns slightly.
 
-- **Images**: Whether to display embedded images (JPG/PNG) found in EPUB files; options are "ON" (default) or "OFF".
+- **Images**: How to handle embedded images (JPG/PNG) found in EPUB files; options are "Display", "Placeholder", "Hide", or "Large only" (default), which lays out full-size figures and skips small icons and dividers.
 
 - **Focus Reading**: Bolds the first part of each word to create visual fixation points, similar to Bionic Reading. This can help improve reading speed and focus; options are "ON" or "OFF" (default).
 

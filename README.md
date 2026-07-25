@@ -19,8 +19,9 @@ Current firmware version: **1.4.14**
 
 ### Vertical CJK EPUB reading
 
-Choose `Writing Mode > Vertical (RTL)` in Reader Settings or the in-book menu.
-The layout engine then:
+The Traditional Chinese (`gh_release_tc`) and Japanese (`gh_release_ja`) builds
+default to `Writing Mode > Vertical (RTL)`; on the other builds choose it in
+Reader Settings or the in-book menu. The layout engine then:
 
 - lays out columns from right to left
 - uses vertical presentation forms for CJK punctuation; Traditional Chinese
