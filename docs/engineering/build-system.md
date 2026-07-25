@@ -30,17 +30,31 @@ buffers to 16KB in / 4KB out and turns on `CONFIG_MBEDTLS_DYNAMIC_BUFFER`, so
 mbedTLS allocates RX/TX per record and frees cert state after the handshake
 instead of pinning ~32KB for the whole session — without it an X3 font download
 has ~5KB `MaxAlloc` mid-transfer and cannot allocate a 2KB read buffer.
-Every HTTPS client now attaches the CA bundle, GitHub release hosts included —
-without `CONFIG_SECURE_BOOT` the TLS chain is the *only* thing establishing that
-a firmware image or font CRC came from us, since `esp_image_verify` checks only a
-checksum and SHA256 carried inside the downloaded image. `CONFIG_ESP_TLS_INSECURE`
-/ `CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY` are still set but no longer used by
-any call site; they are deliberately left in place so a verification failure
-surfaces as an ordinary handshake error rather than an esp-tls setup failure.
-**Follow-up:** remove both once CA verification is confirmed on real X3 *and* X4
-hardware (the exemption originally existed because X3 OOMed in the release CDN's
-RSA verify, `0x4290` = `MPI_ALLOC_FAILED`, which `CONFIG_MBEDTLS_DYNAMIC_BUFFER`
-is expected to have fixed). Two constraints the same block created, documented at
+Every HTTPS client attaches the CA bundle **except** the GitHub release hosts,
+which `shouldAttachCrtBundle()` in `src/network/HttpDownloader.cpp` exempts.
+Verification there was re-tested on X3 after `CONFIG_MBEDTLS_DYNAMIC_BUFFER` and
+`KEEP_PEER_CERTIFICATE=n` landed — the theory being that those freed enough heap
+to afford it — and it still fails: `release-assets.githubusercontent.com` returns
+`PK verify failed with error 0x4290` on every attempt, i.e.
+`RSA_PUBLIC_FAILED` + `MPI_ALLOC_FAILED`, an allocation failure during the RSA
+verify rather than a trust failure (the same log line confirms `Certificate
+matched`). `github.com` itself verifies fine; only the CDN hop fails. Attempts
+start at `Free=46968 MaxAlloc=32756` and the handshake drives the heap to
+`MinFree=1824 MaxAlloc=9716`, against an idle post-boot ceiling of
+`MaxAlloc=34804` — so this is a heap-size wall, not fragmentation, and no
+`MIN_MAX_ALLOC_FOR_TLS` floor can gate around it. Do not remove the exemption
+again without new evidence; X4's larger headroom may afford verification, but
+that needs a per-device policy and its own measurement.
+
+`CONFIG_ESP_TLS_INSECURE` / `CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY` are
+therefore load-bearing: with no CA attached, esp-tls falls back to
+`MBEDTLS_SSL_VERIFY_NONE` instead of failing setup. Fonts still CRC32-check and
+OTA still hash-checks the image, so the exemption costs authenticity, not
+integrity. `OtaUpdater` cannot take the same exemption —
+`esp_https_ota_begin()` rejects a config with no CA outright unless
+`CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP` is set, and it is not — so it keeps the bundle
+and OTA install is expected to hit the same `0x4290` on X3.
+Two constraints the same block created, documented at
 the top of `src/network/HttpDownloader.cpp`:
 `CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=n` makes `mbedtls_ssl_get_peer_cert()`
 return NULL, which Arduino's `verify_ssl_dn()` dereferences unchecked, so

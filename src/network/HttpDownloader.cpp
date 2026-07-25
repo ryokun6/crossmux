@@ -51,6 +51,38 @@ void reclaimWifiScanHeap() {
 //    no CA to verify against. Safe here only because a fresh esp_http_client is
 //    built per hop (see runGet) — this forecloses connection pooling.
 
+// X3 cannot afford CA verification on the GitHub release CDN. Do not "fix" this
+// by attaching the bundle unconditionally — that has now been tried and measured
+// twice, most recently *after* CONFIG_MBEDTLS_DYNAMIC_BUFFER and
+// KEEP_PEER_CERTIFICATE=n were in place, which was the theory for why it had
+// become affordable. It has not. Measured on X3 (gh_release_tc), font download:
+//
+//   hop=0 github.com                          verify OK, 302
+//   hop=1 release-assets.githubusercontent.com 6/6 attempts:
+//     esp-x509-crt-bundle: PK verify failed with error 0x4290
+//     esp-x509-crt-bundle: Certificate matched but signature verification failed
+//     esp-tls-mbedtls: mbedtls_ssl_handshake returned -0x3000
+//
+// "Certificate matched" means the bundle found the right root: this is not a
+// trust or CN failure. 0x4290 is MBEDTLS_ERR_RSA_PUBLIC_FAILED (-0x4280) +
+// MBEDTLS_ERR_MPI_ALLOC_FAILED (-0x0010) — the MPI temporaries for the RSA
+// verify cannot be allocated. Every hop=1 attempt began at Free=46968
+// MaxAlloc=32756, and the handshake itself drives the heap to Free=14584 /
+// MinFree=1824 / MaxAlloc=9716, which is where the verify has to run.
+//
+// Raising the MaxAlloc floor in FontDownloadActivity cannot help: a freshly
+// booted X3 idles at MaxAlloc=34804, so 32756 is already near this board's
+// ceiling and no floor short of an unreachable one would gate it. The heap is
+// not fragmented; it is simply too small.
+//
+// Fonts keep their CRC32 check and OTA keeps the image hash, so this costs
+// authenticity on GitHub paths only (see OtaUpdater.cpp for what that means for
+// firmware). X4 has more headroom and may be able to verify — that would need a
+// per-device policy and its own on-device measurement.
+bool shouldAttachCrtBundle(const std::string& url) {
+  return url.find("github.com") == std::string::npos && url.find("githubusercontent.com") == std::string::npos;
+}
+
 // Modem sleep turns multi‑MB GitHub GETs into ~100 B/s (font download looked
 // stuck at 0–1%). Match OTA: disable PS for the transfer, restore after.
 struct WifiPsBoost {
@@ -192,15 +224,17 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
       config.buffer_size = HTTP_RX_BUF;
       config.buffer_size_tx = txBuf;
       config.timeout_ms = openTimeoutMs;
-      // Every host gets CA verification, GitHub included. This used to be skipped
-      // for github.com / githubusercontent.com because the release CDN's RSA
-      // verify OOMed on X3 (0x4290 = MPI_ALLOC_FAILED), but that was under
-      // static 16K+16K record buffers with the peer DER retained; with
-      // CONFIG_MBEDTLS_DYNAMIC_BUFFER there is now room for the MPI temporaries.
-      // Attaching it unconditionally is what makes the CRC32 that fonts check —
-      // and the firmware image OTA installs — come from an authenticated source
-      // rather than whoever is on the network path. Plain http ignores this.
-      config.crt_bundle_attach = esp_crt_bundle_attach;
+      // Verified HTTPS via CA bundle for every host except the GitHub release
+      // hosts, which OOM inside RSA verify on X3 (see shouldAttachCrtBundle for
+      // the measurements). Plain http needs no cert config. Skipping needs
+      // CONFIG_ESP_TLS_INSECURE + CONFIG_ESP_TLS_SKIP_SERVER_CERT_VERIFY: with no
+      // CA configured esp-tls then falls back to MBEDTLS_SSL_VERIFY_NONE instead
+      // of failing setup.
+      if (shouldAttachCrtBundle(currentUrl)) {
+        config.crt_bundle_attach = esp_crt_bundle_attach;
+      } else {
+        LOG_INF("HTTP", "TLS without CA verify (GitHub/X3 heap)");
+      }
       config.keep_alive_enable = false;
       config.event_handler = captureLocationHeader;
       config.user_data = &headerCapture;

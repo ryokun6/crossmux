@@ -144,6 +144,18 @@ OtaUpdater::OtaUpdaterError OtaUpdater::installUpdate(ProgressCallback onProgres
   // unverified fetch means anyone on the network path can install arbitrary
   // firmware. Hence crt_bundle_attach, and no skip_cert_common_name_check.
   //
+  // Unlike HttpDownloader, this path cannot simply skip the bundle for GitHub
+  // hosts to dodge X3's RSA-verify OOM: esp_https_ota_begin() rejects a config
+  // with no cert_pem / use_global_ca_store / crt_bundle_attach outright
+  // (ESP_ERR_INVALID_ARG, esp_https_ota.c is_server_verification_enabled) unless
+  // CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP is set, and it is not. So on X3 expect the
+  // release-assets CDN hop to fail the same 0x4290 MPI_ALLOC_FAILED way font
+  // downloads measurably do (see shouldAttachCrtBundle in HttpDownloader.cpp);
+  // dropping the bundle would only move the failure earlier while also giving up
+  // authenticity. Making OTA install work on X3 needs either that Kconfig option
+  // plus an accepted security tradeoff, or a per-device policy that keeps
+  // verification on X4 where the heap headroom exists.
+  //
   // keep_alive_enable stays true only because esp_https_ota re-inits the SSL
   // transport per connect; a genuinely pooled connection would break under
   // CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT, which nulls conf->ca_chain after the
