@@ -269,6 +269,8 @@ void EpubReaderActivity::onEnter() {
 
   loadCachedBookmarks();
 
+  loadCachedBookmarks();
+
   // Trigger first update
   requestUpdate();
 }
@@ -430,10 +432,12 @@ void EpubReaderActivity::loop() {
         break;
       case CrossPointSettings::LP_MENU_KOSYNC:
         // Hold ~1s launches KOReader sync (or the credentials hint if not logged in).
+        // Only suppress menu open when sync acted.
         if (mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
-          launchKOReaderSync();
-          ignoreNextConfirmRelease = true;  // sync launched or error shown; suppress menu open
-          return;
+          if (launchKOReaderSync()) {
+            ignoreNextConfirmRelease = true;  // sync launched or error shown; suppress menu open
+            return;
+          }
         }
         break;
       case CrossPointSettings::LP_MENU_DISABLED:
@@ -757,7 +761,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
   }
 }
 
-void EpubReaderActivity::launchKOReaderSync() {
+bool EpubReaderActivity::launchKOReaderSync() {
   // No credentials: still open the sync activity so the user sees how to log in
   // (Settings > System). Skip Wi-Fi/TLS prep — onEnter short-circuits to NO_CREDENTIALS.
   if (!KOREADER_STORE.hasCredentials()) {
@@ -769,7 +773,7 @@ void EpubReaderActivity::launchKOReaderSync() {
     activityManager.replaceActivity(
         std::make_unique<KOReaderSyncActivity>(renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage,
                                                totalPages, SavedProgressPosition{}, std::string{}, std::nullopt));
-    return;
+    return true;  // acted: showed credentials hint
   }
 
   const int currentPage = section ? section->currentPage : nextPageNumber;
@@ -796,7 +800,7 @@ void EpubReaderActivity::launchKOReaderSync() {
     LOG_ERR("KOSync", "Aborting sync because current progress could not be saved");
     pendingSyncSaveError = true;
     requestUpdate();
-    return;  // acted: surfaced a save error to the user
+    return true;  // acted: surfaced a save error to the user
   }
 
   // Release Epub and Section to free ~65KB RAM for the TLS handshake.
@@ -814,6 +818,7 @@ void EpubReaderActivity::launchKOReaderSync() {
   activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
       renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, std::move(localKoPos),
       std::move(localChapterName), paragraphIndex));
+  return true;  // acted: launched the sync activity
 }
 
 void EpubReaderActivity::applyOrientation(const uint8_t orientation) {

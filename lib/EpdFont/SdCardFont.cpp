@@ -1768,6 +1768,7 @@ const EpdGlyph* SdCardFont::onGlyphMiss(void* ctx, uint32_t codepoint) {
   if (!self->loaded_ || styleIdx >= MAX_STYLES || !self->styles_[styleIdx].present) return nullptr;
   if (!self->ensureStyleIntervalsLoaded(styleIdx)) return nullptr;
   const auto& s = self->styles_[styleIdx];
+  if (!s.fullIntervals && !s.bmpIntervals) return nullptr;
 
   // Check overflow cache first (matching both codepoint and style)
   for (uint32_t i = 0; i < self->overflowCount_; i++) {

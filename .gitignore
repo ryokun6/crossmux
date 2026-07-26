@@ -34,3 +34,8 @@ lib/EpdFont/builtinFonts/source/
 /sdkconfig.*
 /CMakeLists.txt
 /dependencies.lock
+
+# Claude Code: share project skills with the team, keep local agent state
+# (worktrees, scheduled-task locks, settings.local, scout CLEANUP.md) out.
+.claude/*
+!.claude/skills/
