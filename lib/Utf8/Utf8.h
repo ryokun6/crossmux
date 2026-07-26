@@ -57,6 +57,27 @@ inline bool utf8IsHangul(const uint32_t cp) {
          || (cp >= 0xFFA0 && cp <= 0xFFDC);  // Halfwidth Hangul
 }
 
+// CSS Text §4.1 white-space collapsing for CJK source runs.
+// A whitespace run collapses to either one space or nothing:
+//   • If the run contains a segment break (\n/\r), apply the East Asian
+//     segment-break transform: remove between two no-space CJK neighbors
+//     (Han/Kana/etc.); Hangul or non-CJK on either side keeps a space.
+//     Indentation spaces/tabs around that break do NOT force a space — otherwise
+//     pretty-printed Chinese/Japanese HTML (`中\\n  文`) would sprout gaps.
+//   • If the run is only spaces/tabs (no segment break), always keep a space
+//     (Korean word spacing; intentional spaces in any CJK text).
+// leftCp==0 means no previous glyph (start of block); then only a real space
+// run yields a spaceBefore on the first word.
+inline bool utf8CjkWhitespaceBecomesSpace(const bool hadRealSpace, const bool hadSegmentBreak, const uint32_t leftCp,
+                                          const uint32_t rightCp) {
+  if (hadSegmentBreak && leftCp != 0) {
+    const bool leftNoSpaceCjk = utf8IsCjkBreakable(leftCp) && !utf8IsHangul(leftCp);
+    const bool rightNoSpaceCjk = utf8IsCjkBreakable(rightCp) && !utf8IsHangul(rightCp);
+    return !(leftNoSpaceCjk && rightNoSpaceCjk);
+  }
+  return hadRealSpace;
+}
+
 // Returns true for Unicode combining diacritical marks that should not advance the cursor.
 inline bool utf8IsCombiningMark(const uint32_t cp) {
   return (cp >= 0x0300 && cp <= 0x036F)      // Combining Diacritical Marks

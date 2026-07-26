@@ -59,7 +59,7 @@ rm -rf /path/to/sd/.crosspoint/epub_<hash>/sections/
 
 **Current Versions** (as of [../file-formats.md](../file-formats.md)):
 - `book.bin`: **Version 10** — stores NFC metadata plus the OPF spine's RTL page-progression flag.
-- `section.bin`: **per-flavor** — Latin **54**, TC **73**, SC **74**, JA **75**, KO **76** (`lib/Epub/Epub/Section.cpp`). The flavors emit different word streams (per-character CJK tokenization, 禁则, punctuation compression, source-space preservation), so each carries an independent counter; the numbers are kept distinct and above every previously-shipped value so a firmware flavor swap never reuses another flavor's cache.
+- `section.bin`: **per-flavor** — Latin **54**, TC **77**, SC **78**, JA **79**, KO **80** (`lib/Epub/Epub/Section.cpp`). The flavors emit different word streams (per-character CJK tokenization, 禁则, punctuation compression, source-space preservation), so each carries an independent counter; the numbers are kept distinct and above every previously-shipped value so a firmware flavor swap never reuses another flavor's cache.
 
 This is what makes switching language build over OTA safe without any explicit
 cache clearing (see [build-system.md](build-system.md)): the new firmware reads a

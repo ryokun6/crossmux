@@ -137,8 +137,12 @@ if (parsedSize != fileSize) {
 > content edge without overlapping the next glyph. Compression runs before
 > kinsoku repair; edge trims apply on the final run bounds. Gated by Reader
 > setting `punctCompressionEnabled` (default on). Korean and Latin SKUs ignore
-> compression. CJK **73/74/75/76** also preserve author source
-> spaces between CJK words (Korean word spacing / CSS Text segment-break heuristic). Helpers live in `lib/Epub/Epub/CjkPunctCompression.h`.
+> compression. CJK **77/78/79/80** preserve author source spaces between CJK
+> words (Korean word spacing / CSS Text segment-break heuristic): a spaces-only
+> run keeps a gap; a run that includes a segment break is removed between
+> no-space CJK neighbors (Hangul exempt), including when indent spaces surround
+> the break so pretty-printed Chinese/Japanese HTML stays tight. Helper:
+> `utf8CjkWhitespaceBecomesSpace()` in `lib/Utf8/Utf8.h`.
 >
 > CJK versions also enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at

@@ -274,16 +274,8 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
   {
     const auto* p = reinterpret_cast<const unsigned char*>(partWordBuffer);
     const uint32_t firstCp = utf8NextCodepoint(&p);
-    if (pendingRealSpace) {
-      spaceBefore = true;
-    } else if (pendingSegmentBreak && lastEmittedCp != 0) {
-      // CSS Text 3 §4.1.3 (UA-defined heuristic): a segment break between two
-      // no-space CJK characters is removed; any other context (Hangul or non-CJK
-      // on either side) becomes a space.
-      const bool leftNoSpaceCjk = utf8IsCjkBreakable(lastEmittedCp) && !utf8IsHangul(lastEmittedCp);
-      const bool rightNoSpaceCjk = utf8IsCjkBreakable(firstCp) && !utf8IsHangul(firstCp);
-      spaceBefore = !(leftNoSpaceCjk && rightNoSpaceCjk);
-    }
+    // Segment-break rules win over indent spaces in the same run (CSS Text §4.1).
+    spaceBefore = utf8CjkWhitespaceBecomesSpace(pendingRealSpace, pendingSegmentBreak, lastEmittedCp, firstCp);
     pendingRealSpace = false;
     pendingSegmentBreak = false;
     const auto* q = reinterpret_cast<const unsigned char*>(partWordBuffer);

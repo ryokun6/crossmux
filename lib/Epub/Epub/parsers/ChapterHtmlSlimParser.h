@@ -40,9 +40,10 @@ class ChapterHtmlSlimParser {
 #ifdef ENABLE_CJK_VERSION
   // Source-whitespace tracking. CJK tokens otherwise join with a zero gap, which
   // silently deletes the author's spaces (Korean is spaced; Chinese text may contain
-  // intentional spaces). A run with a real space/tab always yields a space; a run of
-  // only segment breaks (\r \n) is removed between two no-space CJK characters per
-  // CSS Text 4.1.2 segment-break transformation (Hangul is exempt and keeps a space).
+  // intentional spaces). Decision helper: utf8CjkWhitespaceBecomesSpace() — a run
+  // that contains a segment break (\r/\n) follows CSS Text §4.1 East Asian rules
+  // (removed between no-space CJK; Hangul exempt), even if indent spaces/tabs are
+  // also present; a spaces/tabs-only run always keeps a space.
   bool pendingRealSpace = false;     // whitespace run contained ' ' or '\t'
   bool pendingSegmentBreak = false;  // whitespace run contained '\r' or '\n'
   uint32_t lastEmittedCp = 0;        // last codepoint of the previously flushed word

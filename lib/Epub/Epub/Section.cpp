@@ -24,14 +24,14 @@ namespace {
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
 #ifdef CHINESE_UI_SIMPLIFIED
-constexpr uint8_t SECTION_FILE_VERSION = 74;  // SC: source-space preservation (CJK segment-break rule)
+constexpr uint8_t SECTION_FILE_VERSION = 78;  // SC: CSS segment-break wins over indent spaces
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 73;  // TC: source-space preservation (CJK segment-break rule)
+constexpr uint8_t SECTION_FILE_VERSION = 77;  // TC: CSS segment-break wins over indent spaces
 #endif
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 75;  // JA: source-space preservation (CJK segment-break rule)
+constexpr uint8_t SECTION_FILE_VERSION = 79;  // JA: CSS segment-break wins over indent spaces
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 76;  // KO: source-space preservation (word spacing)
+constexpr uint8_t SECTION_FILE_VERSION = 80;  // KO: source-space + segment-break priority fix
 #else
 constexpr uint8_t SECTION_FILE_VERSION = 54;  // isolated upright 1-char Latin/digit → fullwidth
 #endif
