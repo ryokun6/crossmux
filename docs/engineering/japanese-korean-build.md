@@ -128,9 +128,10 @@ Use **separate build directories** per SKU — `gen_i18n.py` writes shared
 ## Known limitations
 
 - No bold/italic CJK bitmaps (single Regular weight), same as Chinese.
-- JA 16/18pt and KO 8/10/12/16/18pt are i18n-only by design — use MEDIUM (14pt)
-  for full JIS Lv1+Lv2 (JA) or full modern Hangul + Hanja 1800 (KO) EPUB
-  coverage. JA 8/10/12pt still cover Joyo for UI and lighter reading.
+- JA 16/18pt and KO 16/18pt are i18n-only by design — use MEDIUM (14pt) for full
+  JIS Lv1+Lv2 (JA) or full modern Hangul + Hanja 1800 (KO) EPUB coverage.
+  JA 8/10/12pt cover Joyo; KO 8/10/12pt cover KS X 1001 (2 350 common syllables)
+  so list titles render without blank glyphs.
 - JA/KO do **not** convert Chinese characters (no `ScToTcRemap` /
   `TcToScRemap`); mixed SC/TC EPUB text may show □ for the unmapped form if
   that codepoint was not in the Japanese/Korean subset.
