@@ -3,6 +3,8 @@
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Logging.h>
+#include <Memory.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
 
@@ -18,6 +20,10 @@ constexpr const char* HOSTNAME = "crosspoint";
 
 void CalibreConnectActivity::onEnter() {
   Activity::onEnter();
+
+  // A resident SD reader font pins ~75KB; with one loaded MaxAlloc~2KB starves
+  // Wi‑Fi/lwIP while serving. Drop before STA/server — CrossPointWebServerActivity.cpp:75.
+  fontUnload_.emplace(renderer);
 
   requestUpdate();
   state = CalibreConnectState::WIFI_SELECTION;
@@ -59,6 +65,10 @@ void CalibreConnectActivity::onExit() {
     delay(30);
     silentRestart();
   }
+
+  // Reached only when silentRestart() did not run (backed out before Wi‑Fi).
+  // CrossPointWebServerActivity.cpp:159.
+  fontUnload_.reset();
 }
 
 void CalibreConnectActivity::onWifiSelectionComplete(const bool connected) {
@@ -80,7 +90,15 @@ void CalibreConnectActivity::startWebServer() {
     LOG_DBG("CAL", "mDNS started: http://%s.local/", HOSTNAME);
   }
 
-  webServer.reset(new CrossPointWebServer());
+  // makeUniqueNoThrow: bare new aborts on OOM under -fno-exceptions
+  // (CrossPointWebServerActivity.cpp:312).
+  webServer = makeUniqueNoThrow<CrossPointWebServer>();
+  if (!webServer) {
+    LOG_ERR("CAL", "OOM allocating web server");
+    state = CalibreConnectState::ERROR;
+    requestUpdate();
+    return;
+  }
   webServer->begin();
 
   if (webServer->isRunning()) {

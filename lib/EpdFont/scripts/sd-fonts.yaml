@@ -11,6 +11,10 @@
 #   intervals:   Comma-separated Unicode interval presets for fontconvert_sdcard.py
 #   sizes:       Point sizes to generate
 #   force_autohint: (optional) Force FreeType auto-hinter instead of native hinting
+#   external:    (optional) If true, listed for fonts.json descriptions only;
+#                build-sd-fonts.py skips the family. Built by a separate script
+#                (e.g. build-ebgaramond-cjk-sd.sh) and staged into the same
+#                output tree before the font release publishes.
 #   styles:      Map of style name -> font source
 #                  path: relative to lib/EpdFont (for committed fonts)
 #                  url:  download URL (for fonts not in the repo)
@@ -250,4 +254,25 @@ families:
       bold:       {url: "https://raw.githubusercontent.com/jacobxperez/lexica-ultralegible/main/fonts/ttf/LexicaUltralegible-Bold.ttf"}
       italic:     {url: "https://raw.githubusercontent.com/jacobxperez/lexica-ultralegible/main/fonts/ttf/LexicaUltralegible-Italic.ttf"}
       bolditalic: {url: "https://raw.githubusercontent.com/jacobxperez/lexica-ultralegible/main/fonts/ttf/LexicaUltralegible-BoldItalic.ttf"}
+
+  # ── CJK composite (built by build-ebgaramond-cjk-sd.sh) ────────────────
+  # EB Garamond Latin + regional Source Han Serif. Sources are vendored under
+  # source_fonts/; release-fonts.yml runs the locale builder after the YAML
+  # families. Keep `external: true` so build-sd-fonts.py does not attempt them.
+
+  - name: EBGaramondSHS-TC
+    description: "EB Garamond + Source Han Serif (Traditional Chinese)"
+    external: true
+
+  - name: EBGaramondSHS-SC
+    description: "EB Garamond + Source Han Serif (Simplified Chinese)"
+    external: true
+
+  - name: EBGaramondSHS-JA
+    description: "EB Garamond + Source Han Serif (Japanese)"
+    external: true
+
+  - name: EBGaramondSHS-KO
+    description: "EB Garamond + Source Han Serif (Korean)"
+    external: true
 

@@ -34,6 +34,35 @@ typedef enum {
   HTTP_METHOD_HEAD,
 } esp_http_client_method_t;
 
+// Subset of esp_http_client_event_id_t used by HttpDownloader (Location capture
+// + header-heap cushion release). Native libcurl follows redirects itself, so
+// the handler is stored but not invoked; the types exist so device code compiles.
+typedef enum {
+  HTTP_EVENT_ERROR = 0,
+  HTTP_EVENT_ON_CONNECTED,
+  HTTP_EVENT_HEADERS_SENT,
+  HTTP_EVENT_HEADER_SENT,
+  HTTP_EVENT_ON_HEADER,
+  HTTP_EVENT_ON_DATA,
+  HTTP_EVENT_ON_FINISH,
+  HTTP_EVENT_DISCONNECTED,
+} esp_http_client_event_id_t;
+
+struct esp_http_client_t;
+typedef struct esp_http_client_t* esp_http_client_handle_t;
+
+typedef struct {
+  esp_http_client_event_id_t event_id;
+  esp_http_client_handle_t client;
+  void* data;
+  int data_len;
+  void* user_data;
+  char* header_key;
+  char* header_value;
+} esp_http_client_event_t;
+
+typedef esp_err_t (*http_event_handle_cb)(esp_http_client_event_t* evt);
+
 typedef int (*esp_crt_bundle_attach_fn_t)(void* conf);
 
 typedef struct esp_http_client_config_t {
@@ -44,6 +73,8 @@ typedef struct esp_http_client_config_t {
   esp_crt_bundle_attach_fn_t crt_bundle_attach;
   bool keep_alive_enable;
   esp_http_client_method_t method;
+  http_event_handle_cb event_handler;
+  void* user_data;
 } esp_http_client_config_t;
 
 struct esp_http_client_t {
@@ -51,6 +82,8 @@ struct esp_http_client_t {
   esp_http_client_method_t method = HTTP_METHOD_GET;
   int timeout_ms = 0;
   bool follow_redirects = true;  // libcurl owns redirects in native; WASM stub never reaches them.
+  http_event_handle_cb event_handler = nullptr;
+  void* user_data = nullptr;
 
   // Outgoing headers, accumulated through esp_http_client_set_header(). Native
   // serializes them into a curl_slist at perform time; WASM never reads them.
@@ -72,14 +105,14 @@ struct esp_http_client_t {
 #endif
 };
 
-typedef struct esp_http_client_t* esp_http_client_handle_t;
-
 inline esp_http_client_handle_t esp_http_client_init(const esp_http_client_config_t* config) {
   if (!config || !config->url) return nullptr;
   auto* h = new esp_http_client_t();
   h->url = config->url;
   h->method = config->method;
   h->timeout_ms = config->timeout_ms;
+  h->event_handler = config->event_handler;
+  h->user_data = config->user_data;
 #ifndef __EMSCRIPTEN__
   h->curl = curl_easy_init();
   if (!h->curl) {
@@ -102,6 +135,12 @@ inline esp_err_t esp_http_client_cleanup(esp_http_client_handle_t client) {
 inline esp_err_t esp_http_client_set_method(esp_http_client_handle_t client, esp_http_client_method_t method) {
   if (!client) return ESP_FAIL;
   client->method = method;
+  return ESP_OK;
+}
+
+inline esp_err_t esp_http_client_set_timeout_ms(esp_http_client_handle_t client, int timeout_ms) {
+  if (!client) return ESP_FAIL;
+  client->timeout_ms = timeout_ms;
   return ESP_OK;
 }
 

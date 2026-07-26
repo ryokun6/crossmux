@@ -12,6 +12,8 @@ class TxtReaderActivity final : public Activity {
 
   int currentPage = 0;
   int totalPages = 1;
+  // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
+  // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
   int pagesUntilFullRefresh = 0;
 
   // Streaming text reader - stores file offsets for each page

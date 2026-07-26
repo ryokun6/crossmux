@@ -226,6 +226,11 @@ Result validateImageFile(const char* sdPath, size_t partitionSize) {
   return Result::OK;
 }
 
+size_t nextSlotSize() {
+  const esp_partition_t* dest = esp_ota_get_next_update_partition(nullptr);
+  return dest != nullptr ? dest->size : 0;
+}
+
 Result flashFromSdPath(const char* sdPath, ProgressCb onProgress, void* ctx, bool alreadyValidated) {
   // Resolve destination first so we can size-check during validation. The full image-integrity
   // pass below verifies header, segment table, XOR checksum and SHA256 trailer end-to-end before

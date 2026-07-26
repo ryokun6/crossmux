@@ -550,6 +550,12 @@ bool ReadingStatsStore::removeIgnoredBooks() {
 void ReadingStatsStore::invalidateSummaryCache() { summaryCache.valid = false; }
 
 void ReadingStatsStore::markDirty() {
+  if (loadFailed) {
+    // The file on disk holds data this store never managed to read. Staying clean means
+    // saveToFile() takes its early-out instead of persisting an empty store over it.
+    invalidateSummaryCache();
+    return;
+  }
   dirty = true;
   invalidateSummaryCache();
 }
@@ -565,6 +571,27 @@ bool ReadingStatsStore::shouldSaveDeferred() const {
 }
 
 bool ReadingStatsStore::persistToFile(const char* path) const {
+  if (loadFailed) {
+    LOG_ERR("RST", "Refusing to write %s: the existing file failed to load", path);
+    return false;
+  }
+  // saveReadingStats builds a full JsonDocument of every book/day in heap. Under
+  // reader pressure (TC SD font + page scratch) MaxAlloc can fall to ~12–16KB; a
+  // throwing string/JSON alloc then abort()s (-fno-exceptions). Keep dirty and
+  // retry later when heap recovers (e.g. after leaving the reader).
+  constexpr uint32_t kMinFreeHeapForSave = 40 * 1024;
+  constexpr uint32_t kMinMaxAllocForSave = 20 * 1024;
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  if (freeHeap < kMinFreeHeapForSave || maxAlloc < kMinMaxAllocForSave) {
+    LOG_ERR("RST", "Defer reading-stats save: Free=%u (need %u) MaxAlloc=%u (need %u)", static_cast<unsigned>(freeHeap),
+            static_cast<unsigned>(kMinFreeHeapForSave), static_cast<unsigned>(maxAlloc),
+            static_cast<unsigned>(kMinMaxAllocForSave));
+    // Keep dirty; advance lastSaveMs so we retry on the next deferred interval
+    // instead of on every page turn while MaxAlloc stays low.
+    lastSaveMs = millis();
+    return false;
+  }
   Storage.mkdir("/.crosspoint");
   const bool saved = JsonSettingsIO::saveReadingStats(*this, path);
   if (saved) {
@@ -1029,6 +1056,9 @@ void ReadingStatsStore::reset() {
   sessionLog.clear();
   activeSession = {};
   lastSessionSnapshot = {};
+  // An explicit wipe is the one case where writing an empty store over an unreadable file is
+  // what the user asked for, so it clears the load-failure latch.
+  loadFailed = false;
   markDirty();
   saveToFile();
 }
@@ -1050,6 +1080,9 @@ bool ReadingStatsStore::importFromFile(const std::string& path) {
     return false;
   }
 
+  // The imported file now defines the store, so it supersedes any earlier failure to read
+  // reading_stats.json and may be persisted over it.
+  loadFailed = false;
   normalizeReadingDays(readingDays);
   normalizeBooks();
   activeSession = {};
@@ -1093,33 +1126,44 @@ bool ReadingStatsStore::loadFromFile() {
   }
 
   const bool loaded = JsonSettingsIO::loadReadingStatsFromFile(*this, READING_STATS_FILE_JSON);
-  if (loaded) {
-    const bool needsSave = dirty;
-    normalizeReadingDays(readingDays);
-    normalizeBooks();
-    removeIgnoredBooks();
-    rebuildAggregatedReadingDays();
-    const uint32_t latestKnownTimestamp = getLatestKnownTimestamp();
-    if (!isClockValid(APP_STATE.lastKnownValidTimestamp) && isClockValid(latestKnownTimestamp)) {
-      APP_STATE.lastKnownValidTimestamp = latestKnownTimestamp;
-    }
-    activeSession = {};
-    lastSessionSnapshot = {};
-    sessionSerialCounter = 0;
-    if (sessionLog.size() > MAX_SESSION_LOG_ENTRIES) {
-      sessionLog.erase(sessionLog.begin(),
-                       sessionLog.begin() + static_cast<std::ptrdiff_t>(sessionLog.size() - MAX_SESSION_LOG_ENTRIES));
-    }
-    invalidateSummaryCache();
-    if (needsSave) {
-      markDirty();
-      saveToFile();
-    } else {
-      dirty = false;
-      lastSaveMs = millis();
-    }
+  if (!loaded) {
+    // The file exists but could not be read into this store, so this store is empty while the
+    // user's history is still on the SD card. Latch that: reading this session must not lead to
+    // a save that replaces the file with nothing. The file stays untouched for recovery, and
+    // resetting or importing stats is the way out.
+    LOG_ERR("RST", "Could not load %s; refusing to overwrite it (reset or import stats to recover)",
+            READING_STATS_FILE_JSON);
+    loadFailed = true;
+    dirty = false;
+    return false;
   }
-  return loaded;
+
+  const bool needsSave = dirty;
+  loadFailed = false;
+  normalizeReadingDays(readingDays);
+  normalizeBooks();
+  removeIgnoredBooks();
+  rebuildAggregatedReadingDays();
+  const uint32_t latestKnownTimestamp = getLatestKnownTimestamp();
+  if (!isClockValid(APP_STATE.lastKnownValidTimestamp) && isClockValid(latestKnownTimestamp)) {
+    APP_STATE.lastKnownValidTimestamp = latestKnownTimestamp;
+  }
+  activeSession = {};
+  lastSessionSnapshot = {};
+  sessionSerialCounter = 0;
+  if (sessionLog.size() > MAX_SESSION_LOG_ENTRIES) {
+    sessionLog.erase(sessionLog.begin(),
+                     sessionLog.begin() + static_cast<std::ptrdiff_t>(sessionLog.size() - MAX_SESSION_LOG_ENTRIES));
+  }
+  invalidateSummaryCache();
+  if (needsSave) {
+    markDirty();
+    saveToFile();
+  } else {
+    dirty = false;
+    lastSaveMs = millis();
+  }
+  return true;
 }
 
 bool ReadingStatsStore::releaseMemoryForNetwork() {

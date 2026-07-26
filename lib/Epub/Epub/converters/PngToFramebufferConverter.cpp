@@ -43,13 +43,18 @@ struct PngContext {
 // File I/O callbacks use pFile->fHandle to access the HalFile*,
 // avoiding the need for global file state.
 void* pngOpenWithHandle(const char* filename, int32_t* size) {
-  HalFile* f = new HalFile();
+  // Held by unique_ptr until it is handed to PNGdec, so the failure paths below cannot leak.
+  // Ownership then transfers to PNGdec, which returns it to pngCloseWithHandle() for deletion.
+  auto f = makeUniqueNoThrow<HalFile>();
+  if (!f) {
+    LOG_ERR("PNG", "OOM allocating file handle for %s", filename);
+    return nullptr;
+  }
   if (!Storage.openFileForRead("PNG", std::string(filename), *f)) {
-    delete f;
     return nullptr;
   }
   *size = f->size();
-  return f;
+  return f.release();
 }
 
 void pngCloseWithHandle(void* handle) {

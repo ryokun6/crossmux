@@ -1,5 +1,7 @@
 #pragma once
 
+#include <WordListView.h>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -45,14 +47,23 @@ class SdCardFont {
   // Default 0x0F = all present styles.
   // When metadataOnly=true, only glyph metrics are loaded (no bitmap data).
   // Returns number of glyphs that couldn't be loaded (0 on full success).
-  int prewarm(const char* utf8Text, uint8_t styleMask = 0x0F, bool metadataOnly = false);
+  // addRegularFallback pulls regular in alongside any styled face, so codepoints
+  // the styled face lacks (Latin-only italic on the CJK composites) still have
+  // their regular fallback bitmaps resident. Pass false when regular is prewarmed
+  // separately from the full page text: the call then leaves regular alone
+  // entirely, instead of rebuilding it from just the styled runs and dropping the
+  // rest of the page. Callers passing false must also group requested styles by
+  // resolved face (see EpdFontFamily::resolveStyle) — two calls that resolve to
+  // the same face make the second one discard the first one's glyphs.
+  int prewarm(const char* utf8Text, uint8_t styleMask = 0x0F, bool metadataOnly = false,
+              bool addRegularFallback = true);
 
   // Build a compact advance-only table for layout measurement.
   // Extracts ALL unique codepoints from words (no MAX_PAGE_GLYPHS cap),
   // batch-reads advanceX from SD, stores in a sorted per-style table.
   // Returns number of codepoints not found in font coverage.
   int buildAdvanceTable(const char* utf8Text, uint8_t styleMask = 0x0F);
-  int buildAdvanceTable(const std::vector<std::string>& words, bool includeHyphen, uint8_t styleMask = 0x0F);
+  int buildAdvanceTable(const WordListView& words, bool includeHyphen, uint8_t styleMask = 0x0F);
 
   // Look up advanceX for a codepoint from the advance table.
   // Returns the 12.4 fixed-point advance, or 0 if not found.
@@ -86,6 +97,15 @@ class SdCardFont {
   // Drop the persistent advance cache. Call when unloading the SD font or
   // when font/size/family/glyph-table state changes.
   void clearPersistentCache();
+
+  // Ensure styleIdx intervals are resident (no-op if already loaded). Required
+  // before findGlobalGlyphIndex / prewarm / advance fetch for that style.
+  bool ensureStyleIntervalsLoaded(uint8_t styleIdx);
+
+  // Drop intervals + kern/lig for styles other than REGULAR. Regular stays hot
+  // for CJK indexing; styled faces reload via ensureStyleIntervalsLoaded.
+  // Typical reclaim on TC: ~38 KB (bold + bolditalic BMP16).
+  void unloadNonRegularStyles();
 
   // Returns pointer to the managed EpdFont for a given style.
   // Returns nullptr if the style is not present.
@@ -269,9 +289,12 @@ class SdCardFont {
 
   // Per-style helpers
   void freeStyleMiniData(PerStyle& s);
+  void freeStyleIntervals(PerStyle& s);
   void freeStyleAll(PerStyle& s);
   void freeStyleKernLigatureData(PerStyle& s);
   void freeStyleMiniKern(PerStyle& s);
+  bool styleIntervalsLoaded(const PerStyle& s) const;
+  bool loadStyleIntervalsFromFile(PerStyle& s, HalFile* alreadyOpen = nullptr);
   bool loadStyleKernLigatureData(PerStyle& s);
   bool buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, uint32_t cpCount);
   void applyKernLigaturePointers(PerStyle& s, EpdFontData& data) const;

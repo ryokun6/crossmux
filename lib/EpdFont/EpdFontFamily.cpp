@@ -24,6 +24,17 @@ void EpdFontFamily::getTextDimensions(const char* string, int* w, int* h, const 
 
 const EpdFontData* EpdFontFamily::getData(const Style style) const { return getFont(style)->data; }
 
+EpdFontFamily::Style EpdFontFamily::resolveStyle(const Style style) const {
+  const EpdFont* font = getFont(style);
+  // Compare against the members rather than re-deriving getFont()'s fallback
+  // chain, so this can never drift from it. Lowest matching index wins.
+  if (font == regular) return REGULAR;
+  if (font == bold) return BOLD;
+  if (font == italic) return ITALIC;
+  if (font == boldItalic) return BOLD_ITALIC;
+  return REGULAR;
+}
+
 const EpdGlyph* EpdFontFamily::getGlyphNoReplacement(const uint32_t cp, const Style style,
                                                      const EpdFontData** outData) const {
   const EpdFont* font = getFont(style);

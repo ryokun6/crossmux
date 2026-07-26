@@ -4,11 +4,13 @@
 #include <ESPmDNS.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Memory.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
 
 #include <algorithm>
 #include <cstddef>
+#include <new>
 
 #include "MappedInputManager.h"
 #include "NetworkModeSelectionActivity.h"
@@ -64,7 +66,18 @@ int barsForRssi(int rssi, int currentBars) {
 void CrossPointWebServerActivity::onEnter() {
   Activity::onEnter();
 
-  LOG_DBG("WEBACT", "Free heap at onEnter: %d bytes", ESP.getFreeHeap());
+  // A resident SD reader font pins ~75KB of the 224KB heap. Serving with one
+  // loaded leaves the Wi‑Fi driver and lwIP so little that an X3 idles at
+  // MaxAlloc~2KB — under lwIP's ~5.7KB TCP send buffer — so responses crawl.
+  // OTA and font download drop it for the same reason (OtaUpdateActivity.cpp:36,
+  // FontDownloadActivity.cpp:84). Nothing on this screen draws reader body
+  // text; the QR/status UI uses the builtin UI fonts.
+  fontUnload_.emplace(renderer);
+
+  // LOG_INF, not LOG_DBG: release builds ship LOG_LEVEL=1, and this is the
+  // number that says whether the heap is healthy enough to serve.
+  LOG_INF("WEBACT", "onEnter Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
 
   // Reset state
   state = WebServerActivityState::MODE_SELECTION;
@@ -138,6 +151,12 @@ void CrossPointWebServerActivity::onExit() {
     delay(30);
     silentRestart();
   }
+
+  // Only reached when Wi‑Fi never came up (user backed out of mode selection),
+  // so the silentRestart() above did not run and nothing else will reload the
+  // reader font that onEnter() dropped. Explicit here so the onEnter emplace has
+  // a visible counterpart; the member destructor would be a no-op after this.
+  fontUnload_.reset();
 
   LOG_DBG("WEBACT", "Free heap at onExit end: %d bytes", ESP.getFreeHeap());
 }
@@ -268,10 +287,17 @@ void CrossPointWebServerActivity::startAccessPoint() {
   // Start DNS server for captive portal behavior
   // This redirects all DNS queries to our IP, making any domain typed resolve to us
   stopDnsServer();
-  dnsServer = new DNSServer();
-  dnsServer->setErrorReplyCode(DNSReplyCode::NoError);
-  dnsServer->start(DNS_PORT, "*", apIP);
-  LOG_DBG("WEBACT", "DNS server started for captive portal");
+  // Raw pointer because stopDnsServer() owns the teardown (stop() then delete).
+  dnsServer = new (std::nothrow) DNSServer();
+  if (!dnsServer) {
+    // The captive portal is a convenience; the AP and web server still work without it, so
+    // users just have to type the IP instead of any hostname.
+    LOG_ERR("WEBACT", "OOM allocating DNS server; continuing without the captive portal");
+  } else {
+    dnsServer->setErrorReplyCode(DNSReplyCode::NoError);
+    dnsServer->start(DNS_PORT, "*", apIP);
+    LOG_DBG("WEBACT", "DNS server started for captive portal");
+  }
 
   LOG_DBG("WEBACT", "Free heap after AP start: %d bytes", ESP.getFreeHeap());
 
@@ -283,7 +309,12 @@ void CrossPointWebServerActivity::startWebServer() {
   LOG_DBG("WEBACT", "Starting web server...");
 
   // Create the web server instance
-  webServer.reset(new CrossPointWebServer());
+  webServer = makeUniqueNoThrow<CrossPointWebServer>();
+  if (!webServer) {
+    LOG_ERR("WEBACT", "OOM allocating web server");
+    onGoHome();
+    return;
+  }
   webServer->begin();
 
   if (webServer->isRunning()) {

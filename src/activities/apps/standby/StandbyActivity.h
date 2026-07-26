@@ -2,8 +2,10 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "../../Activity.h"
+#include "ScopedSdFontUnload.h"
 #include "StandbyFace.h"
 
 struct ActivityResult;
@@ -47,6 +49,14 @@ class StandbyActivity final : public Activity {
   DisplayMode mode_ = DisplayMode::Normal;
   uint32_t lastInputMs_ = 0;
   bool inverseMode_ = false;  // Confirm toggles black-bg/white-content. Not persisted.
+
+  // Standby brings up Wi‑Fi itself (NTP) and hosts the AirPage face, which does a
+  // TLS fetch and keeps an MQTT session open (AirPageFace.cpp:316). Faces get no
+  // GfxRenderer outside render(), so the unload is owned here for the whole
+  // screen; no face draws reader body text. Released when Standby exits, which is
+  // always user-initiated (preventAutoSleep is true), so the reload never lands
+  // in a sleep transition.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void switchFace(int8_t delta);
   void startTimeSync();

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 #include "../../Activity.h"
@@ -11,6 +13,10 @@ struct ReadingStatsDetailContext {
 };
 
 class ReadingStatsDetailActivity final : public Activity {
+  // Match GfxRenderer::BW_BUFFER_CHUNK_SIZE — never one contiguous 48KB malloc.
+  static constexpr size_t kBaseScreenChunkSize = 8000;
+  static constexpr size_t kBaseScreenMaxChunks = 8;  // 8 * 8KB >= 48KB framebuffer
+
   ButtonNavigator buttonNavigator;
   std::string bookPath;
   std::string resolvedCoverBmpPath;
@@ -20,7 +26,9 @@ class ReadingStatsDetailActivity final : public Activity {
   bool waitForConfirmRelease = false;
   bool waitForBackRelease = false;
   bool baseScreenBufferStored = false;
-  uint8_t* baseScreenBuffer = nullptr;
+  std::array<std::unique_ptr<uint8_t[]>, kBaseScreenMaxChunks> baseScreenChunks{};
+  size_t baseScreenChunkCount = 0;
+  size_t baseScreenStoredSize = 0;
   std::string baseScreenBookPath;
   std::string baseScreenCoverPath;
   int baseScreenScrollOffset = -1;

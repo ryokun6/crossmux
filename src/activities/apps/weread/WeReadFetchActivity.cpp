@@ -15,6 +15,16 @@ WeReadFetchActivity::WeReadFetchActivity(std::string name, GfxRenderer& renderer
 
 void WeReadFetchActivity::onEnter() {
   Activity::onEnter();
+
+  // Every WeRead screen talks TLS through WeReadClient, and a resident SD
+  // reader font pins ~75KB of the ~224KB heap — the same starvation that left
+  // the web server unable to allocate a socket (hardware-constraints.md rule
+  // 10). Unconditional, including the cache hit below: refresh, opening a book
+  // and bulk sync all reach the network from here, and reloading the font
+  // mid-screen would cost more than holding it unloaded. These lists render
+  // with UI fonts only, so the unload is invisible.
+  fontUnload_.emplace(renderer);
+
   wifiOk_ = (WiFi.status() == WL_CONNECTED);
   keyOk_ = WeReadKeyStore::has();
   selected = 0;
@@ -38,14 +48,31 @@ void WeReadFetchActivity::onEnter() {
 }
 
 void WeReadFetchActivity::onExit() {
-  // Drop our shared_ptr. The task (if still running) owns the other copy and
-  // will write its result into a Context that no one reads, then drop its own
-  // shared_ptr — at which point Context is freed naturally.
+  stopFetchTask();
   ctx_.reset();
-  // taskHandle_ becomes stale after vTaskDelete(NULL) inside the task; nothing
-  // for us to do here.
-  taskHandle_ = nullptr;
+  fontUnload_.reset();
   Activity::onExit();
+}
+
+void WeReadFetchActivity::stopFetchTask() {
+  if (!ctx_ || !ctx_->running.load()) {
+    taskHandle_ = nullptr;
+    return;
+  }
+  ctx_->cancel.store(true);
+  // Worker checks cancel around the HTTP POST; wait for clean exit so we
+  // don't vTaskDelete mid-TLS / JsonDocument work (matches FontDownload).
+  for (int i = 0; i < 40 && ctx_->running.load(); ++i) {
+    delay(100);
+  }
+  if (ctx_->running.load() && taskHandle_ != nullptr) {
+    LOG_ERR("WEREAD", "fetch task still running on exit — forcing delete");
+    vTaskDelete(taskHandle_);
+    taskHandle_ = nullptr;
+    ctx_->running.store(false);
+  } else {
+    taskHandle_ = nullptr;
+  }
 }
 
 WeReadFetchActivity::State WeReadFetchActivity::currentState() const {
@@ -66,16 +93,25 @@ void WeReadFetchActivity::requestRefresh() {
   // Manual refresh: force a network round-trip even if we have cached data.
   // The dedicated "重新同步本书" / "全量同步" entry points are the user-
   // visible refresh affordances; this stays as the error-state retry path.
-  ctx_.reset();
   offlineReady_ = false;
   lastErr_ = WeReadClient::Err::Ok;
   wifiOk_ = (WiFi.status() == WL_CONNECTED);
   keyOk_ = WeReadKeyStore::has();
-  if (!preflightFailed()) spawnFetch();
+  if (preflightFailed()) {
+    // Same teardown spawnFetch() would do first — otherwise a retry while
+    // offline leaves the previous Context and any in-flight HTTP worker live.
+    stopFetchTask();
+    ctx_.reset();
+  } else {
+    spawnFetch();
+  }
   requestUpdate();
 }
 
 void WeReadFetchActivity::spawnFetch() {
+  stopFetchTask();
+  ctx_.reset();
+
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());
   if (!ctx) {
     LOG_ERR("WEREAD", "spawnFetch: Context OOM");
@@ -114,11 +150,13 @@ void WeReadFetchActivity::spawnFetch() {
     return;
   }
 
+  ctx->running.store(true);
   // 4 KB stack is enough for TLS + ArduinoJson parse on this codebase
   // (matches the pattern at KeyboardEntryActivity.cpp:45-50).
   BaseType_t rc = xTaskCreate(&fetchTrampoline, "WeReadFetch", 4096, taskArg, 1, &taskHandle_);
   if (rc != pdPASS) {
     LOG_ERR("WEREAD", "spawnFetch: xTaskCreate failed (%d)", static_cast<int>(rc));
+    ctx->running.store(false);
     delete taskArg;
     return;
   }
@@ -131,17 +169,22 @@ void WeReadFetchActivity::fetchTrampoline(void* arg) {
   std::shared_ptr<Context> ctx = *wrapper;
   delete wrapper;
 
-  WeReadClient::Err err = WeReadClient::post(ctx->apiName.c_str(), *ctx->request, *ctx->response,
-                                             /*httpTimeoutMs=*/10000, ctx->filter.get());
-  // Filter is only needed during deserialize — free it before exposing the
-  // response to the main thread to release a few KB sooner.
-  ctx->filter.reset();
-  ctx->err = static_cast<int>(err);
-  ctx->state.store(err == WeReadClient::Err::Ok ? static_cast<int>(State::Ready) : static_cast<int>(State::Error));
+  if (!ctx->cancel.load()) {
+    WeReadClient::Err err = WeReadClient::post(ctx->apiName.c_str(), *ctx->request, *ctx->response,
+                                               /*httpTimeoutMs=*/10000, ctx->filter.get());
+    // Filter is only needed during deserialize — free it before exposing the
+    // response to the main thread to release a few KB sooner.
+    ctx->filter.reset();
+    if (!ctx->cancel.load()) {
+      ctx->err = static_cast<int>(err);
+      ctx->state.store(err == WeReadClient::Err::Ok ? static_cast<int>(State::Ready) : static_cast<int>(State::Error));
+    }
+  }
   // CRITICAL: vTaskDelete(nullptr) never returns, so local destructors do
   // NOT run on stack unwind. Without an explicit reset the local shared_ptr
   // leaks the Context (and its JsonDocument response — tens of KB) forever.
   // Cache flows that fire fetch-tasks back-to-back accumulate the leak fast.
+  ctx->running.store(false);
   ctx.reset();
   vTaskDelete(nullptr);
 }

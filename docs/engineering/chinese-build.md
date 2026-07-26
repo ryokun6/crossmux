@@ -32,10 +32,10 @@ gates every Chinese-only resource:
 |---|---|
 | Code + non-font data | ~3.0 MB |
 | 3 CJK font headers 8/10/12pt | ~1.1 MB |
-| 1 CJK font header 14pt | ~1.43 MB |
+| 1 CJK font header 14pt | ~1.62 MB |
 | 2 CJK font headers 16/18pt | ~400 KB |
 | i18n strings (EN + one Chinese) | ~16 KB |
-| **Total** | **~6.05 MB / 6.25 MB (~92.3%)**, ~500 KB headroom |
+| **Total** | **~6.24 MB / 6.25 MB (~95.3%)**, ~300 KB headroom |
 
 A/B OTA rollback works exactly like the Latin build — the firmware fits in
 both app slots, and a failed update can auto-revert.
@@ -59,14 +59,20 @@ both app slots, and a failed update can auto-revert.
 The CN build keeps two size strategies stacked together to land in that
 budget:
 
-1. **`-flto=auto`** in `[env:gh_release_tc]` / `[env:gh_release_sc]`. Saves ~140 KB on `.text` via
-   cross-TU dead-code elimination. The framework's default `-fno-lto`
-   linker flag is stripped via `build_unflags` so the linker plugin
-   picks up LTO IR in project objects; pre-built framework `.a` libs
-   stay non-LTO and the GCC linker plugin handles the mix. `-Oz` was
-   tested and produced byte-identical output to the framework's default
-   `-Os` on this codebase, so it is *not* enabled (would only add
-   configuration complexity).
+1. **LTO on** for all CJK envs, worth ~186 KB of flash (TC went 96.1% → 93.2%
+   of the app slot). It is enabled by putting `-fno-lto` in `build_unflags`
+   and **nothing** in `build_flags`: pioarduino reacts to that unflag by adding
+   `-flto=auto` to the framework's compile flags and `-flto` to its
+   `LINKFLAGS`, and it only does so in the Arduino pass. Adding `-flto=auto`
+   to `build_flags` as well is what used to break the link — `build_flags`
+   reach every pass, including the hybrid ESP-IDF pass that
+   `custom_sdkconfig` triggers, so that pass emitted slim LTO objects and then
+   linked them without the LTO plugin. It was previously misdiagnosed as
+   "hybrid LTO of rebuilt IDF libs breaks the link"; the `undefined reference
+   to 'end'` and missing `call_start_cpu0` were downstream symptoms of slim
+   objects carrying no machine code. `-Oz` was tested and produced
+   byte-identical output to the framework's default `-Os` on this codebase, so
+   it is *not* enabled (would only add configuration complexity).
 2. **Per-size CJK character coverage** in `build-cn-builtin-fonts.sh`
    (see "Regenerating the CJK fonts" below). 8/10/12pt carry the small
    ~3500-char UI subset; **14pt carries the reader-default 7000 通用汉字
@@ -119,12 +125,14 @@ adds it to the `REQUIRE_FROM` array in
 CJK Unified Ideograph (`[一-鿿]`) and force-includes them in **both**
 `cn_common_chars.txt` (8/10/12pt) and `cn_i18n_chars.txt` (16/18pt) —
 so glyphs added via this mechanism render at every CN font size. The
-14pt tier draws from the static `chars_7000_common.txt` pool instead and
-empirically covers every char force-included by today's `REQUIRE_FROM`
-list, so the require-from mechanism does **not** feed the 14pt header.
-If you add a `cn_<feature>_chars.txt` containing a glyph outside the 7000
-pool, audit it against `chars_7000_common.txt` and extend that pool too
-(otherwise the feature will render at 8/10/12/16/18pt but show □ at 14pt).
+14pt tier draws from the static `chars_7000_common.txt` pool instead, so
+a `REQUIRE_FROM` entry does not reach it. The one exception is
+[cn_tc_extra_chars.txt](../../lib/EpdFont/scripts/cn_tc_extra_chars.txt),
+which `build-cn-builtin-fonts.sh` folds into the 14pt charset directly (see
+"Traditional coverage at 14pt" below). If you add a `cn_<feature>_chars.txt`
+containing a glyph outside the 7000 pool, audit it against
+`chars_7000_common.txt` and extend that pool too (otherwise the feature will
+render at 8/10/12/16/18pt but show □ at 14pt).
 
 Current example: [cn_almanac_chars.txt](../../lib/EpdFont/scripts/cn_almanac_chars.txt)
 holds the chars `ChineseAlmanac.cpp` / `ChineseCalendarFace.cpp` need
@@ -143,6 +151,35 @@ Pattern when adding a new feature:
    `build-cn-builtin-fonts.sh`.
 3. Re-run `bash build-cn-builtin-fonts.sh` and commit the regenerated
    `cn_common_chars.txt`, `cn_i18n_chars.txt`, and six `notosans_cjk_*.h`.
+
+## Traditional coverage at 14pt
+
+The 14pt reader tier is generated from `chars_7000_common.txt`, which is the
+**Simplified** 通用规范汉字 list, converted with OpenCC `s2tw`. That conversion is
+one-to-one, so it can only ever produce one Traditional form per Simplified
+character. Every Simplified merge therefore lost its siblings: 复 yielded 復 and
+never 複 or 覆, 面 never 麵, 系 never 係 or 繫. Scanning ten Traditional EPUBs
+found 221 distinct glyphs rendering as □, 8417 occurrences in all — 複 alone
+appeared 750 times. The smaller 8/10/12pt tiers were unaffected because they
+come from `cn_common_chars.txt`, which preserves require-from characters.
+
+`build-cn-builtin-fonts.sh` now recovers the siblings by walking the source
+OTF's cmap and keeping any Traditional character whose `tw2s` conversion lands
+back in the pool (+282 chars). The check `back != ch` excludes Simplified
+characters, which reach the font at runtime through `ScToTcRemap.h` anyway.
+This is derived from the converters rather than OpenCC's dictionary files,
+whose path differs between the C++ binding pinned in `requirements.txt` and the
+pure-Python package.
+
+Expansion cannot reach a Traditional character that no Simplified character
+maps to, and OpenCC declines some pairs entirely (`tw2s('甦')` returns 甦, not
+苏). Those live in
+[cn_tc_extra_chars.txt](../../lib/EpdFont/scripts/cn_tc_extra_chars.txt): the
+pronouns 妳/牠/祢, older orthographic forms (卽 旣 眞), Japanese shinjitai quoted
+in translated works, and names such as 淼. Prefer widening the expansion when a
+character is a genuine variant; the extras list only covers what someone has
+already hit. The two together bring those ten books to zero missing glyphs, at
+a cost of ~190 KB of flash.
 
 GenSen Rounded TW needs **per-size** metric nudges so Lyra layouts
 (hardcoded `itemY+7` for UI_10, `getLineHeight` centering for UI_12 menus)
@@ -216,7 +253,8 @@ shrinks proportionally.
 | `lib/EpdFont/scripts/build-cn-builtin-fonts.sh` | pyftsubset → fontconvert.py pipeline, six headers. Default re-runs `build_cn_charset.py`; set `SKIP_CHARSET=1` to reuse the current `cn_common_chars.txt`. The `REQUIRE_FROM=(...)` array at the top lists every file scanned for force-included CJK chars — add new feature-scoped `cn_*_chars.txt` files here. |
 | `lib/EpdFont/scripts/cn_almanac_chars.txt` | Feature-scoped force-include for `ChineseAlmanac.cpp` / `ChineseCalendarFace.cpp` — ganzhi stems/branches + lunar-row vocab that aren't in the pool or any `chinese.yaml` STR_ value. Single-line UTF-8. |
 | `lib/EpdFont/scripts/cn_weread_chars.txt` | Feature-scoped force-include for hardcoded WeRead shelf/search UI fragments. |
-| `lib/EpdFont/builtinFonts/notosans_cjk_{8,10,12,14,16,18}.h` | Generated bitmap headers (committed). Should always match `cn_common_chars.txt` (8/10/12pt), `chars_7000_common.txt` (14pt), and `cn_i18n_chars.txt` (16/18pt) — see consistency check below. |
+| `lib/EpdFont/scripts/cn_tc_extra_chars.txt` | Traditional-only characters the Simplified pool cannot reach (妳 牠 卽 淼 甦 …). Unlike the other force-include files this one also feeds 14pt directly — see "Traditional coverage at 14pt". |
+| `lib/EpdFont/builtinFonts/notosans_cjk_{8,10,12,14,16,18}.h` | Generated bitmap headers (committed). Should always match `cn_common_chars.txt` (8/10/12pt), `chars_7000_common.txt` traditionalized plus its variant expansion and `cn_tc_extra_chars.txt` (14pt), and `cn_i18n_chars.txt` (16/18pt) — see consistency check below. |
 | `lib/EpdFont/builtinFonts/source/GenSenRounded2TW/` | OTF source dir (gitignored). Drop `GenSenRounded2TW-R.otf` here. |
 | `lib/EpdFont/ScToTcRemap.h` | Committed SC→TC lookup (~2600 pairs). Regenerated by `build_sc_to_tc_remap.py`. |
 | `lib/I18n/translations/chinese.yaml` | Taiwan Traditional Chinese UI translations (`_language_name: 繁體中文`, `_language_code: ZH_TW`, `_locale: zh-TW`); SC builds synthesize `ZH_CN`/`zh-CN`/`简体中文` via OpenCC **tw2sp** (phrase-level Mainland terms). Fed to `--require-from` for font subsets. |

@@ -2,6 +2,7 @@
 
 #include <GfxRenderer.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <Serialization.h>
 
 #include <new>
@@ -54,7 +55,11 @@ std::unique_ptr<PageLine> PageLine::deserialize(HalFile& file) {
   serialization::readPod(file, yPos);
 
   auto tb = TextBlock::deserialize(file);
-  return std::unique_ptr<PageLine>(new PageLine(std::move(tb), xPos, yPos));
+  auto line = makeUniqueNoThrow<PageLine>(std::move(tb), xPos, yPos);
+  if (!line) {
+    LOG_ERR("PGE", "OOM allocating PageLine");
+  }
+  return line;
 }
 
 void PageImage::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
@@ -77,7 +82,11 @@ std::unique_ptr<PageImage> PageImage::deserialize(HalFile& file) {
   serialization::readPod(file, yPos);
 
   auto ib = ImageBlock::deserialize(file);
-  return std::unique_ptr<PageImage>(new PageImage(std::move(ib), xPos, yPos));
+  auto image = makeUniqueNoThrow<PageImage>(std::move(ib), xPos, yPos);
+  if (!image) {
+    LOG_ERR("PGE", "OOM allocating PageImage");
+  }
+  return image;
 }
 
 void PageHorizontalRule::render(GfxRenderer& renderer, const int fontId, const int xOffset, const int yOffset) {
@@ -159,10 +168,15 @@ bool Page::serialize(HalFile& file) const {
 }
 
 std::unique_ptr<Page> Page::deserialize(HalFile& file) {
-  auto page = std::unique_ptr<Page>(new Page());
+  auto page = makeUniqueNoThrow<Page>();
+  if (!page) {
+    LOG_ERR("PGE", "OOM allocating Page");
+    return nullptr;
+  }
 
   uint16_t count;
   serialization::readPod(file, count);
+  page->elements.reserve(count);
 
   for (uint16_t i = 0; i < count; i++) {
     uint8_t tag;
@@ -170,9 +184,15 @@ std::unique_ptr<Page> Page::deserialize(HalFile& file) {
 
     if (tag == TAG_PageLine) {
       auto pl = PageLine::deserialize(file);
+      if (!pl) {
+        return nullptr;
+      }
       page->elements.push_back(std::move(pl));
     } else if (tag == TAG_PageImage) {
       auto pi = PageImage::deserialize(file);
+      if (!pi) {
+        return nullptr;
+      }
       page->elements.push_back(std::move(pi));
     } else if (tag == TAG_PageHorizontalRule) {
       auto rule = PageHorizontalRule::deserialize(file);

@@ -393,6 +393,7 @@ target_include_directories(crosspoint_simulator PRIVATE
     ${REPO_ROOT}/lib/Serialization
     ${REPO_ROOT}/lib/Txt
     ${REPO_ROOT}/lib/Utf8
+    ${REPO_ROOT}/lib/WordList
     ${REPO_ROOT}/lib/XmlParserUtils
     ${REPO_ROOT}/lib/Xtc
     ${REPO_ROOT}/lib/ZipFile

@@ -6,11 +6,13 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "../../Activity.h"
+#include "ScopedSdFontUnload.h"
 #include "WeReadClient.h"
 
 /**
@@ -26,9 +28,10 @@
  * non-fatal errors look identical to a success on disk; explicit re-run
  * always overwrites.
  *
- * Cancellation: Back at any point. Already-completed books remain on SD;
- * the in-flight book's files may be incomplete but will be overwritten by
- * the next visit (BookActivity auto-trigger or the next bulk sync).
+ * Cancellation: Back at any point. onExit() signals cancel, waits for the
+ * in-flight fetch task, then force-deletes if still running (FontDownload
+ * pattern). Already-completed books remain on SD; the in-flight book's files
+ * may be incomplete but will be overwritten by the next visit.
  */
 class WeReadSyncAllActivity final : public Activity {
  public:
@@ -45,6 +48,8 @@ class WeReadSyncAllActivity final : public Activity {
 
   struct Context {
     std::atomic<int> state{0};  // 0=loading, 1=ready, 2=error
+    std::atomic<bool> cancel{false};
+    std::atomic<bool> running{false};
     int err = 0;
     std::unique_ptr<JsonDocument> request;
     std::unique_ptr<JsonDocument> response;
@@ -57,6 +62,9 @@ class WeReadSyncAllActivity final : public Activity {
 
   std::shared_ptr<Context> ctx_;
   TaskHandle_t taskHandle_ = nullptr;
+
+  // Engaged once the bulk sync actually starts; released on destruction.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   // (bookId, title) for every ebook on the shelf. Albums are skipped:
   // /book/* endpoints reject albumIds.
@@ -71,6 +79,9 @@ class WeReadSyncAllActivity final : public Activity {
   // Spawn the current (bookIdx_, stepIdx_) step's fetch task. Sets
   // Phase::SyncingBook.
   void spawnBookStepFetch();
+
+  // Signal cancel, wait for the worker, force-delete if still running.
+  void stopFetchTask();
 
   // Main-loop drain. Dispatches by phase_ and advances the state machine.
   void consumeResult();

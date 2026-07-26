@@ -21,14 +21,40 @@ constexpr char DEVICE_ID[] = "crosspoint-reader";
 // Default 16KB buffers cause OOM during TLS handshake.
 constexpr int HTTP_BUF_SIZE = 2048;
 
-// Cloudflare tunnels send a 3-cert Google Trust Services chain. During the TLS handshake
-// mbedTLS makes many small allocations that collectively consume ~48KB of heap. With only
-// ~50KB free after WiFi connects, the session drove min-free-ever down to 2600 bytes before
-// failing with MBEDTLS_ERR_X509_ALLOC_FAILED (-0x2880). Check total free heap (not max
-// contiguous block) because the failure mode is aggregate exhaustion, not one large alloc.
-constexpr uint32_t MIN_HEAP_FOR_TLS = 55000;
+// Largest contiguous block a handshake needs. CONFIG_MBEDTLS_DYNAMIC_BUFFER
+// (custom_sdkconfig) allocates the record buffer per record and frees it between
+// reads instead of pinning 16K in + 4K out for the whole session, so the biggest
+// single request on this path is one incoming record — bounded by
+// CONFIG_MBEDTLS_SSL_IN_CONTENT_LEN (16KB) — coexisting with HTTP_BUF_SIZE.
+// 20KB covers that worst case; real KOSync records are far smaller.
+constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 20 * 1024;
+// A big enough block is not sufficient on its own: mbedTLS also makes many small
+// allocations (ssl context, one cert at a time while walking the chain, MPI
+// temporaries for RSA verify), so aggregate room matters too. This floor was
+// 55000 back when the session pinned 16K+16K record buffers *and*
+// CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE retained the peer DER; both are off
+// now, which cuts the aggregate peak to roughly 25-30KB for the 3-cert
+// Google Trust Services chain a Cloudflare tunnel presents. 40KB keeps margin
+// over that without rejecting handshakes that would have succeeded.
+constexpr uint32_t MIN_FREE_HEAP_FOR_TLS = 40000;
 
-// Response buffer for reading HTTP body
+// Both metrics gate the handshake: refuse early rather than fail deep inside
+// mbedTLS, where a partial handshake has already fragmented the arena.
+bool hasHeapForTls(const char* what) {
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  if (freeHeap >= MIN_FREE_HEAP_FOR_TLS && maxAlloc >= MIN_MAX_ALLOC_FOR_TLS) return true;
+  LOG_ERR("KOSync", "Insufficient heap for TLS (%s): Free=%u (need %u) MaxAlloc=%u (need %u)", what,
+          static_cast<unsigned>(freeHeap), static_cast<unsigned>(MIN_FREE_HEAP_FOR_TLS),
+          static_cast<unsigned>(maxAlloc), static_cast<unsigned>(MIN_MAX_ALLOC_FOR_TLS));
+  return false;
+}
+
+// Response buffer for reading HTTP body. Grown by realloc() as ON_DATA events
+// arrive, while TLS and the HTTP buffers are live — with the record buffers now
+// allocated per record this doubling walk is the most likely source of arena
+// fragmentation left on this path. Responses are tiny JSON, so it rarely grows
+// past the first chunk; if that changes, reserve once from the Content-Length.
 struct ResponseBuffer {
   char* data = nullptr;
   int len = 0;
@@ -61,7 +87,13 @@ esp_err_t httpEventHandler(esp_http_client_event_t* evt) {
   return ESP_OK;
 }
 
-// Create configured esp_http_client with small TLS buffers
+// Create configured esp_http_client with small TLS buffers.
+// One client per request, never pooled: CONFIG_MBEDTLS_DYNAMIC_FREE_CA_CERT
+// nulls conf->ca_chain once a handshake completes, so a reused
+// mbedtls_ssl_config would fail its *second* handshake with no CA to verify
+// against. Every caller below pairs init with cleanup, which is what keeps that
+// safe — do not introduce connection reuse or keep-alive here while that
+// sdkconfig option is on.
 esp_http_client_handle_t createClient(const char* url, ResponseBuffer* buf,
                                       esp_http_client_method_t method = HTTP_METHOD_GET) {
   esp_http_client_config_t config = {};
@@ -103,12 +135,8 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate() {
   }
 
   std::string url = KOREADER_STORE.getBaseUrl() + "/users/auth";
-  const uint32_t freeHeap = ESP.getFreeHeap();
-  LOG_DBG("KOSync", "Authenticating: %s (heap: %u)", url.c_str(), (unsigned)freeHeap);
-  if (freeHeap < MIN_HEAP_FOR_TLS) {
-    LOG_ERR("KOSync", "Insufficient heap for TLS handshake: %u bytes free (need %u)", freeHeap, MIN_HEAP_FOR_TLS);
-    return LOW_MEMORY;
-  }
+  LOG_DBG("KOSync", "Authenticating: %s (heap: %u)", url.c_str(), static_cast<unsigned>(ESP.getFreeHeap()));
+  if (!hasHeapForTls("auth")) return LOW_MEMORY;
 
   ResponseBuffer buf;
   esp_http_client_handle_t client = createClient(url.c_str(), &buf);
@@ -136,12 +164,8 @@ KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& doc
   }
 
   std::string url = KOREADER_STORE.getBaseUrl() + "/syncs/progress/" + documentHash;
-  const uint32_t freeHeap = ESP.getFreeHeap();
-  LOG_DBG("KOSync", "Getting progress: %s (heap: %u)", url.c_str(), (unsigned)freeHeap);
-  if (freeHeap < MIN_HEAP_FOR_TLS) {
-    LOG_ERR("KOSync", "Insufficient heap for TLS handshake: %u bytes free (need %u)", freeHeap, MIN_HEAP_FOR_TLS);
-    return LOW_MEMORY;
-  }
+  LOG_DBG("KOSync", "Getting progress: %s (heap: %u)", url.c_str(), static_cast<unsigned>(ESP.getFreeHeap()));
+  if (!hasHeapForTls("get progress")) return LOW_MEMORY;
 
   ResponseBuffer buf;
   esp_http_client_handle_t client = createClient(url.c_str(), &buf);
@@ -189,12 +213,8 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgr
   }
 
   std::string url = KOREADER_STORE.getBaseUrl() + "/syncs/progress";
-  const uint32_t freeHeap = ESP.getFreeHeap();
-  LOG_DBG("KOSync", "Updating progress: %s (heap: %u)", url.c_str(), (unsigned)freeHeap);
-  if (freeHeap < MIN_HEAP_FOR_TLS) {
-    LOG_ERR("KOSync", "Insufficient heap for TLS handshake: %u bytes free (need %u)", freeHeap, MIN_HEAP_FOR_TLS);
-    return LOW_MEMORY;
-  }
+  LOG_DBG("KOSync", "Updating progress: %s (heap: %u)", url.c_str(), static_cast<unsigned>(ESP.getFreeHeap()));
+  if (!hasHeapForTls("update progress")) return LOW_MEMORY;
 
   // Build JSON body
   JsonDocument doc;

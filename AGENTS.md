@@ -128,8 +128,28 @@ Philosophy: We are building a dedicated e-reader, not a Swiss Army knife. If a f
 This is embedded ESP32-C3 firmware: the cloud VM has **no device**, so you can
 build/lint/static-analyze the firmware and run the **native host** unit tests,
 but you cannot flash or serial-monitor (`pio run -t upload`, `pio device
-monitor`, `scripts/debugging_monitor.py` need hardware). Runtime behavior (e-ink,
-input, heap) can only be verified on a physical X3/X4.
+monitor`, `scripts/debugging_monitor.py` need hardware). Device-side runtime
+behavior (real e-ink refresh, hardware buttons, heap under load) still needs a
+physical X3/X4. For UI flows that do not require hardware, use the **desktop
+simulator** (see Quick Reference above and
+[`simulator/README.md`](simulator/README.md)).
+
+### Computer-use testing with the simulator
+
+When driving the simulator via computer use (GUI automation):
+
+- **Use the keyboard to navigate — do not click.** Mouse clicks on the eink
+  area or the device-shell button bumps do **not** deliver button input to the
+  firmware under computer use. Always send key events instead.
+- Map keys to logical buttons (full table in
+  [`simulator/README.md`](simulator/README.md)): Arrow keys for cursor /
+  page, Enter for confirm/select, Backspace for back/cancel, Esc for power
+  (exits the sim — avoid unless intentional), F1 for the host settings
+  overlay.
+- Focus the simulator window first (one click to focus is fine), then drive
+  navigation exclusively with keyboard events.
+- Launch at explicit 1× scale in a background shell; only one simulator per
+  `sd_root` at a time.
 
 The startup update script already refreshes the moving parts (checks out the
 `open-x4-sdk` submodule, installs PlatformIO Core, installs `requirements.txt`).

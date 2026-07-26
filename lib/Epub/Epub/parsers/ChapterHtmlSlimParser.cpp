@@ -4,6 +4,7 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <Utf8.h>
 #include <XmlParserUtils.h>
 #include <expat.h>
@@ -203,6 +204,17 @@ void ChapterHtmlSlimParser::updateEffectiveInlineStyle() {
   }
 }
 
+bool ChapterHtmlSlimParser::startNewPage() {
+  if (allocationFailed) return false;  // already out of memory; don't thrash the heap retrying
+  currentPage = makeUniqueNoThrow<Page>();
+  if (!currentPage) {
+    LOG_ERR("EHP", "OOM allocating a page after %d completed pages", completedPageCount);
+    allocationFailed = true;
+    return false;
+  }
+  return true;
+}
+
 void ChapterHtmlSlimParser::flushPendingAnchor() {
   if (pendingAnchorId.empty()) return;
 
@@ -212,7 +224,7 @@ void ChapterHtmlSlimParser::flushPendingAnchor() {
     if (currentPage && !currentPage->elements.empty()) {
       completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
       completedPageCount++;
-      currentPage.reset(new Page());
+      if (!startNewPage()) return;
       currentPageNextY = 0;
     }
   }
@@ -224,6 +236,14 @@ void ChapterHtmlSlimParser::flushPendingAnchor() {
 
 // flush the contents of partWordBuffer to currentTextBlock
 void ChapterHtmlSlimParser::flushPartWordBuffer() {
+  // CJK tokenization flushes once per character inside a single characterData()
+  // call; bail immediately after the first OOM so we do not spam the log / heap.
+  if (allocationFailed) {
+    partWordBufferIndex = 0;
+    nextWordContinues = false;
+    return;
+  }
+
   // Determine font style from depth-based tracking and CSS effective style
   const bool isBold = boldUntilDepth < depth || effectiveBold;
   const bool isItalic = italicUntilDepth < depth || effectiveItalic;
@@ -247,8 +267,12 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
   }
 
   // flush the buffer
+  if (!currentTextBlock) return;  // block allocation failed; see startNewTextBlock()
   partWordBuffer[partWordBufferIndex] = '\0';
-  currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues);
+  if (!currentTextBlock->tryAddWord(partWordBuffer, fontStyle, false, nextWordContinues)) {
+    allocationFailed = true;
+    LOG_ERR("EHP", "OOM adding word during chapter parse");
+  }
   partWordBufferIndex = 0;
   nextWordContinues = false;
 }
@@ -281,8 +305,13 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   // If the pending anchor is a TOC chapter boundary, force a page break after the previous
   // block is flushed so the chapter starts on a fresh page.
   flushPendingAnchor();
-  currentTextBlock.reset(new ParsedText(extraParagraphSpacing, hyphenationEnabled, focusReadingEnabled,
-                                        punctCompressionEnabled, blockStyle));
+  currentTextBlock = makeUniqueNoThrow<ParsedText>(extraParagraphSpacing, hyphenationEnabled, focusReadingEnabled,
+                                                   punctCompressionEnabled, blockStyle);
+  if (!currentTextBlock) {
+    LOG_ERR("EHP", "OOM allocating a text block after %d completed pages", completedPageCount);
+    allocationFailed = true;
+    return;
+  }
   if (writingMode == 1) {
     auto style = currentTextBlock->getBlockStyle();
     style.isVerticalRtl = true;
@@ -303,11 +332,7 @@ void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
   }
 
   if (!currentPage) {
-    currentPage.reset(new (std::nothrow) Page());
-    if (!currentPage) {
-      LOG_ERR("EHP", "Failed to create page for horizontal rule");
-      return;
-    }
+    if (!startNewPage()) return;
     currentPageNextY = 0;
   }
 
@@ -329,11 +354,7 @@ void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
   if (!currentPage->elements.empty() && currentPageNextY + totalHeight > viewportHeight) {
     completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
     completedPageCount++;
-    currentPage.reset(new (std::nothrow) Page());
-    if (!currentPage) {
-      LOG_ERR("EHP", "Failed to create page after horizontal-rule page break");
-      return;
-    }
+    if (!startNewPage()) return;
     currentPageNextY = 0;
   }
 
@@ -356,6 +377,10 @@ void ChapterHtmlSlimParser::emitHorizontalRule(const BlockStyle& blockStyle) {
 
 void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char* name, const XML_Char** atts) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
+
+  // A failed page/block allocation leaves currentPage or currentTextBlock null; stop handling
+  // markup so nothing dereferences them before parseAndBuildPages() aborts the chapter.
+  if (self->allocationFailed) return;
 
   // Middle of skip
   if (self->skipUntilDepth < self->depth) {
@@ -743,18 +768,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
                   self->completePageFn(std::move(self->currentPage), self->xpathParagraphIndex,
                                        self->xpathListItemIndex);
                   self->completedPageCount++;
-                  self->currentPage.reset(new Page());
-                  if (!self->currentPage) {
-                    LOG_ERR("EHP", "Failed to create new page");
-                    return;
-                  }
+                  if (!self->startNewPage()) return;
                   self->currentPageNextY = 0;
                 } else if (!self->currentPage) {
-                  self->currentPage.reset(new Page());
-                  if (!self->currentPage) {
-                    LOG_ERR("EHP", "Failed to create initial page");
-                    return;
-                  }
+                  if (!self->startNewPage()) return;
                   self->currentPageNextY = 0;
                 }
 
@@ -937,7 +954,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->updateEffectiveInlineStyle();
 
       if (strcmp(name, "li") == 0) {
-        self->currentTextBlock->addWord("\xe2\x80\xa2", EpdFontFamily::REGULAR);
+        if (!self->currentTextBlock->tryAddWord("\xe2\x80\xa2", EpdFontFamily::REGULAR)) {
+          self->allocationFailed = true;
+          LOG_ERR("EHP", "OOM adding list bullet during chapter parse");
+        }
       }
     }
   } else if (matches(name, UNDERLINE_TAGS, std::size(UNDERLINE_TAGS))) {
@@ -1069,6 +1089,8 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
 
 void XMLCALL ChapterHtmlSlimParser::characterData(void* userData, const XML_Char* s, const int len) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
+
+  if (self->allocationFailed) return;  // see startElement()
 
   // Skip content of nested table
   if (self->tableDepth > 1) {
@@ -1294,6 +1316,8 @@ void XMLCALL ChapterHtmlSlimParser::defaultHandlerExpand(void* userData, const X
 void XMLCALL ChapterHtmlSlimParser::endElement(void* userData, const XML_Char* name) {
   auto* self = static_cast<ChapterHtmlSlimParser*>(userData);
 
+  if (self->allocationFailed) return;  // see startElement()
+
   // Check if any style state will change after we decrement depth
   // If so, we MUST flush the partWordBuffer with the CURRENT style first
   // Note: depth hasn't been decremented yet, so we check against (depth - 1)
@@ -1433,6 +1457,9 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
   const auto align = rootBlockStyle.alignment;
   paragraphAlignmentBlockStyle.alignment = align;
   startNewTextBlock(paragraphAlignmentBlockStyle);
+  if (allocationFailed) {
+    return false;
+  }
 
   XML_Parser parser = XML_ParserCreate(nullptr);
   int done;
@@ -1490,6 +1517,15 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
       file.close();
       return false;
     }
+
+    if (allocationFailed) {
+      // Out of memory mid-chapter. Fail the whole chapter so the caller retries later instead
+      // of caching pages that stop where the heap ran out.
+      LOG_ERR("EHP", "Aborting pagination of %s after an allocation failure", filepath.c_str());
+      destroyXmlParser(parser);
+      file.close();
+      return false;
+    }
   } while (!done);
   LOG_DBG("EHP", "Time to parse and build pages: %lu ms", millis() - chapterStartTime);
 
@@ -1499,6 +1535,10 @@ bool ChapterHtmlSlimParser::parseAndBuildPages() {
   // Process last page if there is still text
   if (currentTextBlock) {
     makePages();
+    if (allocationFailed || !currentPage) {
+      LOG_ERR("EHP", "Aborting pagination of %s: no page for the final text block", filepath.c_str());
+      return false;
+    }
     if (!pendingAnchorId.empty()) {
       anchorData.push_back({std::move(pendingAnchorId), static_cast<uint16_t>(completedPageCount)});
       pendingAnchorId.clear();
@@ -1518,7 +1558,7 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
   const int columnPitch = lineHeight;
 
   if (!currentPage) {
-    currentPage.reset(new Page());
+    if (!startNewPage()) return;
     currentPageNextY = 0;
     if (verticalRtl) {
       currentPageNextX = static_cast<int16_t>(viewportWidth - line->getBlockStyle().rightInset());
@@ -1536,7 +1576,7 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
     if (currentPageNextX - columnPitch < leftBound) {
       completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
       completedPageCount++;
-      currentPage.reset(new Page());
+      if (!startNewPage()) return;
       currentPageNextY = 0;
       currentPageNextX = static_cast<int16_t>(viewportWidth - bs.rightInset());
     }
@@ -1559,7 +1599,7 @@ void ChapterHtmlSlimParser::addLineToPage(std::shared_ptr<TextBlock> line) {
   if (currentPageNextY + lineHeight > viewportHeight) {
     completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
     completedPageCount++;
-    currentPage.reset(new Page());
+    if (!startNewPage()) return;
     currentPageNextY = 0;
   }
 
@@ -1586,7 +1626,7 @@ void ChapterHtmlSlimParser::makePages() {
 
   const BlockStyle& blockStyle = currentTextBlock->getBlockStyle();
   if (!currentPage) {
-    currentPage.reset(new Page());
+    if (!startNewPage()) return;
     currentPageNextY = 0;
     if (writingMode == 1) {
       currentPageNextX = static_cast<int16_t>(viewportWidth - blockStyle.rightInset());

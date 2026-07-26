@@ -2,8 +2,10 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
+#include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
 #include "network/CrossPointWebServer.h"
 
@@ -27,6 +29,11 @@ class CalibreConnectActivity final : public Activity {
   unsigned long lastCompleteAt = 0;
   unsigned long lastProcessedCompleteAt = 0;  // Track which server value we've already processed
   bool exitRequested = false;
+
+  // Engaged in onEnter and released when the activity is destroyed. onExit's
+  // silentRestart() usually reboots first; reload only if we backed out early.
+  // See CrossPointWebServerActivity.h:77.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void renderServerRunning() const;
 

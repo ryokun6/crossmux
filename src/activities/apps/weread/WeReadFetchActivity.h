@@ -6,11 +6,13 @@
 
 #include <atomic>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "../../../components/themes/BaseTheme.h"  // for struct Rect (used in virtual signatures)
 #include "../../../util/ButtonNavigator.h"
 #include "../../Activity.h"
+#include "ScopedSdFontUnload.h"
 #include "WeReadClient.h"
 
 /**
@@ -21,12 +23,11 @@
  *     runs WeReadClient::post() with subclass-supplied apiName/body → main
  *     loop() polls the shared context and calls parseResponse() when ready.
  *
- * Cross-thread state lives in a shared_ptr<Context>; the Activity may destruct
- * while the task is mid-call without UAF — the task keeps its own shared_ptr
- * and writes results only via the context, never via `this`. shared_ptr is
- * justified here despite the AGENTS.md preference against it: this is a cold
- * setup path (one per Activity entry), and the alternative (manual flag +
- * busy-wait in destructor) would block Back for up to one HTTP timeout.
+ * Cross-thread state lives in a shared_ptr<Context>; the task keeps its own
+ * copy so a refresh can drop the Activity's pointer without UAF. onExit()
+ * (and re-spawn) signal Context::cancel, wait for the worker to finish, then
+ * force vTaskDelete if it is still running — same teardown as
+ * FontDownloadActivity::stopDownloadTask().
  */
 class WeReadFetchActivity : public Activity {
  public:
@@ -99,6 +100,8 @@ class WeReadFetchActivity : public Activity {
  private:
   struct Context {
     std::atomic<int> state{static_cast<int>(State::Idle)};
+    std::atomic<bool> cancel{false};
+    std::atomic<bool> running{false};
     int err = 0;
     std::unique_ptr<JsonDocument> request;
     std::unique_ptr<JsonDocument> response;
@@ -110,6 +113,10 @@ class WeReadFetchActivity : public Activity {
   TaskHandle_t taskHandle_ = nullptr;
   WeReadClient::Err lastErr_ = WeReadClient::Err::Ok;
 
+  // Engaged in onEnter for every subclass (shelf, search, reviews). Released
+  // when the activity is destroyed; these screens never reboot on exit.
+  std::optional<ScopedSdFontUnload> fontUnload_;
+
   bool wifiOk_ = false;
   bool keyOk_ = false;
   // True after a successful tryLoadFromCache() in offline mode. Makes
@@ -117,6 +124,7 @@ class WeReadFetchActivity : public Activity {
   bool offlineReady_ = false;
 
   void spawnFetch();
+  void stopFetchTask();
   void consumeResultIfReady();
   static void fetchTrampoline(void* arg);
 

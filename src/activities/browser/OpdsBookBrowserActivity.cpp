@@ -25,6 +25,15 @@ constexpr int PAGE_ITEMS = 23;
 void OpdsBookBrowserActivity::onEnter() {
   Activity::onEnter();
 
+  // Every state on this screen ends in an HTTP(S) request: the default catalog is
+  // https://os.ryo.lu/api/opds (OpdsServerStore.cpp:16), and downloadBook streams
+  // a multi-MB EPUB. A resident SD reader font pins ~75KB of the ~224KB heap,
+  // which leaves too little contiguous DRAM for the mbedTLS record buffer — the
+  // same reason OTA, font download and the web server drop it
+  // (OtaUpdateActivity.cpp:36, FontDownloadActivity.cpp:84). The catalog list and
+  // download progress render with UI_10/UI_12 only, never a reader font.
+  fontUnload_.emplace(renderer);
+
   state = BrowserState::CHECK_WIFI;
   entries.clear();
   navigationHistory.clear();
@@ -51,6 +60,12 @@ void OpdsBookBrowserActivity::onExit() {
     delay(30);
     silentRestart();
   }
+
+  // Only reached when Wi‑Fi never came up, or when silentRestart() declined to
+  // reboot (deep sleep already committed) — the reboot would otherwise reload the
+  // font for us. Explicit here so the onEnter unload has a visible counterpart;
+  // the member destructor would be a no-op after this.
+  fontUnload_.reset();
 }
 
 void OpdsBookBrowserActivity::loop() {

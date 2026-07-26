@@ -51,13 +51,16 @@ CHARSET_FILE="cn_common_chars.txt"
 # feature that needs CJK glyphs absent from both the 3500 SC pool and the
 # natural chinese.yaml STR_ values adds its own cn_<feature>_chars.txt here.
 # cn_almanac_chars.txt: ganzhi + lunar-row chars for ChineseCalendarFace.
-REQUIRE_FROM=(../../I18n/translations/chinese.yaml cn_almanac_chars.txt cn_weread_chars.txt)
+REQUIRE_FROM=(../../I18n/translations/chinese.yaml cn_almanac_chars.txt cn_weread_chars.txt cn_tc_extra_chars.txt)
 TMP_DIR="instanced_fonts/GenSenRounded2TW"
 SUBSET_OTF="$TMP_DIR/GenSenRounded2TW-R.cncommon.otf"
 # Reader-default (14pt) subset: 7000 通用汉字 (Traditionalized) + symbols.
 LARGE_OTF="$TMP_DIR/GenSenRounded2TW-R.cn7000.otf"
 LARGE_CHARSET_FILE_SC="chars_7000_common.txt"
 LARGE_CHARSET_FILE="$TMP_DIR/chars_7000_common_tc.txt"
+# Traditional-only chars the Simplified pool cannot reach, folded into 14pt above
+# and into the other sizes through REQUIRE_FROM.
+TC_EXTRA_CHARSET_FILE="cn_tc_extra_chars.txt"
 # Tiny OTF holding only the CJK chars that appear in i18n YAML files.
 I18N_OTF="$TMP_DIR/GenSenRounded2TW-R.i18nonly.otf"
 I18N_CHARSET_FILE="cn_i18n_chars.txt"
@@ -159,17 +162,47 @@ fi
 
 # Convert the 7000 通用汉字 pool to Traditional Taiwan forms (deduped) for 14pt.
 echo "Converting $LARGE_CHARSET_FILE_SC → Traditional (s2tw)..."
-"$PYTHON" - <<'PY' "$LARGE_CHARSET_FILE_SC" "$LARGE_CHARSET_FILE"
+"$PYTHON" - <<'PY' "$LARGE_CHARSET_FILE_SC" "$LARGE_CHARSET_FILE" "$SOURCE_OTF" "$TC_EXTRA_CHARSET_FILE"
 import sys
 from pathlib import Path
+from fontTools.ttLib import TTFont
 from opencc import OpenCC
 
-src, dst = Path(sys.argv[1]), Path(sys.argv[2])
-cc = OpenCC("s2tw")
+src, dst, otf, extra = (Path(p) for p in sys.argv[1:5])
+s2tw, tw2s = OpenCC("s2tw"), OpenCC("tw2s")
 raw = [c for c in src.read_text(encoding="utf-8") if not c.isspace()]
-out = sorted({cc.convert(c) if len(cc.convert(c)) == 1 else c for c in raw})
+pool = set(raw)
+
+# s2tw maps each Simplified character to exactly one Traditional form, so on its
+# own it silently drops every other form the merge covers: 复 yields 復 and never
+# 複 or 覆. Recover the siblings by walking the source font's own cmap and keeping
+# any Traditional character that converts back into the pool. Derived from the
+# converters rather than OpenCC's dictionary files, whose location differs between
+# the C++ binding and the pure-Python package.
+base = {s2tw.convert(c) if len(s2tw.convert(c)) == 1 else c for c in raw}
+variants = set()
+for cp in TTFont(otf, lazy=True).getBestCmap():
+    if not 0x4E00 <= cp <= 0x9FFF:
+        continue
+    ch = chr(cp)
+    back = tw2s.convert(ch)
+    # back != ch keeps this to real Traditional forms. Simplified characters map to
+    # themselves and are already reachable at runtime through ScToTcRemap.h, so
+    # adding them would only spend flash.
+    if ch not in base and len(back) == 1 and back != ch and back in pool:
+        variants.add(ch)
+
+# Traditional-only characters that no Simplified character maps to (妳, 淼, 卽 …).
+extras = {c for c in extra.read_text(encoding="utf-8").splitlines() if not c.startswith("#")}
+extras = {c for line in extras for c in line if not c.isspace()}
+
+out = sorted(base | variants | extras)
 dst.write_text("".join(out), encoding="utf-8")
-print(f"  {len(raw)} SC → {len(out)} TC (s2tw) → {dst}", file=sys.stderr)
+print(
+    f"  {len(raw)} SC → {len(base)} TC (s2tw) + {len(variants)} variants"
+    f" + {len(extras)} TC-only = {len(out)} → {dst}",
+    file=sys.stderr,
+)
 PY
 
 # Step 1a: subset the OTF down to cn_common_chars (TC) + ASCII + Latin-1 +

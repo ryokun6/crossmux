@@ -17,8 +17,13 @@
 // Build the font family setting dynamically. When registry is non-null, SD card fonts
 // are appended after the built-in fonts. Otherwise only built-in fonts are listed.
 inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
-  // Built-in font labels (StrId)
+  // Built-in font labels (StrId). CJK SKUs alias every builtin face onto the
+  // one embedded bitmap font, so they offer a single "System" entry.
+#ifdef ENABLE_CJK_VERSION
+  std::vector<StrId> enumValues = {StrId::STR_SYSTEM_FONT};
+#else
   std::vector<StrId> enumValues = {StrId::STR_NOTO_SERIF, StrId::STR_NOTO_SANS};
+#endif
   // Runtime string labels for SD card fonts
   std::vector<std::string> enumStringValues;
 
@@ -39,8 +44,9 @@ inline SettingInfo buildFontFamilySetting(const SdCardFontRegistry* registry) {
   // with all options when SD fonts are present.
   std::vector<std::string> allStringValues;
   if (sdFontCount > 0) {
-    allStringValues.push_back(I18N.get(StrId::STR_NOTO_SERIF));
-    allStringValues.push_back(I18N.get(StrId::STR_NOTO_SANS));
+    allStringValues.reserve(enumValues.size() + enumStringValues.size());
+    std::transform(enumValues.begin(), enumValues.end(), std::back_inserter(allStringValues),
+                   [](const StrId id) { return std::string(I18N.get(id)); });
     allStringValues.insert(allStringValues.end(), enumStringValues.begin(), enumStringValues.end());
   }
 

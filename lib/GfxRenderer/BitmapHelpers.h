@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <new>
 
 struct BmpHeader;
 
@@ -24,9 +25,16 @@ void createBmpHeader(BmpHeader* bmpHeader, int width, int height, BmpRowOrder ro
 class Atkinson1BitDitherer {
  public:
   explicit Atkinson1BitDitherer(int width) : width(width) {
-    errorRow0 = new int16_t[width + 4]();  // Current row
-    errorRow1 = new int16_t[width + 4]();  // Next row
-    errorRow2 = new int16_t[width + 4]();  // Row after next
+    // ~2*(width+4) bytes per row × 3; heap because width is runtime (cover/image size).
+    errorRow0 = new (std::nothrow) int16_t[width + 4]();  // Current row
+    errorRow1 = new (std::nothrow) int16_t[width + 4]();  // Next row
+    errorRow2 = new (std::nothrow) int16_t[width + 4]();  // Row after next
+    if (!errorRow0 || !errorRow1 || !errorRow2) {
+      delete[] errorRow0;
+      delete[] errorRow1;
+      delete[] errorRow2;
+      errorRow0 = errorRow1 = errorRow2 = nullptr;
+    }
   }
 
   ~Atkinson1BitDitherer() {
@@ -41,9 +49,15 @@ class Atkinson1BitDitherer {
   // EXPLICITLY DELETE THE COPY ASSIGNMENT OPERATOR
   Atkinson1BitDitherer& operator=(const Atkinson1BitDitherer& other) = delete;
 
+  bool ok() const { return errorRow0 != nullptr; }
+
   uint8_t processPixel(int gray, int x) {
     // Apply brightness/contrast/gamma adjustments
     gray = adjustPixel(gray);
+
+    if (!errorRow0) {
+      return gray < 128 ? 0 : 1;
+    }
 
     // Add accumulated error
     int adjusted = gray + errorRow0[x + 2];
@@ -76,6 +90,7 @@ class Atkinson1BitDitherer {
   }
 
   void nextRow() {
+    if (!errorRow0) return;
     int16_t* temp = errorRow0;
     errorRow0 = errorRow1;
     errorRow1 = errorRow2;
@@ -84,6 +99,7 @@ class Atkinson1BitDitherer {
   }
 
   void reset() {
+    if (!errorRow0) return;
     memset(errorRow0, 0, (width + 4) * sizeof(int16_t));
     memset(errorRow1, 0, (width + 4) * sizeof(int16_t));
     memset(errorRow2, 0, (width + 4) * sizeof(int16_t));
@@ -91,9 +107,9 @@ class Atkinson1BitDitherer {
 
  private:
   int width;
-  int16_t* errorRow0;
-  int16_t* errorRow1;
-  int16_t* errorRow2;
+  int16_t* errorRow0 = nullptr;
+  int16_t* errorRow1 = nullptr;
+  int16_t* errorRow2 = nullptr;
 };
 
 // Atkinson dithering - distributes only 6/8 (75%) of error for cleaner results
@@ -105,9 +121,16 @@ class Atkinson1BitDitherer {
 class AtkinsonDitherer {
  public:
   explicit AtkinsonDitherer(int width) : width(width) {
-    errorRow0 = new int16_t[width + 4]();  // Current row
-    errorRow1 = new int16_t[width + 4]();  // Next row
-    errorRow2 = new int16_t[width + 4]();  // Row after next
+    // ~2*(width+4) bytes per row × 3; heap because width is runtime (cover/image size).
+    errorRow0 = new (std::nothrow) int16_t[width + 4]();  // Current row
+    errorRow1 = new (std::nothrow) int16_t[width + 4]();  // Next row
+    errorRow2 = new (std::nothrow) int16_t[width + 4]();  // Row after next
+    if (!errorRow0 || !errorRow1 || !errorRow2) {
+      delete[] errorRow0;
+      delete[] errorRow1;
+      delete[] errorRow2;
+      errorRow0 = errorRow1 = errorRow2 = nullptr;
+    }
   }
 
   ~AtkinsonDitherer() {
@@ -121,7 +144,13 @@ class AtkinsonDitherer {
   // **2. EXPLICITLY DELETE THE COPY ASSIGNMENT OPERATOR**
   AtkinsonDitherer& operator=(const AtkinsonDitherer& other) = delete;
 
+  bool ok() const { return errorRow0 != nullptr; }
+
   uint8_t processPixel(int gray, int x) {
+    if (!errorRow0) {
+      return quantizeSimple(gray);
+    }
+
     // Add accumulated error
     int adjusted = gray + errorRow0[x + 2];
     if (adjusted < 0) adjusted = 0;
@@ -175,6 +204,7 @@ class AtkinsonDitherer {
   }
 
   void nextRow() {
+    if (!errorRow0) return;
     int16_t* temp = errorRow0;
     errorRow0 = errorRow1;
     errorRow1 = errorRow2;
@@ -183,6 +213,7 @@ class AtkinsonDitherer {
   }
 
   void reset() {
+    if (!errorRow0) return;
     memset(errorRow0, 0, (width + 4) * sizeof(int16_t));
     memset(errorRow1, 0, (width + 4) * sizeof(int16_t));
     memset(errorRow2, 0, (width + 4) * sizeof(int16_t));
@@ -190,9 +221,9 @@ class AtkinsonDitherer {
 
  private:
   int width;
-  int16_t* errorRow0;
-  int16_t* errorRow1;
-  int16_t* errorRow2;
+  int16_t* errorRow0 = nullptr;
+  int16_t* errorRow1 = nullptr;
+  int16_t* errorRow2 = nullptr;
 };
 
 // Floyd-Steinberg error diffusion dithering with serpentine scanning
@@ -206,8 +237,14 @@ class AtkinsonDitherer {
 class FloydSteinbergDitherer {
  public:
   explicit FloydSteinbergDitherer(int width) : width(width), rowCount(0) {
-    errorCurRow = new int16_t[width + 2]();  // +2 for boundary handling
-    errorNextRow = new int16_t[width + 2]();
+    // ~2*(width+2) bytes per row × 2; heap because width is runtime (cover/image size).
+    errorCurRow = new (std::nothrow) int16_t[width + 2]();  // +2 for boundary handling
+    errorNextRow = new (std::nothrow) int16_t[width + 2]();
+    if (!errorCurRow || !errorNextRow) {
+      delete[] errorCurRow;
+      delete[] errorNextRow;
+      errorCurRow = errorNextRow = nullptr;
+    }
   }
 
   ~FloydSteinbergDitherer() {
@@ -221,9 +258,15 @@ class FloydSteinbergDitherer {
   // **2. EXPLICITLY DELETE THE COPY ASSIGNMENT OPERATOR**
   FloydSteinbergDitherer& operator=(const FloydSteinbergDitherer& other) = delete;
 
+  bool ok() const { return errorCurRow != nullptr; }
+
   // Process a single pixel and return quantized 2-bit value
   // x is the logical x position (0 to width-1), direction handled internally
   uint8_t processPixel(int gray, int x) {
+    if (!errorCurRow) {
+      return quantizeSimple(gray);
+    }
+
     // Add accumulated error to this pixel
     int adjusted = gray + errorCurRow[x + 1];
 
@@ -295,6 +338,7 @@ class FloydSteinbergDitherer {
 
   // Call at the end of each row to swap buffers
   void nextRow() {
+    if (!errorCurRow) return;
     // Swap buffers
     int16_t* temp = errorCurRow;
     errorCurRow = errorNextRow;
@@ -309,6 +353,7 @@ class FloydSteinbergDitherer {
 
   // Reset for a new image or MCU block
   void reset() {
+    if (!errorCurRow) return;
     memset(errorCurRow, 0, (width + 2) * sizeof(int16_t));
     memset(errorNextRow, 0, (width + 2) * sizeof(int16_t));
     rowCount = 0;
@@ -317,6 +362,6 @@ class FloydSteinbergDitherer {
  private:
   int width;
   int rowCount;
-  int16_t* errorCurRow;
-  int16_t* errorNextRow;
+  int16_t* errorCurRow = nullptr;
+  int16_t* errorNextRow = nullptr;
 };

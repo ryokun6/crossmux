@@ -3,9 +3,11 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
@@ -81,6 +83,10 @@ class WifiSelectionActivity final : public Activity {
   // Connection timeout
   static constexpr unsigned long CONNECTION_TIMEOUT_MS = 15000;
   unsigned long connectionStartTime = 0;
+
+  // Engaged in onEnter before scan/connect; released in onExit (no silentRestart
+  // here — destructor would also reload). See CrossPointWebServerActivity.h:77.
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void renderNetworkList(const Rect* screen, const ThemeMetrics* metrics) const;
   void renderPasswordEntry(const Rect* screen, const ThemeMetrics* metrics) const;

@@ -7,6 +7,7 @@
 
 #include "KOReaderSyncClient.h"
 #include "ProgressMapper.h"
+#include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
 
 /**
@@ -86,6 +87,12 @@ class KOReaderSyncActivity final : public Activity {
 
   // True when SYNC_FAILED was caused by missing/wrong credentials (401).
   bool authFailure = false;
+
+  // Engaged once a sync actually needs the network, so the NO_CREDENTIALS screen
+  // (which never touches Wi‑Fi) doesn't pay a font reload on the way out. The
+  // silentRestartToReader() in onExit normally reboots before the destructor can
+  // run; it only reloads when that restart is suppressed (deep sleep in flight).
+  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void onWifiSelectionComplete(bool success);
   void openLoginSettings();

@@ -1,7 +1,11 @@
 #include "Section.h"
 
+#include <Arduino.h>
+#include <GfxRenderer.h>
 #include <HalStorage.h>
+#include <InflateReader.h>
 #include <Logging.h>
+#include <SdCardFont.h>
 #include <Serialization.h>
 
 #include "Epub/css/CssParser.h"
@@ -139,6 +143,15 @@ bool Section::loadSectionFile(const int fontId, const float lineCompression, con
     const std::string& path = *candidate;
     if (!Storage.exists(path.c_str())) continue;
     if (!Storage.openFileForRead("SCT", path, file)) continue;
+    // Incomplete sidecar writes leave a tiny/zeroed .tmp (version byte 0). Discard
+    // them instead of treating them as a preferred newer cache.
+    if (file.size() < HEADER_SIZE) {
+      LOG_ERR("SCT", "Discarding truncated section cache (%u bytes): %s", static_cast<unsigned>(file.size()),
+              path.c_str());
+      file = HalFile();
+      displaceCacheFile(path);
+      continue;
+    }
 
     uint8_t version = 0;
     serialization::readPod(file, version);
@@ -217,6 +230,24 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
                                 const bool hyphenationEnabled, const bool embeddedStyle, const uint8_t imageRendering,
                                 const bool focusReadingEnabled, const bool punctCompressionEnabled,
                                 const std::function<void()>& popupFn) {
+  // Hold the 32KB inflate ring only for this indexing call. Leaving it pinned for
+  // the whole reader session caps MaxAlloc under CJK mini-bitmap size and makes
+  // every page flip fall back to per-glyph SD overflow.
+  struct ScopedSharedInflate {
+    ScopedSharedInflate() { (void)InflateReader::acquireSharedDictionary(); }
+    ~ScopedSharedInflate() { InflateReader::releaseSharedDictionary(); }
+  } sharedInflate;
+
+  // Free bold/BI interval tables (~38KB on TC) before the HTML+WordList peak.
+  // Layout reloads them via ensureStyleIntervalsLoaded when a styleMask needs them.
+  for (const auto& entry : renderer.getSdCardFonts()) {
+    if (entry.second) {
+      entry.second->unloadNonRegularStyles();
+    }
+  }
+  LOG_DBG("SCT", "Pre-index heap Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
+
   const auto localPath = epub->getSpineItem(spineIndex).href;
   const auto tmpHtmlPath = epub->getCachePath() + "/.tmp_" + std::to_string(spineIndex) + ".html";
 

@@ -24,8 +24,15 @@ class EpdFontFamily {
   ~EpdFontFamily() = default;
   void getTextDimensions(const char* string, int* w, int* h, Style style = REGULAR) const;
   const EpdFontData* getData(Style style = REGULAR) const;
+  /// Style index of the face that getFont() actually selects for \p style.
+  /// Styles that share a face — bold-italic on a family with no bold-italic,
+  /// italic on a family with no italic — collapse onto the same index, and the
+  /// lowest such index wins. Callers that do per-face work (font cache prewarm)
+  /// must group by this, not by the requested style: doing the same face twice
+  /// with different text makes the second pass discard the first one's glyphs.
+  Style resolveStyle(Style style) const;
   /// Resolve a glyph for \p style, falling back to regular when the styled face
-  /// lacks the codepoint (hybrid SD fonts: CJK in regular only), then to
+  /// lacks the codepoint (hybrid SD fonts: Latin-only italic face), then to
   /// \p glyphFallback_ (builtin system font) before U+FFFD. When \p outData
   /// is non-null, it receives the EpdFontData that owns the returned glyph —
   /// callers must use that for bitmap lookup, not getData(style).

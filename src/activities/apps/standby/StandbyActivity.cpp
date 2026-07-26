@@ -106,6 +106,7 @@ void drawFaceDots(const GfxRenderer& renderer, int sw, int sh, uint8_t total, ui
 void StandbyActivity::onEnter() {
   Activity::onEnter();
   LOG_DBG("STANDBY", "onEnter free heap=%u", static_cast<unsigned>(ESP.getFreeHeap()));
+  fontUnload_.emplace(renderer);
   // Always default to face 0 (Sloppy Clock). If face 0 is somehow unavailable
   // (currently impossible), fall back to the first available index.
   faceIndex_ = 0;
@@ -140,6 +141,10 @@ void StandbyActivity::onExit() {
     currentFace_->onExit();
     currentFace_.reset();
   }
+  // Explicit, not left to the member destructor: Standby never silent-restarts, so
+  // the reload always has to happen, and doing it here keeps it paired with the
+  // onEnter unload (and inside the same RenderLock the caller holds).
+  fontUnload_.reset();
   LOG_DBG("STANDBY", "onExit free heap=%u", static_cast<unsigned>(ESP.getFreeHeap()));
   Activity::onExit();
 }

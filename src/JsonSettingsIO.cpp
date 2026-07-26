@@ -22,8 +22,8 @@
 namespace {
 
 // Firmware language SKU marker, persisted in settings.json. Lets the next boot
-// detect a cross-SKU reflash (zh-tw / zh-cn / global) and reset the UI language
-// to this build's default — see loadSettings().
+// detect a cross-SKU reflash (zh-tw / zh-cn / ja / ko / global) and reset the UI
+// language to this build's default — see loadSettings().
 #ifdef ENABLE_CHINESE_VERSION
 #ifdef CHINESE_UI_SIMPLIFIED
 constexpr char BUILD_LANG_SKU[] = "zh-cn";
@@ -33,6 +33,10 @@ constexpr char BUILD_LANG_SKU[] = "zh-tw";
 constexpr char LEGACY_LANG_SKU_ZH[] = "zh";
 constexpr char LEGACY_LANG_SKU_CN[] = "cn";
 #endif
+#elif defined(ENABLE_JAPANESE_VERSION)
+constexpr char BUILD_LANG_SKU[] = "ja";
+#elif defined(ENABLE_KOREAN_VERSION)
+constexpr char BUILD_LANG_SKU[] = "ko";
 #else
 constexpr char BUILD_LANG_SKU[] = "global";
 #endif
@@ -40,22 +44,31 @@ constexpr char BUILD_LANG_SKU[] = "global";
 // Atomic JSON write: serialize (streamed) to "<path>.tmp", then rename over the
 // target so a power loss mid-write never corrupts the existing file. Streaming
 // keeps peak heap bounded for large documents (e.g. reading_stats.json).
+// Paths stay on the stack — under reader heap pressure a throwing std::string
+// alloc here abort()s the device (-fno-exceptions).
 bool saveJsonDocumentToFile(const char* moduleName, const char* path, const JsonDocument& doc) {
-  const std::string targetPath = path ? path : "";
-  const std::string tempPath = targetPath + ".tmp";
-
-  if (targetPath.empty()) {
+  if (path == nullptr || path[0] == '\0') {
     LOG_ERR(moduleName, "Missing JSON path for write");
     return false;
   }
 
-  if (Storage.exists(tempPath.c_str())) {
-    Storage.remove(tempPath.c_str());
+  constexpr size_t kMaxPathLen = 191;  // leaves room for ".tmp" + NUL in tempBuf
+  char tempPath[kMaxPathLen + 5];
+  const size_t pathLen = std::strlen(path);
+  if (pathLen == 0 || pathLen > kMaxPathLen) {
+    LOG_ERR(moduleName, "JSON path too long for atomic write (%u)", static_cast<unsigned>(pathLen));
+    return false;
+  }
+  std::memcpy(tempPath, path, pathLen);
+  std::memcpy(tempPath + pathLen, ".tmp", 5);
+
+  if (Storage.exists(tempPath)) {
+    Storage.remove(tempPath);
   }
 
   HalFile file;
-  if (!Storage.openFileForWrite(moduleName, tempPath.c_str(), file)) {
-    LOG_ERR(moduleName, "Could not open JSON file for write: %s", tempPath.c_str());
+  if (!Storage.openFileForWrite(moduleName, tempPath, file)) {
+    LOG_ERR(moduleName, "Could not open JSON file for write: %s", tempPath);
     return false;
   }
 
@@ -63,20 +76,20 @@ bool saveJsonDocumentToFile(const char* moduleName, const char* path, const Json
   file.flush();
   file.close();
   if (written == 0) {
-    Storage.remove(tempPath.c_str());
-    LOG_ERR(moduleName, "serializeJson wrote 0 bytes for %s", targetPath.c_str());
+    Storage.remove(tempPath);
+    LOG_ERR(moduleName, "serializeJson wrote 0 bytes for %s", path);
     return false;
   }
 
-  if (Storage.exists(targetPath.c_str()) && !Storage.remove(targetPath.c_str())) {
-    Storage.remove(tempPath.c_str());
-    LOG_ERR(moduleName, "Could not remove JSON file before replace: %s", targetPath.c_str());
+  if (Storage.exists(path) && !Storage.remove(path)) {
+    Storage.remove(tempPath);
+    LOG_ERR(moduleName, "Could not remove JSON file before replace: %s", path);
     return false;
   }
 
-  if (!Storage.rename(tempPath.c_str(), targetPath.c_str())) {
-    Storage.remove(tempPath.c_str());
-    LOG_ERR(moduleName, "Could not rename JSON temp file to final path: %s", targetPath.c_str());
+  if (!Storage.rename(tempPath, path)) {
+    Storage.remove(tempPath);
+    LOG_ERR(moduleName, "Could not rename JSON temp file to final path: %s", path);
     return false;
   }
 
@@ -633,9 +646,18 @@ bool JsonSettingsIO::saveReadingStats(const ReadingStatsStore& store, const char
   return saveJsonDocumentToFile("RST", path, doc);
 }
 
-bool JsonSettingsIO::loadReadingStats(ReadingStatsStore& store, const char* json) {
+// Deserialized straight from the file rather than from a whole-file String: reading_stats.json
+// grows for the life of the device (one readingDays entry per day, globally and per book), so
+// the load must not need a second full copy of the file in heap next to the document, nor be
+// bound by HalStorage's whole-file read limit.
+bool JsonSettingsIO::loadReadingStatsFromFile(ReadingStatsStore& store, const char* path) {
+  HalFile file;  // closed by its destructor on every exit path
+  if (!Storage.openFileForRead("RST", path, file)) {
+    return false;
+  }
+
   JsonDocument doc;
-  auto error = deserializeJson(doc, json);
+  const DeserializationError error = deserializeJson(doc, file);
   if (error) {
     LOG_ERR("RST", "JSON parse error: %s", error.c_str());
     return false;
@@ -732,17 +754,6 @@ bool JsonSettingsIO::loadReadingStats(ReadingStatsStore& store, const char* json
   store.rebuildAggregatedReadingDays();
   LOG_DBG("RST", "Reading stats loaded from file (%d books)", static_cast<int>(store.books.size()));
   return true;
-}
-
-bool JsonSettingsIO::loadReadingStatsFromFile(ReadingStatsStore& store, const char* path) {
-  if (!Storage.exists(path)) {
-    return false;
-  }
-  const String json = Storage.readFile(path);
-  if (json.isEmpty()) {
-    return false;
-  }
-  return loadReadingStats(store, json.c_str());
 }
 
 // ---- AchievementsStore ----

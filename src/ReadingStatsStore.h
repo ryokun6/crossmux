@@ -53,7 +53,6 @@ struct ReadingSessionLogEntry {
 class ReadingStatsStore;
 namespace JsonSettingsIO {
 bool saveReadingStats(const ReadingStatsStore& store, const char* path);
-bool loadReadingStats(ReadingStatsStore& store, const char* json);
 bool loadReadingStatsFromFile(ReadingStatsStore& store, const char* path);
 }  // namespace JsonSettingsIO
 
@@ -92,9 +91,15 @@ class ReadingStatsStore {
   mutable SummaryCache summaryCache;
   mutable bool dirty = false;
   mutable unsigned long lastSaveMs = 0;
+  // Invariant: an in-memory store that does not come from reading_stats.json is never written
+  // back to it. Set when a load of an existing reading_stats.json failed (truncated file, parse
+  // error, out of memory), which leaves this store empty while the file still holds the user's
+  // history. While set, markDirty() refuses to arm and persistToFile() refuses to write, so no
+  // session can overwrite that history with nothing. Only a load that succeeded, an explicit
+  // reset(), or a successful import clears it — see loadFromFile().
+  bool loadFailed = false;
 
   friend bool JsonSettingsIO::saveReadingStats(const ReadingStatsStore&, const char*);
-  friend bool JsonSettingsIO::loadReadingStats(ReadingStatsStore&, const char*);
   friend bool JsonSettingsIO::loadReadingStatsFromFile(ReadingStatsStore&, const char*);
 
   size_t findBookIndexByPath(const std::string& path) const;

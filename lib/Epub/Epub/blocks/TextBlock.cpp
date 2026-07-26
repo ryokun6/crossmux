@@ -3,6 +3,7 @@
 #include <BidiUtils.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <Serialization.h>
 #include <Utf8.h>
 
@@ -297,7 +298,11 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
   serialization::readPod(file, blockStyle.directionDefined);
   serialization::readPod(file, blockStyle.isVerticalRtl);
 
-  return std::unique_ptr<TextBlock>(new TextBlock(std::move(words), std::move(wordXpos), std::move(wordStyles),
-                                                  std::move(wordFocusBoundary), std::move(wordFocusSuffixX),
-                                                  blockStyle));
+  auto block = makeUniqueNoThrow<TextBlock>(std::move(words), std::move(wordXpos), std::move(wordStyles),
+                                            std::move(wordFocusBoundary), std::move(wordFocusSuffixX), blockStyle);
+  if (!block) {
+    LOG_ERR("TXT", "Deserialization failed: OOM allocating TextBlock");
+    return nullptr;
+  }
+  return block;
 }

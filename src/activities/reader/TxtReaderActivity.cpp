@@ -35,6 +35,10 @@ void TxtReaderActivity::onEnter() {
     return;
   }
 
+  // Start the refresh cadence at a full interval so opening a book paints with a FAST refresh
+  // instead of dropping straight into the slower HALF ghost-cleanup path.
+  pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+
   ReaderUtils::applyOrientation(renderer, SETTINGS.orientation);
 
   txt->setupCacheDir();

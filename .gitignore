@@ -25,3 +25,12 @@ weread_apikey*.bin
 
 # GenSen OTF source used to regenerate CN builtin fonts (large, licensed OFL)
 lib/EpdFont/builtinFonts/source/
+
+# pioarduino hybrid ESP-IDF rebuild artifacts (triggered by custom_sdkconfig).
+# sdkconfig.defaults is generated here too, not hand-maintained.
+# Root-anchored so simulator/ and test/ CMakeLists.txt stay tracked.
+/.dummy/
+/managed_components/
+/sdkconfig.*
+/CMakeLists.txt
+/dependencies.lock

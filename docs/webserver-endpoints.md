@@ -562,3 +562,50 @@ The final field is the WebSocket upload port.
 
 Calibre Wireless starts the same web server in STA mode and displays setup
 instructions plus WebSocket upload progress on the device screen.
+
+## Known Limitation: One Idle Connection Stalls the Server
+
+The HTTP server handles one client at a time and can stall for seconds when
+more than one TCP connection is in play. This is measured, understood, and
+**deliberately deferred** — it is not an oversight. Do not re-derive it.
+
+Arduino's `WebServer::handleClient()` (framework package,
+`WebServer.cpp:409-467`) services exactly one client per call. A new accept is
+gated on `_currentStatus == HC_NONE`, and an accepted client that sends nothing
+is held for the full `HTTP_MAX_DATA_WAIT` (5000 ms) before it is dropped. The
+listen backlog is only 4 (`NetworkServer(port, max_clients = 4)`) and every
+response sends `Connection: close`, so a page load needs a fresh connection per
+asset.
+
+Measured on device (X3, `1.4.14-tc`), holding exactly one idle socket open to
+port 80 sending nothing:
+
+| Condition | Total |
+|---|---|
+| Control, no idle socket | 0.145 s |
+| One idle socket held, first request | **3.783 s** |
+| Same, requests 2-4 | 0.036-0.082 s |
+| After holder released | 0.129 s |
+
+The idle socket had been open ~1.5 s when the request arrived, leaving ~3.5 s
+of the 5000 ms window, and the measured stall was 3.78 s — a direct match.
+`time_connect` stayed fast (0.024 s) while total ballooned: the handshake
+completes in the listen backlog, but the application burns the remainder of
+`HTTP_MAX_DATA_WAIT` on the idle client before servicing the real request.
+Browsers open speculative preconnect sockets, so real-world use can hit
+multi-second stalls even though sequential `curl` requests complete in
+20-119 ms.
+
+This is a **separate** issue from the heap-starvation bug fixed elsewhere,
+where a resident SD font pinned ~75 KB and left `MaxAlloc` at 2,292 B — below
+what lwIP needs for a socket — wedging the server entirely (0 of 21 requests
+succeeded, all timing out with `time_connect` never advancing). That fix
+restored sequential use; it does not address concurrency.
+
+Known viable fix route: `HTTP_MAX_DATA_WAIT` is an unguarded `#define` in the
+framework and cannot be overridden with `-D`, but `handleClient()` is `virtual`
+and `_nullDelay` defaults to `true`, so subclassing `WebServer` to bound the
+idle-socket wait is viable without patching the framework. It was deferred as a
+larger, riskier change deserving its own measurement. The same note lives next
+to `CrossPointWebServer::handleClient()` in
+`src/network/CrossPointWebServer.cpp`.

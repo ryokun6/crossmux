@@ -1,5 +1,8 @@
 #include "Bitmap.h"
 
+#include <Logging.h>
+#include <Memory.h>
+
 #include <cstdlib>
 #include <cstring>
 
@@ -167,10 +170,21 @@ BmpReaderError Bitmap::parseHeaders() {
   //  - High-color + dithering disabled → simple quantization (no error diffusion)
   const bool highColor = !nativePalette;
   if (highColor && dithering) {
+    // Ditherer owns ~6*(width+4) bytes of error rows; fail parse on OOM rather than abort.
     if (USE_ATKINSON) {
-      atkinsonDitherer = new AtkinsonDitherer(width);
+      auto ditherer = makeUniqueNoThrow<AtkinsonDitherer>(width);
+      if (!ditherer || !ditherer->ok()) {
+        LOG_ERR("BMP", "OOM: AtkinsonDitherer (width=%d)", width);
+        return BmpReaderError::OomRowBuffer;
+      }
+      atkinsonDitherer = ditherer.release();
     } else {
-      fsDitherer = new FloydSteinbergDitherer(width);
+      auto ditherer = makeUniqueNoThrow<FloydSteinbergDitherer>(width);
+      if (!ditherer || !ditherer->ok()) {
+        LOG_ERR("BMP", "OOM: FloydSteinbergDitherer (width=%d)", width);
+        return BmpReaderError::OomRowBuffer;
+      }
+      fsDitherer = ditherer.release();
     }
   }
 
