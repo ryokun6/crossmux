@@ -71,7 +71,7 @@ class EpubReaderActivity final : public Activity {
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
   // Returns true if sync acted (launched sync, showed credentials hint, or surfaced a
   // save error). CrossMux always acts on no-credentials by opening the hint screen.
-  bool launchKOReaderSync();
+  void launchKOReaderSync();
   void applyOrientation(uint8_t orientation);
   void applyWritingMode(uint8_t writingMode);
   uint8_t effectiveWritingMode() const;
