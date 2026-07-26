@@ -69,7 +69,8 @@ class EpubReaderActivity final : public Activity {
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
   void jumpToPercent(int percent);
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
-  // Opens Cloud Sync, or the credentials hint when username/password are unset.
+  // Returns true if sync acted (launched sync, showed credentials hint, or surfaced a
+  // save error). CrossMux always acts on no-credentials by opening the hint screen.
   void launchKOReaderSync();
   void applyOrientation(uint8_t orientation);
   void applyWritingMode(uint8_t writingMode);

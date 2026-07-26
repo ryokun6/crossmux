@@ -769,7 +769,7 @@ void EpubReaderActivity::launchKOReaderSync() {
     activityManager.replaceActivity(
         std::make_unique<KOReaderSyncActivity>(renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage,
                                                totalPages, SavedProgressPosition{}, std::string{}, std::nullopt));
-    return;
+    return;  // acted: showed credentials hint
   }
 
   const int currentPage = section ? section->currentPage : nextPageNumber;
@@ -814,6 +814,7 @@ void EpubReaderActivity::launchKOReaderSync() {
   activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
       renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, std::move(localKoPos),
       std::move(localChapterName), paragraphIndex));
+  // acted: launched the sync activity
 }
 
 void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
