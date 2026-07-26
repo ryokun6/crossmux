@@ -19,6 +19,7 @@ class ParsedText {
   std::vector<bool> wordContinues;      // true = word attaches to previous with no break
   std::vector<bool> wordNoSpaceBefore;  // true = may break before token, but no synthetic space when joined
   std::vector<bool> wordIsFocusSuffix;  // true = token is the regular tail of a focus bold-prefix split
+  std::vector<bool> wordSpaceBefore;    // true = source whitespace preceded this word; keeps author spaces in CJK text
   BlockStyle blockStyle;
   bool extraParagraphSpacing;
   bool hyphenationEnabled;
@@ -31,6 +32,7 @@ class ParsedText {
   std::vector<uint16_t> reorderedWidthsScratch;
   std::vector<bool> reorderedContinuesScratch;
   std::vector<bool> reorderedNoSpaceBeforeScratch;
+  std::vector<bool> reorderedSpaceBeforeScratch;
   std::vector<bool> reorderedFocusSuffixScratch;
   std::vector<uint16_t> visualOrderScratch;
 
@@ -65,11 +67,12 @@ class ParsedText {
         hasRtlWord(false) {}
   ~ParsedText() = default;
 
-  void addWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false, bool attachToPrevious = false);
+  void addWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false, bool attachToPrevious = false,
+               bool spaceBefore = false);
   // Same as addWord but returns false on OOM (WordList / style vector growth) so the
   // chapter indexer can latch allocationFailed instead of abort()ing.
   bool tryAddWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false,
-                  bool attachToPrevious = false);
+                  bool attachToPrevious = false, bool spaceBefore = false);
   void setBlockStyle(const BlockStyle& blockStyle) { this->blockStyle = blockStyle; }
   BlockStyle& getBlockStyle() { return blockStyle; }
   size_t size() const { return words.size(); }
