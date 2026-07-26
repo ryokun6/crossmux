@@ -35,6 +35,7 @@ class ParsedText {
   std::vector<uint16_t> visualOrderScratch;
 
   void reserveForTokens(size_t extraTokens, size_t extraBytes);
+  bool tryReserveForTokens(size_t extraTokens, size_t extraBytes);
   int resolveFirstLineIndent(bool isFirstLine, const GfxRenderer& renderer, int fontId) const;
   std::vector<size_t> computeLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth,
                                         std::vector<uint16_t>& wordWidths, std::vector<bool>& continuesVec,
@@ -65,6 +66,10 @@ class ParsedText {
   ~ParsedText() = default;
 
   void addWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false, bool attachToPrevious = false);
+  // Same as addWord but returns false on OOM (WordList / style vector growth) so the
+  // chapter indexer can latch allocationFailed instead of abort()ing.
+  bool tryAddWord(std::string word, EpdFontFamily::Style fontStyle, bool underline = false,
+                  bool attachToPrevious = false);
   void setBlockStyle(const BlockStyle& blockStyle) { this->blockStyle = blockStyle; }
   BlockStyle& getBlockStyle() { return blockStyle; }
   size_t size() const { return words.size(); }

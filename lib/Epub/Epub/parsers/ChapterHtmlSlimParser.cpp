@@ -236,6 +236,14 @@ void ChapterHtmlSlimParser::flushPendingAnchor() {
 
 // flush the contents of partWordBuffer to currentTextBlock
 void ChapterHtmlSlimParser::flushPartWordBuffer() {
+  // CJK tokenization flushes once per character inside a single characterData()
+  // call; bail immediately after the first OOM so we do not spam the log / heap.
+  if (allocationFailed) {
+    partWordBufferIndex = 0;
+    nextWordContinues = false;
+    return;
+  }
+
   // Determine font style from depth-based tracking and CSS effective style
   const bool isBold = boldUntilDepth < depth || effectiveBold;
   const bool isItalic = italicUntilDepth < depth || effectiveItalic;
@@ -261,7 +269,10 @@ void ChapterHtmlSlimParser::flushPartWordBuffer() {
   // flush the buffer
   if (!currentTextBlock) return;  // block allocation failed; see startNewTextBlock()
   partWordBuffer[partWordBufferIndex] = '\0';
-  currentTextBlock->addWord(partWordBuffer, fontStyle, false, nextWordContinues);
+  if (!currentTextBlock->tryAddWord(partWordBuffer, fontStyle, false, nextWordContinues)) {
+    allocationFailed = true;
+    LOG_ERR("EHP", "OOM adding word during chapter parse");
+  }
   partWordBufferIndex = 0;
   nextWordContinues = false;
 }
@@ -943,7 +954,10 @@ void XMLCALL ChapterHtmlSlimParser::startElement(void* userData, const XML_Char*
       self->updateEffectiveInlineStyle();
 
       if (strcmp(name, "li") == 0) {
-        self->currentTextBlock->addWord("\xe2\x80\xa2", EpdFontFamily::REGULAR);
+        if (!self->currentTextBlock->tryAddWord("\xe2\x80\xa2", EpdFontFamily::REGULAR)) {
+          self->allocationFailed = true;
+          LOG_ERR("EHP", "OOM adding list bullet during chapter parse");
+        }
       }
     }
   } else if (matches(name, UNDERLINE_TAGS, std::size(UNDERLINE_TAGS))) {

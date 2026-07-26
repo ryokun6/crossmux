@@ -44,22 +44,31 @@ constexpr char BUILD_LANG_SKU[] = "global";
 // Atomic JSON write: serialize (streamed) to "<path>.tmp", then rename over the
 // target so a power loss mid-write never corrupts the existing file. Streaming
 // keeps peak heap bounded for large documents (e.g. reading_stats.json).
+// Paths stay on the stack — under reader heap pressure a throwing std::string
+// alloc here abort()s the device (-fno-exceptions).
 bool saveJsonDocumentToFile(const char* moduleName, const char* path, const JsonDocument& doc) {
-  const std::string targetPath = path ? path : "";
-  const std::string tempPath = targetPath + ".tmp";
-
-  if (targetPath.empty()) {
+  if (path == nullptr || path[0] == '\0') {
     LOG_ERR(moduleName, "Missing JSON path for write");
     return false;
   }
 
-  if (Storage.exists(tempPath.c_str())) {
-    Storage.remove(tempPath.c_str());
+  constexpr size_t kMaxPathLen = 191;  // leaves room for ".tmp" + NUL in tempBuf
+  char tempPath[kMaxPathLen + 5];
+  const size_t pathLen = std::strlen(path);
+  if (pathLen == 0 || pathLen > kMaxPathLen) {
+    LOG_ERR(moduleName, "JSON path too long for atomic write (%u)", static_cast<unsigned>(pathLen));
+    return false;
+  }
+  std::memcpy(tempPath, path, pathLen);
+  std::memcpy(tempPath + pathLen, ".tmp", 5);
+
+  if (Storage.exists(tempPath)) {
+    Storage.remove(tempPath);
   }
 
   HalFile file;
-  if (!Storage.openFileForWrite(moduleName, tempPath.c_str(), file)) {
-    LOG_ERR(moduleName, "Could not open JSON file for write: %s", tempPath.c_str());
+  if (!Storage.openFileForWrite(moduleName, tempPath, file)) {
+    LOG_ERR(moduleName, "Could not open JSON file for write: %s", tempPath);
     return false;
   }
 
@@ -67,20 +76,20 @@ bool saveJsonDocumentToFile(const char* moduleName, const char* path, const Json
   file.flush();
   file.close();
   if (written == 0) {
-    Storage.remove(tempPath.c_str());
-    LOG_ERR(moduleName, "serializeJson wrote 0 bytes for %s", targetPath.c_str());
+    Storage.remove(tempPath);
+    LOG_ERR(moduleName, "serializeJson wrote 0 bytes for %s", path);
     return false;
   }
 
-  if (Storage.exists(targetPath.c_str()) && !Storage.remove(targetPath.c_str())) {
-    Storage.remove(tempPath.c_str());
-    LOG_ERR(moduleName, "Could not remove JSON file before replace: %s", targetPath.c_str());
+  if (Storage.exists(path) && !Storage.remove(path)) {
+    Storage.remove(tempPath);
+    LOG_ERR(moduleName, "Could not remove JSON file before replace: %s", path);
     return false;
   }
 
-  if (!Storage.rename(tempPath.c_str(), targetPath.c_str())) {
-    Storage.remove(tempPath.c_str());
-    LOG_ERR(moduleName, "Could not rename JSON temp file to final path: %s", targetPath.c_str());
+  if (!Storage.rename(tempPath, path)) {
+    Storage.remove(tempPath);
+    LOG_ERR(moduleName, "Could not rename JSON temp file to final path: %s", path);
     return false;
   }
 

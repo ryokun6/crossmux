@@ -188,10 +188,31 @@ void WifiSelectionActivity::loop() {}
 void WifiSelectionActivity::render(RenderLock&&) {}
 
 #include "activities/network/CrossPointWebServerActivity.h"
-STUB_ACTIVITY_BASE(CrossPointWebServerActivity)
+// File Transfer / WeRead-key setup replace Home with this activity. An empty
+// STUB_ACTIVITY_BASE onEnter left a dead blank screen that looked like a crash
+// (no Back handler, no mode chooser). Bounce home via deferred finish() so we
+// don't nest replaceActivity inside onEnter.
+void CrossPointWebServerActivity::onEnter() {
+  Activity::onEnter();
+  LOG_INF("WEBACT", "File transfer / web server is not available in the simulator");
+  result.isCancelled = true;
+  finish();
+}
+void CrossPointWebServerActivity::onExit() {}
+void CrossPointWebServerActivity::loop() {}
+void CrossPointWebServerActivity::render(RenderLock&&) {}
 
 #include "activities/network/CalibreConnectActivity.h"
-STUB_ACTIVITY_BASE(CalibreConnectActivity)
+// Same replace-not-push trap as CrossPointWebServerActivity above.
+void CalibreConnectActivity::onEnter() {
+  Activity::onEnter();
+  LOG_INF("WEBACT", "Calibre connect is not available in the simulator");
+  result.isCancelled = true;
+  finish();
+}
+void CalibreConnectActivity::onExit() {}
+void CalibreConnectActivity::loop() {}
+void CalibreConnectActivity::render(RenderLock&&) {}
 
 #include "activities/settings/OtaUpdateActivity.h"
 STUB_ACTIVITY_BASE(OtaUpdateActivity)

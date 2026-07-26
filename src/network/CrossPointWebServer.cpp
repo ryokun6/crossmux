@@ -9,6 +9,7 @@
 #include <esp_task_wdt.h>
 
 #include <algorithm>
+#include <new>
 
 #include "CrossPointSettings.h"
 #include "FontInstaller.h"
@@ -116,7 +117,7 @@ void CrossPointWebServer::begin() {
   LOG_DBG("WEB", "Network mode: %s", apMode ? "AP" : "STA");
 
   LOG_DBG("WEB", "Creating web server on port %d...", port);
-  server.reset(new WebServer(port));
+  server.reset(new (std::nothrow) WebServer(port));
 
   // Disable WiFi sleep to improve responsiveness and prevent 'unreachable' errors.
   // This is critical for reliable web server operation on ESP32.
@@ -131,7 +132,7 @@ void CrossPointWebServer::begin() {
   LOG_DBG("WEB", "[MEM] Free heap after WebServer allocation: %d bytes", ESP.getFreeHeap());
 
   if (!server) {
-    LOG_ERR("WEB", "Failed to create WebServer!");
+    LOG_ERR("WEB", "Failed to create WebServer (OOM)!");
     return;
   }
 
@@ -194,14 +195,27 @@ void CrossPointWebServer::begin() {
   // Collect WebDAV headers and register handler
   const char* davHeaders[] = {"Depth", "Destination", "Overwrite", "If", "Lock-Token", "Timeout"};
   server->collectHeaders(davHeaders, 6);
-  server->addHandler(new WebDAVHandler());  // Note: WebDAVHandler will be deleted by WebServer when server is stopped
+  // WebServer::addHandler takes ownership; WebServer deletes the handler in its destructor / stop path.
+  auto* davHandler = new (std::nothrow) WebDAVHandler();
+  if (!davHandler) {
+    LOG_ERR("WEB", "Failed to create WebDAVHandler (OOM)!");
+    server.reset();
+    return;
+  }
+  server->addHandler(davHandler);
   LOG_DBG("WEB", "WebDAV handler initialized");
 
   server->begin();
 
   // Start WebSocket server for fast binary uploads
   LOG_DBG("WEB", "Starting WebSocket server on port %d...", wsPort);
-  wsServer.reset(new WebSocketsServer(wsPort));
+  wsServer.reset(new (std::nothrow) WebSocketsServer(wsPort));
+  if (!wsServer) {
+    LOG_ERR("WEB", "Failed to create WebSocketsServer (OOM)!");
+    server->stop();
+    server.reset();
+    return;
+  }
   wsInstance = const_cast<CrossPointWebServer*>(this);
   wsServer->begin();
   wsServer->onEvent(wsEventCallback);

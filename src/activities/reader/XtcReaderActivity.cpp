@@ -11,6 +11,7 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <Memory.h>
 
 #include <algorithm>
 
@@ -37,6 +38,20 @@ void XtcReaderActivity::onEnter() {
   // Start the refresh cadence at a full interval so opening a book paints with a FAST refresh
   // instead of dropping straight into the slower HALF ghost-cleanup path.
   pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
+
+  // Heap: up to 96KB for 2-bit 480×800 XTH (((w*h+7)/8)*2); too large for stack, reused each page turn.
+  const uint16_t pageWidth = xtc->getPageWidth();
+  const uint16_t pageHeight = xtc->getPageHeight();
+  if (xtc->getBitDepth() == 2) {
+    pageBufferCapacity = ((static_cast<size_t>(pageWidth) * pageHeight + 7) / 8) * 2;
+  } else {
+    pageBufferCapacity = (static_cast<size_t>((pageWidth + 7) / 8)) * pageHeight;
+  }
+  pageBuffer = makeUniqueNoThrow<uint8_t[]>(pageBufferCapacity);
+  if (!pageBuffer) {
+    LOG_ERR("XTR", "Failed to allocate page buffer (%lu bytes)", static_cast<unsigned long>(pageBufferCapacity));
+    pageBufferCapacity = 0;
+  }
 
   xtc->setupCacheDir();
 
@@ -67,6 +82,8 @@ void XtcReaderActivity::onExit() {
   READING_STATS.endSession();
   ACHIEVEMENTS.recordSessionEnded(READING_STATS.getLastSessionSnapshot());
   showPendingAchievementPopups(renderer);
+  pageBuffer.reset();
+  pageBufferCapacity = 0;
   xtc.reset();
 }
 
@@ -231,32 +248,32 @@ void XtcReaderActivity::renderPage() {
   const uint16_t pageHeight = xtc->getPageHeight();
   const uint8_t bitDepth = xtc->getBitDepth();
 
-  // Calculate buffer size for one page
+  // Needed size for one page (must fit in the onEnter()-allocated member buffer)
   // XTG (1-bit): Row-major, ((width+7)/8) * height bytes
   // XTH (2-bit): Two bit planes, column-major, ((width * height + 7) / 8) * 2 bytes
   size_t pageBufferSize;
   if (bitDepth == 2) {
     pageBufferSize = ((static_cast<size_t>(pageWidth) * pageHeight + 7) / 8) * 2;
   } else {
-    pageBufferSize = ((pageWidth + 7) / 8) * pageHeight;
+    pageBufferSize = (static_cast<size_t>((pageWidth + 7) / 8)) * pageHeight;
   }
 
-  // Allocate page buffer
-  uint8_t* pageBuffer = static_cast<uint8_t*>(malloc(pageBufferSize));
-  if (!pageBuffer) {
-    LOG_ERR("XTR", "Failed to allocate page buffer (%lu bytes)", pageBufferSize);
+  if (!pageBuffer || pageBufferCapacity < pageBufferSize) {
+    LOG_ERR("XTR", "Page buffer unavailable (need %lu, have %lu)", static_cast<unsigned long>(pageBufferSize),
+            static_cast<unsigned long>(pageBufferCapacity));
     renderer.clearScreen();
     renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_MEMORY_ERROR), true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
     return;
   }
 
-  // Load page data
-  size_t bytesRead = xtc->loadPage(currentPage, pageBuffer, pageBufferSize);
+  uint8_t* const pageData = pageBuffer.get();
+
+  // Load page data into the reused member buffer
+  size_t bytesRead = xtc->loadPage(currentPage, pageData, pageBufferSize);
   if (bytesRead == 0) {
     LOG_ERR("XTR", "Failed to load page %lu: bufferSize=%lu bitDepth=%u error=%s", currentPage, pageBufferSize,
             bitDepth, xtc::errorToString(xtc->getLastError()));
-    free(pageBuffer);
     renderer.clearScreen();
     renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_PAGE_LOAD_ERROR), true, EpdFontFamily::BOLD);
     renderer.displayBuffer();
@@ -279,9 +296,9 @@ void XtcReaderActivity::renderPage() {
     // - Grayscale: 0=White, 1=Dark Grey, 2=Light Grey, 3=Black
 
     const size_t planeSize = (static_cast<size_t>(pageWidth) * pageHeight + 7) / 8;
-    const uint8_t* plane1 = pageBuffer;              // Bit1 plane
-    const uint8_t* plane2 = pageBuffer + planeSize;  // Bit2 plane
-    const size_t colBytes = (pageHeight + 7) / 8;    // Bytes per column (100 for 800 height)
+    const uint8_t* plane1 = pageData;              // Bit1 plane
+    const uint8_t* plane2 = pageData + planeSize;  // Bit2 plane
+    const size_t colBytes = (pageHeight + 7) / 8;  // Bytes per column (100 for 800 height)
 
     // Lambda to get pixel value at (x, y)
     auto getPixelValue = [&](uint16_t x, uint16_t y) -> uint8_t {
@@ -371,8 +388,6 @@ void XtcReaderActivity::renderPage() {
     // Cleanup grayscale buffers with current frame buffer
     renderer.cleanupGrayscaleWithFrameBuffer();
 
-    free(pageBuffer);
-
     LOG_DBG("XTR", "Rendered page %lu/%lu (2-bit grayscale)", currentPage + 1, xtc->getPageCount());
     return;
   } else {
@@ -386,7 +401,7 @@ void XtcReaderActivity::renderPage() {
         // Read source pixel (MSB first, bit 7 = leftmost pixel)
         const size_t srcByte = srcRowStart + srcX / 8;
         const size_t srcBit = 7 - (srcX % 8);
-        const bool isBlack = !((pageBuffer[srcByte] >> srcBit) & 1);  // XTC: 0 = black, 1 = white
+        const bool isBlack = !((pageData[srcByte] >> srcBit) & 1);  // XTC: 0 = black, 1 = white
 
         if (isBlack) {
           renderer.drawPixel(srcX, srcY, true);
@@ -395,8 +410,6 @@ void XtcReaderActivity::renderPage() {
     }
   }
   // White pixels are already cleared by clearScreen()
-
-  free(pageBuffer);
 
   if (SETTINGS.xtcStatusBarMode == CrossPointSettings::XTC_STATUS_BAR_MODE::XTC_STATUS_BAR_TOP) {
     renderStatusBarOverlay(StatusBarOverlayPosition::Top);

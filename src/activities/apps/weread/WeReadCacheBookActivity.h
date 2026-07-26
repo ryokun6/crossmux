@@ -26,8 +26,8 @@
  * Error UX: Confirm retries the current step; Back exits the Activity.
  *
  * Threading: identical pattern to `WeReadFetchActivity` — the task owns a
- * `std::shared_ptr<Context>` for the duration of one POST. The Activity may
- * be destructed mid-fetch; the task drops its reference before vTaskDelete.
+ * `std::shared_ptr<Context>` for the duration of one POST. onExit() signals
+ * cancel, waits, then force-deletes if still running (FontDownload pattern).
  */
 class WeReadCacheBookActivity final : public Activity {
  public:
@@ -45,6 +45,8 @@ class WeReadCacheBookActivity final : public Activity {
 
   struct Context {
     std::atomic<int> state{0};  // 0=loading, 1=ready, 2=error
+    std::atomic<bool> cancel{false};
+    std::atomic<bool> running{false};
     int err = 0;
     std::unique_ptr<JsonDocument> request;
     std::unique_ptr<JsonDocument> response;
@@ -67,6 +69,9 @@ class WeReadCacheBookActivity final : public Activity {
 
   // Build request body + filter for `step_`, spawn the worker task.
   void spawnFetchForCurrentStep();
+
+  // Signal cancel, wait for the worker, force-delete if still running.
+  void stopFetchTask();
 
   // Drain a Ready/Error result from `ctx_` and advance the step. On the last
   // step (success or non-fatal skip) this calls finish() — control returns

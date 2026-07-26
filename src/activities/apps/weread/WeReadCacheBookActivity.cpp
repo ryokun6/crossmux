@@ -40,10 +40,31 @@ void WeReadCacheBookActivity::onEnter() {
 }
 
 void WeReadCacheBookActivity::onExit() {
+  stopFetchTask();
   ctx_.reset();
-  taskHandle_ = nullptr;
   fontUnload_.reset();
   Activity::onExit();
+}
+
+void WeReadCacheBookActivity::stopFetchTask() {
+  if (!ctx_ || !ctx_->running.load()) {
+    taskHandle_ = nullptr;
+    return;
+  }
+  ctx_->cancel.store(true);
+  // Worker checks cancel around the HTTP POST; wait for clean exit so we
+  // don't vTaskDelete mid-TLS / JsonDocument work (matches FontDownload).
+  for (int i = 0; i < 40 && ctx_->running.load(); ++i) {
+    delay(100);
+  }
+  if (ctx_->running.load() && taskHandle_ != nullptr) {
+    LOG_ERR("WRCACHE", "fetch task still running on exit — forcing delete");
+    vTaskDelete(taskHandle_);
+    taskHandle_ = nullptr;
+    ctx_->running.store(false);
+  } else {
+    taskHandle_ = nullptr;
+  }
 }
 
 void WeReadCacheBookActivity::spawnFetchForCurrentStep() {
@@ -54,6 +75,7 @@ void WeReadCacheBookActivity::spawnFetchForCurrentStep() {
   // it once; nesting is safe if the launching screen already holds one.
   if (!fontUnload_) fontUnload_.emplace(renderer);
 
+  stopFetchTask();
   ctx_.reset();
 
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());
@@ -85,9 +107,11 @@ void WeReadCacheBookActivity::spawnFetchForCurrentStep() {
     phase_ = Phase::Error;
     return;
   }
+  ctx->running.store(true);
   BaseType_t rc = xTaskCreate(&fetchTrampoline, "WRCacheFetch", 4096, taskArg, 1, &taskHandle_);
   if (rc != pdPASS) {
     LOG_ERR("WRCACHE", "xTaskCreate failed");
+    ctx->running.store(false);
     delete taskArg;
     lastErr_ = WeReadClient::Err::Http;
     phase_ = Phase::Error;
@@ -103,13 +127,18 @@ void WeReadCacheBookActivity::fetchTrampoline(void* arg) {
   std::shared_ptr<Context> ctx = *wrapper;
   delete wrapper;
 
-  WeReadClient::Err err = WeReadClient::post(ctx->apiName.c_str(), *ctx->request, *ctx->response,
-                                             /*httpTimeoutMs=*/10000, ctx->filter.get());
-  ctx->filter.reset();
-  ctx->err = static_cast<int>(err);
-  ctx->state.store(err == WeReadClient::Err::Ok ? 1 : 2);
+  if (!ctx->cancel.load()) {
+    WeReadClient::Err err = WeReadClient::post(ctx->apiName.c_str(), *ctx->request, *ctx->response,
+                                               /*httpTimeoutMs=*/10000, ctx->filter.get());
+    ctx->filter.reset();
+    if (!ctx->cancel.load()) {
+      ctx->err = static_cast<int>(err);
+      ctx->state.store(err == WeReadClient::Err::Ok ? 1 : 2);
+    }
+  }
   // vTaskDelete(nullptr) does not return — local destructors will not run.
   // Drop the shared_ptr explicitly so Context doesn't leak forever.
+  ctx->running.store(false);
   ctx.reset();
   vTaskDelete(nullptr);
 }
@@ -119,6 +148,7 @@ void WeReadCacheBookActivity::consumeResult() {
   const int s = ctx_->state.load();
   if (s == 1) {
     const bool savedOk = WeReadBookCacheFlow::parseAndSave(step_, bookId_, *ctx_->response);
+    stopFetchTask();
     ctx_.reset();
     if (!savedOk) {
       LOG_ERR("WRCACHE", "SD write failed at step %d", step_);
@@ -130,6 +160,7 @@ void WeReadCacheBookActivity::consumeResult() {
     ++step_;
   } else if (s == 2) {
     const WeReadClient::Err err = static_cast<WeReadClient::Err>(ctx_->err);
+    stopFetchTask();
     ctx_.reset();
     if (WeReadBookCacheFlow::isFatalErr(err)) {
       lastErr_ = err;

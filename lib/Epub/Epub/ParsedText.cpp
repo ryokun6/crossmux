@@ -1,5 +1,6 @@
 #include "ParsedText.h"
 
+#include <Arduino.h>
 #include <BidiUtils.h>
 #include <EpdFontData.h>
 #include <GfxRenderer.h>
@@ -572,23 +573,45 @@ bool isWordCharacter(uint32_t cp) {
 
 // Grows the token storage and every parallel per-token array in one step, using
 // geometric growth so a paragraph of many short words does not re-allocate on
-// each one.
-void ParsedText::reserveForTokens(const size_t extraTokens, const size_t extraBytes) {
-  words.reserveMore(extraTokens, extraBytes);
+// each one. Returns false on OOM without abort()ing (-fno-exceptions).
+bool ParsedText::tryReserveForTokens(const size_t extraTokens, const size_t extraBytes) {
+  if (!words.reserveMore(extraTokens, extraBytes)) {
+    return false;
+  }
 
   const size_t required = words.size() + extraTokens;
-  if (wordStyles.capacity() >= required) return;
+  if (wordStyles.capacity() >= required) return true;
   constexpr size_t MIN_TOKEN_CAPACITY = 16;
   const size_t capacity = std::max({required, wordStyles.capacity() * 2, MIN_TOKEN_CAPACITY});
+  // std::vector::reserve still aborts on OOM under -fno-exceptions. Bail out when
+  // the largest free block cannot hold a conservative estimate of the four arrays.
+  constexpr size_t kApproxBytesPerSlot = sizeof(EpdFontFamily::Style) + 4;
+#if defined(ESP32) || defined(ARDUINO)
+  if (ESP.getMaxAllocHeap() < capacity * kApproxBytesPerSlot + 512) {
+    return false;
+  }
+#else
+  (void)kApproxBytesPerSlot;
+#endif
   wordStyles.reserve(capacity);
   wordContinues.reserve(capacity);
   wordNoSpaceBefore.reserve(capacity);
   wordIsFocusSuffix.reserve(capacity);
+  return wordStyles.capacity() >= required;
+}
+
+void ParsedText::reserveForTokens(const size_t extraTokens, const size_t extraBytes) {
+  (void)tryReserveForTokens(extraTokens, extraBytes);
 }
 
 void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle, const bool underline,
                          const bool attachToPrevious) {
-  if (word.empty()) return;
+  (void)tryAddWord(std::move(word), fontStyle, underline, attachToPrevious);
+}
+
+bool ParsedText::tryAddWord(std::string word, const EpdFontFamily::Style fontStyle, const bool underline,
+                            const bool attachToPrevious) {
+  if (word.empty()) return true;
 
   // The device fonts carry no combining-mark positioning, so EPUB text stored in NFD
   // (a base letter followed by separate combining accents -- common for Vietnamese,
@@ -606,18 +629,24 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
                              BidiUtils::startsWithRtl(word.c_str(), RTL_PER_WORD_PROBE_DEPTH);
 
   const auto pushToken = [&](const std::string_view token, const bool continues, const bool noSpaceBefore,
-                             const bool isFocusSuffix) {
+                             const bool isFocusSuffix) -> bool {
     bool effectiveContinues = continues;
     // 分離禁則: keep ellipsis/dash runs and digit+unit / currency+digit glued via continues.
     if (!words.empty() && !effectiveContinues &&
         CjkKinsoku::isInseparablePair(lastCodepoint(words.back()), firstCodepoint(token))) {
       effectiveContinues = true;
     }
-    words.push_back(token);
+    if (!tryReserveForTokens(1, token.size() + 1)) {
+      return false;
+    }
+    if (!words.tryPushBack(token)) {
+      return false;
+    }
     wordStyles.push_back(baseStyle);
     wordContinues.push_back(effectiveContinues);
     wordNoSpaceBefore.push_back(noSpaceBefore);
     wordIsFocusSuffix.push_back(isFocusSuffix);
+    return true;
   };
 
   bool effectiveAttachToPrevious = attachToPrevious;
@@ -632,42 +661,53 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
     // One token per Han character: reserve the whole run up front so a long CJK
     // paragraph never has to grow (and briefly double) its storage mid-word.
     const size_t tokenCount = breakOffsets.size() + 1;
-    reserveForTokens(tokenCount, word.size() + tokenCount);
+    if (!tryReserveForTokens(tokenCount, word.size() + tokenCount)) {
+      return false;
+    }
     const std::string_view wordView(word);
     bool firstToken = true;
     size_t tokenStart = 0;
     for (const size_t breakOffset : breakOffsets) {
       if (breakOffset <= tokenStart || breakOffset > word.size()) continue;
-      pushToken(wordView.substr(tokenStart, breakOffset - tokenStart), firstToken ? effectiveAttachToPrevious : false,
-                firstToken ? effectiveNoSpaceBefore : true, false);
+      if (!pushToken(wordView.substr(tokenStart, breakOffset - tokenStart),
+                     firstToken ? effectiveAttachToPrevious : false, firstToken ? effectiveNoSpaceBefore : true,
+                     false)) {
+        return false;
+      }
       firstToken = false;
       tokenStart = breakOffset;
     }
     if (tokenStart < word.size()) {
-      pushToken(wordView.substr(tokenStart), firstToken ? effectiveAttachToPrevious : false,
-                firstToken ? effectiveNoSpaceBefore : true, false);
+      if (!pushToken(wordView.substr(tokenStart), firstToken ? effectiveAttachToPrevious : false,
+                     firstToken ? effectiveNoSpaceBefore : true, false)) {
+        return false;
+      }
     }
     if (wordStartsRtl) {
       hasRtlWord = true;
     }
-    return;
+    return true;
   }
 
   if (containsCjkBreakableCodepoint(word)) {
-    pushToken(word, effectiveAttachToPrevious, effectiveNoSpaceBefore, false);
+    if (!pushToken(word, effectiveAttachToPrevious, effectiveNoSpaceBefore, false)) {
+      return false;
+    }
     if (wordStartsRtl) {
       hasRtlWord = true;
     }
-    return;
+    return true;
   }
 
   // Already-bold text should stay fully bold; focus splitting would make its suffix regular later.
   if (!this->focusReadingEnabled || (baseStyle & EpdFontFamily::BOLD) != 0) {
-    pushToken(word, effectiveAttachToPrevious, effectiveNoSpaceBefore, false);
+    if (!pushToken(word, effectiveAttachToPrevious, effectiveNoSpaceBefore, false)) {
+      return false;
+    }
     if (wordStartsRtl) {
       hasRtlWord = true;
     }
-    return;
+    return true;
   }
 
   // --- FOCUS READING LOGIC BELOW ---
@@ -675,62 +715,65 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
   // Pre-reserve capacity to prevent mid-word heap reallocations. Focus splitting
   // can emit one token per byte in the worst case; the token text is the word
   // itself plus one terminator per token.
-  reserveForTokens(word.length(), word.length() * 2);
+  if (!tryReserveForTokens(word.length(), word.length() * 2)) {
+    return false;
+  }
 
   // Lambda helper to process and push individual sub-segments of the string
   // Use std::string_view to avoid heap allocations when slicing
-  auto processSegment = [&](std::string_view segment, bool isWord, bool attach, bool noSpaceBefore) {
+  auto processSegment = [&](std::string_view segment, bool isWord, bool attach, bool noSpaceBefore) -> bool {
     if (!isWord) {
       // Punctuation and Numbers stay regular
-      words.push_back(segment);
-      wordStyles.push_back(baseStyle);
-      wordContinues.push_back(attach);
+      return pushToken(segment, attach, noSpaceBefore, false);
+    }
+    size_t charCount = 0;
+    const unsigned char* countPtr = reinterpret_cast<const unsigned char*>(segment.data());
+    const unsigned char* countEnd = countPtr + segment.length();
+
+    while (countPtr < countEnd) {
+      utf8NextCodepoint(&countPtr);
+      charCount++;
+    }
+
+    // Target 45% for 1-bold at 4 chars and 3-bold at 7 chars with floor truncation
+    constexpr size_t FOCUS_READING_PERCENT = 45;
+    size_t targetBoldChars = (charCount * FOCUS_READING_PERCENT) / 100;
+    targetBoldChars = std::clamp<size_t>(targetBoldChars, 1, 9);
+
+    if (targetBoldChars >= charCount) {
+      // Whole segment is bold - no suffix split needed
+      bool effectiveContinues = attach;
+      if (!words.empty() && !effectiveContinues &&
+          CjkKinsoku::isInseparablePair(lastCodepoint(words.back()), firstCodepoint(segment))) {
+        effectiveContinues = true;
+      }
+      if (!words.tryPushBack(segment)) return false;
+      wordStyles.push_back(static_cast<EpdFontFamily::Style>(baseStyle | EpdFontFamily::BOLD));
+      wordContinues.push_back(effectiveContinues);
       wordNoSpaceBefore.push_back(noSpaceBefore);
       wordIsFocusSuffix.push_back(false);
-    } else {
-      size_t charCount = 0;
-      const unsigned char* countPtr = reinterpret_cast<const unsigned char*>(segment.data());
-      const unsigned char* countEnd = countPtr + segment.length();
-
-      while (countPtr < countEnd) {
-        utf8NextCodepoint(&countPtr);
-        charCount++;
-      }
-
-      // Target 45% for 1-bold at 4 chars and 3-bold at 7 chars with floor truncation
-      constexpr size_t FOCUS_READING_PERCENT = 45;
-      size_t targetBoldChars = (charCount * FOCUS_READING_PERCENT) / 100;
-      targetBoldChars = std::clamp<size_t>(targetBoldChars, 1, 9);
-
-      if (targetBoldChars >= charCount) {
-        // Whole segment is bold - no suffix split needed
-        words.push_back(segment);
-        wordStyles.push_back(static_cast<EpdFontFamily::Style>(baseStyle | EpdFontFamily::BOLD));
-        wordContinues.push_back(attach);
-        wordNoSpaceBefore.push_back(noSpaceBefore);
-        wordIsFocusSuffix.push_back(false);
-      } else {
-        countPtr = reinterpret_cast<const unsigned char*>(segment.data());
-        for (size_t i = 0; i < targetBoldChars; ++i) {
-          utf8NextCodepoint(&countPtr);
-        }
-        size_t splitByteOffset = countPtr - reinterpret_cast<const unsigned char*>(segment.data());
-
-        // Bold prefix
-        words.push_back(segment.substr(0, splitByteOffset));
-        wordStyles.push_back(static_cast<EpdFontFamily::Style>(baseStyle | EpdFontFamily::BOLD));
-        wordContinues.push_back(attach);
-        wordNoSpaceBefore.push_back(noSpaceBefore);
-        wordIsFocusSuffix.push_back(false);
-
-        // Regular suffix - marked so extractLine can merge it back into single TextBlock entry
-        words.push_back(segment.substr(splitByteOffset));
-        wordStyles.push_back(baseStyle);
-        wordContinues.push_back(true);
-        wordNoSpaceBefore.push_back(false);
-        wordIsFocusSuffix.push_back(true);
-      }
+      return true;
     }
+    countPtr = reinterpret_cast<const unsigned char*>(segment.data());
+    for (size_t i = 0; i < targetBoldChars; ++i) {
+      utf8NextCodepoint(&countPtr);
+    }
+    size_t splitByteOffset = countPtr - reinterpret_cast<const unsigned char*>(segment.data());
+
+    // Bold prefix
+    if (!words.tryPushBack(segment.substr(0, splitByteOffset))) return false;
+    wordStyles.push_back(static_cast<EpdFontFamily::Style>(baseStyle | EpdFontFamily::BOLD));
+    wordContinues.push_back(attach);
+    wordNoSpaceBefore.push_back(noSpaceBefore);
+    wordIsFocusSuffix.push_back(false);
+
+    // Regular suffix - marked so extractLine can merge it back into single TextBlock entry
+    if (!words.tryPushBack(segment.substr(splitByteOffset))) return false;
+    wordStyles.push_back(baseStyle);
+    wordContinues.push_back(true);
+    wordNoSpaceBefore.push_back(false);
+    wordIsFocusSuffix.push_back(true);
+    return true;
   };
 
   // Tokenize the string by alternating states (Word vs. Non-Word)
@@ -755,8 +798,10 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
 
       // Only the very first segment inherits the original attachToPrevious flag.
       // Every subsequent segment MUST attach=true so it glues seamlessly to the prefix.
-      processSegment(segment, inWordSegment, isFirstSegment ? effectiveAttachToPrevious : true,
-                     isFirstSegment ? effectiveNoSpaceBefore : false);
+      if (!processSegment(segment, inWordSegment, isFirstSegment ? effectiveAttachToPrevious : true,
+                          isFirstSegment ? effectiveNoSpaceBefore : false)) {
+        return false;
+      }
 
       // Setup for the next segment
       segmentStart = currentCpStart;
@@ -768,11 +813,14 @@ void ParsedText::addWord(std::string word, const EpdFontFamily::Style fontStyle,
   // Process the final remaining segment
   size_t segmentLen = end - segmentStart;
   std::string_view segment(reinterpret_cast<const char*>(segmentStart), segmentLen);
-  processSegment(segment, inWordSegment, isFirstSegment ? effectiveAttachToPrevious : true,
-                 isFirstSegment ? effectiveNoSpaceBefore : false);
+  if (!processSegment(segment, inWordSegment, isFirstSegment ? effectiveAttachToPrevious : true,
+                      isFirstSegment ? effectiveNoSpaceBefore : false)) {
+    return false;
+  }
   if (wordStartsRtl) {
     hasRtlWord = true;
   }
+  return true;
 }
 
 int ParsedText::resolveFirstLineIndent(const bool isFirstLine, const GfxRenderer& renderer, const int fontId) const {
@@ -1291,9 +1339,13 @@ bool ParsedText::hyphenateWordAtIndex(const size_t wordIndex, const int availabl
   }
 
   // Split the word at the selected breakpoint and append a hyphen if required.
-  // The remainder becomes a new token directly after the prefix.
+  // The remainder becomes a new token directly after the prefix. Bail before
+  // touching parallel arrays if WordList growth fails — otherwise styles /
+  // continues / widths desync from words and layout can OOB.
   const std::string remainder = word.substr(chosenOffset);
-  words.splitAt(wordIndex, chosenOffset, chosenNeedsHyphen);
+  if (!words.trySplitAt(wordIndex, chosenOffset, chosenNeedsHyphen)) {
+    return false;
+  }
   wordStyles.insert(wordStyles.begin() + wordIndex + 1, style);
   // The hyphen remainder is not a focus suffix - it starts fresh on the next line.
   wordIsFocusSuffix.insert(wordIsFocusSuffix.begin() + wordIndex + 1, false);

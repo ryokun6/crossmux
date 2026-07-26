@@ -44,13 +44,22 @@ class InflateReader {
   InflateReader(const InflateReader&) = delete;
   InflateReader& operator=(const InflateReader&) = delete;
 
-  // Initialise decompressor. streaming=true allocates a 32KB ring buffer needed
-  // when read() or readAtMost() will be called multiple times.
-  // Returns false only in streaming mode if the ring buffer allocation fails.
+  // Initialise decompressor. streaming=true needs a 32KB ring for back-references
+  // across multiple read() / readAtMost() calls. Prefers the session-shared ring
+  // from acquireSharedDictionary() so mid-read MaxAlloc cliffs do not fail init.
+  // Returns false only in streaming mode if no ring can be obtained.
   bool init(bool streaming = false);
 
-  // Release the ring buffer and reset internal state.
+  // Release this instance's ring reference and reset internal state.
   void deinit();
+
+  // Pin a process-wide 32KB inflate dictionary for the duration of chapter
+  // indexing (createSectionFile). Call acquire at entry and releaseSharedDictionary
+  // when indexing finishes so page-turn glyph prewarm can claim MaxAlloc again.
+  // Without acquire, streaming inflate mallocs a private ring and frees it on
+  // deinit (no longer promoted into a permanent pin — that starved page flips).
+  static bool acquireSharedDictionary();
+  static void releaseSharedDictionary();
 
   // Set the entire compressed input as a contiguous memory buffer.
   // Used in one-shot mode; not needed when a read callback is set.
@@ -82,4 +91,5 @@ class InflateReader {
  private:
   uzlib_uncomp decomp = {};
   uint8_t* ringBuffer = nullptr;
+  bool ownsRing = false;  // true when ringBuffer was malloc'd for this instance
 };

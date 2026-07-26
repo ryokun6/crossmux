@@ -98,6 +98,15 @@ class SdCardFont {
   // when font/size/family/glyph-table state changes.
   void clearPersistentCache();
 
+  // Ensure styleIdx intervals are resident (no-op if already loaded). Required
+  // before findGlobalGlyphIndex / prewarm / advance fetch for that style.
+  bool ensureStyleIntervalsLoaded(uint8_t styleIdx);
+
+  // Drop intervals + kern/lig for styles other than REGULAR. Regular stays hot
+  // for CJK indexing; styled faces reload via ensureStyleIntervalsLoaded.
+  // Typical reclaim on TC: ~38 KB (bold + bolditalic BMP16).
+  void unloadNonRegularStyles();
+
   // Returns pointer to the managed EpdFont for a given style.
   // Returns nullptr if the style is not present.
   EpdFont* getEpdFont(uint8_t style = 0);
@@ -280,9 +289,12 @@ class SdCardFont {
 
   // Per-style helpers
   void freeStyleMiniData(PerStyle& s);
+  void freeStyleIntervals(PerStyle& s);
   void freeStyleAll(PerStyle& s);
   void freeStyleKernLigatureData(PerStyle& s);
   void freeStyleMiniKern(PerStyle& s);
+  bool styleIntervalsLoaded(const PerStyle& s) const;
+  bool loadStyleIntervalsFromFile(PerStyle& s, HalFile* alreadyOpen = nullptr);
   bool loadStyleKernLigatureData(PerStyle& s);
   bool buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, uint32_t cpCount);
   void applyKernLigaturePointers(PerStyle& s, EpdFontData& data) const;

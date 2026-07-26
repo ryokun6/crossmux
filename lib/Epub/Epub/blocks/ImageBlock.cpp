@@ -4,6 +4,7 @@
 #include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <Serialization.h>
 
 #include "Epub/converters/ImageDecoderFactory.h"
@@ -214,5 +215,10 @@ std::unique_ptr<ImageBlock> ImageBlock::deserialize(HalFile& file) {
   int16_t w, h;
   serialization::readPod(file, w);
   serialization::readPod(file, h);
-  return std::unique_ptr<ImageBlock>(new ImageBlock(path, w, h));
+  auto block = makeUniqueNoThrow<ImageBlock>(path, w, h);
+  if (!block) {
+    LOG_ERR("IMG", "Deserialization failed: OOM allocating ImageBlock");
+    return nullptr;
+  }
+  return block;
 }

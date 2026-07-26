@@ -7,6 +7,7 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <InflateReader.h>
 #include <JsonSettingsIO.h>
 #include <Logging.h>
 #include <Memory.h>
@@ -295,6 +296,7 @@ void EpubReaderActivity::onExit() {
   ACHIEVEMENTS.recordSessionEnded(READING_STATS.getLastSessionSnapshot());
   showPendingAchievementPopups(renderer);
   section.reset();
+  InflateReader::releaseSharedDictionary();
   if (pendingReadFolderMove && epub) {
     const std::string srcPath = epub->getPath();
     const std::string oldCachePath = epub->getCachePath();
@@ -354,7 +356,12 @@ void EpubReaderActivity::loop() {
     }
 
     if (!section) {
-      requestUpdate();
+      // Do not spin requestUpdate after a failed index — that is the error loop.
+      if (!sectionBuildFailed) {
+        requestUpdate();
+      } else {
+        automaticPageTurnActive = false;
+      }
       return;
     }
 
@@ -536,7 +543,9 @@ void EpubReaderActivity::loop() {
 
   // No current section, attempt to rerender the book
   if (!section) {
-    requestUpdate();
+    if (!sectionBuildFailed) {
+      requestUpdate();
+    }
     return;
   }
 
@@ -896,6 +905,7 @@ void EpubReaderActivity::toggleAutoPageTurn(const uint8_t selectedPageTurnOption
 
 void EpubReaderActivity::pageTurn(bool isForwardTurn) {
   READING_STATS.noteActivity();
+  sectionBuildFailed = false;
   if (isForwardTurn) {
     if (section->currentPage < section->pageCount - 1) {
       section->currentPage++;
@@ -981,9 +991,27 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   const uint16_t viewportHeight = renderer.getScreenHeight() - orientedMarginTop - orientedMarginBottom;
 
   if (!section) {
+    if (sectionBuildFailed) {
+      renderer.clearScreen();
+      GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
+      renderer.displayBuffer();
+      showPendingSyncSaveError();
+      return;
+    }
     const auto filepath = epub->getSpineItem(currentSpineIndex).href;
     LOG_DBG("ERS", "Loading file: %s, index: %d", filepath.c_str(), currentSpineIndex);
-    section = std::unique_ptr<Section>(new Section(epub, currentSpineIndex, renderer));
+    // Section owns parse/cache state for one spine item; heap-only (too large for stack).
+    section = makeUniqueNoThrow<Section>(epub, currentSpineIndex, renderer);
+    if (!section) {
+      LOG_ERR("ERS", "OOM allocating Section for spine %d", currentSpineIndex);
+      sectionBuildFailed = true;
+      automaticPageTurnActive = false;
+      renderer.clearScreen();
+      GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
+      renderer.displayBuffer();
+      showPendingSyncSaveError();
+      return;
+    }
 
     if (!section->loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
                                   SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, effectiveWritingMode(),
@@ -1003,6 +1031,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
                                       SETTINGS.focusReadingEnabled, SETTINGS.punctCompressionEnabled, popupFn)) {
         LOG_ERR("ERS", "Failed to persist page data to SD");
         section.reset();
+        sectionBuildFailed = true;
+        automaticPageTurnActive = false;
         // INDEXING was already drawn into the framebuffer; without a redraw the
         // device looks permanently stuck even though indexing has aborted.
         renderer.clearScreen();
@@ -1014,6 +1044,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     } else {
       LOG_DBG("ERS", "Cache found, skipping build...");
     }
+    sectionBuildFailed = false;
 
     if (pendingPageJump.has_value()) {
       if (*pendingPageJump >= section->pageCount && section->pageCount > 0) {
@@ -1094,8 +1125,9 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       LOG_ERR("ERS", "Failed to load page from SD - clearing section cache");
       section->clearCache();
       section.reset();
-      requestUpdate();  // Try again after clearing cache
-                        // TODO: prevent infinite loop if the page keeps failing to load for some reason
+      // One rebuild attempt; latch if that also fails so we do not error-loop.
+      sectionBuildFailed = false;
+      requestUpdate();
       automaticPageTurnActive = false;
       showPendingSyncSaveError();
       return;
@@ -1144,6 +1176,20 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
                                   viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
                                   SETTINGS.imageRendering, SETTINGS.focusReadingEnabled,
                                   SETTINGS.punctCompressionEnabled)) {
+    return;
+  }
+
+  // createSectionFile needs inflate (≤32KB shared ring) plus uzlib DP (~6–12KB) plus
+  // WordList growth for the whole chapter. The old 24KB MaxAlloc floor still let
+  // indexing start and then abort() inside WordList/string growth under -fno-exceptions.
+  constexpr size_t MIN_FREE_HEAP_FOR_SILENT_INDEX = 80 * 1024;
+  constexpr size_t MIN_MAX_ALLOC_FOR_SILENT_INDEX = 40 * 1024;
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  if (freeHeap < MIN_FREE_HEAP_FOR_SILENT_INDEX || maxAlloc < MIN_MAX_ALLOC_FOR_SILENT_INDEX) {
+    LOG_ERR("ERS", "Skip silent next-chapter index: Free=%u (need %u) MaxAlloc=%u (need %u)",
+            static_cast<unsigned>(freeHeap), static_cast<unsigned>(MIN_FREE_HEAP_FOR_SILENT_INDEX),
+            static_cast<unsigned>(maxAlloc), static_cast<unsigned>(MIN_MAX_ALLOC_FOR_SILENT_INDEX));
     return;
   }
 

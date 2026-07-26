@@ -2,6 +2,8 @@
 
 #include <FontCacheManager.h>
 #include <HalPowerManager.h>
+#include <Logging.h>
+#include <Memory.h>
 
 #include <algorithm>
 
@@ -181,42 +183,96 @@ void ActivityManager::replaceActivity(std::unique_ptr<Activity>&& newActivity) {
 }
 
 void ActivityManager::goToFileTransfer() {
-  replaceActivity(std::make_unique<CrossPointWebServerActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<CrossPointWebServerActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating CrossPointWebServerActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
-void ActivityManager::goToSettings() { replaceActivity(std::make_unique<SettingsActivity>(renderer, mappedInput)); }
+void ActivityManager::goToSettings() {
+  auto activity = makeUniqueNoThrow<SettingsActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating SettingsActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
 
 void ActivityManager::goToFileBrowser(std::string path) {
-  replaceActivity(std::make_unique<FileBrowserActivity>(renderer, mappedInput, std::move(path)));
+  auto activity = makeUniqueNoThrow<FileBrowserActivity>(renderer, mappedInput, std::move(path));
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating FileBrowserActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToRecentBooks() {
-  replaceActivity(std::make_unique<RecentBooksActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<RecentBooksActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating RecentBooksActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToBrowser() {
   const auto& servers = OPDS_STORE.getServers();
   // Skip the server picker when there's only one server configured
   if (servers.size() == 1) {
-    replaceActivity(std::make_unique<OpdsBookBrowserActivity>(renderer, mappedInput, servers[0]));
+    auto activity = makeUniqueNoThrow<OpdsBookBrowserActivity>(renderer, mappedInput, servers[0]);
+    if (!activity) {
+      LOG_ERR("ACT", "OOM allocating OpdsBookBrowserActivity");
+      return;
+    }
+    replaceActivity(std::move(activity));
   } else {
-    replaceActivity(std::make_unique<OpdsServerListActivity>(renderer, mappedInput, true));
+    auto activity = makeUniqueNoThrow<OpdsServerListActivity>(renderer, mappedInput, true);
+    if (!activity) {
+      LOG_ERR("ACT", "OOM allocating OpdsServerListActivity");
+      return;
+    }
+    replaceActivity(std::move(activity));
   }
 }
 
 void ActivityManager::goToReader(std::string path) {
-  replaceActivity(std::make_unique<ReaderActivity>(renderer, mappedInput, std::move(path)));
+  auto activity = makeUniqueNoThrow<ReaderActivity>(renderer, mappedInput, std::move(path));
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating ReaderActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToSleep(bool fromTimeout) {
-  replaceActivity(std::make_unique<SleepActivity>(renderer, mappedInput, fromTimeout));
+  auto activity = makeUniqueNoThrow<SleepActivity>(renderer, mappedInput, fromTimeout);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating SleepActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
   loop();  // Important: sleep screen must be rendered immediately, the caller will go to sleep right after this returns
 }
 
-void ActivityManager::goToBoot() { replaceActivity(std::make_unique<BootActivity>(renderer, mappedInput)); }
+void ActivityManager::goToBoot() {
+  auto activity = makeUniqueNoThrow<BootActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating BootActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
 
 void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::Style style) {
-  replaceActivity(std::make_unique<FullScreenMessageActivity>(renderer, mappedInput, std::move(message), style));
+  auto activity = makeUniqueNoThrow<FullScreenMessageActivity>(renderer, mappedInput, std::move(message), style);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating FullScreenMessageActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
@@ -232,39 +288,102 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
       initialMenuItem = HomeMenuItem::SETTINGS_MENU;
     }
   }
-  replaceActivity(std::make_unique<HomeActivity>(renderer, mappedInput, initialMenuItem));
+  auto activity = makeUniqueNoThrow<HomeActivity>(renderer, mappedInput, initialMenuItem);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating HomeActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
-void ActivityManager::goToCrashReport() { replaceActivity(std::make_unique<CrashActivity>(renderer, mappedInput)); }
+void ActivityManager::goToCrashReport() {
+  auto activity = makeUniqueNoThrow<CrashActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating CrashActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
 
-void ActivityManager::goToApps() { replaceActivity(std::make_unique<AppsMenuActivity>(renderer, mappedInput)); }
+void ActivityManager::goToApps() {
+  auto activity = makeUniqueNoThrow<AppsMenuActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating AppsMenuActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
 
 void ActivityManager::goToReadingStatsMenu() {
-  replaceActivity(std::make_unique<ReadingStatsMenuActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<ReadingStatsMenuActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating ReadingStatsMenuActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
-void ActivityManager::goToStandby() { replaceActivity(std::make_unique<StandbyActivity>(renderer, mappedInput)); }
+void ActivityManager::goToStandby() {
+  auto activity = makeUniqueNoThrow<StandbyActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating StandbyActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
 
 #ifdef ENABLE_CHINESE_VERSION
-void ActivityManager::goToWeRead() { replaceActivity(std::make_unique<WeReadMenuActivity>(renderer, mappedInput)); }
+void ActivityManager::goToWeRead() {
+  auto activity = makeUniqueNoThrow<WeReadMenuActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating WeReadMenuActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
+}
 
 void ActivityManager::goToWeReadShelf() {
-  replaceActivity(std::make_unique<WeReadShelfActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<WeReadShelfActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating WeReadShelfActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToWeReadSearch() {
-  replaceActivity(std::make_unique<WeReadSearchActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<WeReadSearchActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating WeReadSearchActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToWeReadRecommend() {
-  replaceActivity(std::make_unique<WeReadRecommendActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<WeReadRecommendActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating WeReadRecommendActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToWeReadStats() {
-  replaceActivity(std::make_unique<WeReadStatsActivity>(renderer, mappedInput));
+  auto activity = makeUniqueNoThrow<WeReadStatsActivity>(renderer, mappedInput);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating WeReadStatsActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 
 void ActivityManager::goToWeReadBook(std::string bookId, std::string title) {
-  replaceActivity(std::make_unique<WeReadBookActivity>(renderer, mappedInput, std::move(bookId), std::move(title)));
+  auto activity = makeUniqueNoThrow<WeReadBookActivity>(renderer, mappedInput, std::move(bookId), std::move(title));
+  if (!activity) {
+    LOG_ERR("ACT", "OOM allocating WeReadBookActivity");
+    return;
+  }
+  replaceActivity(std::move(activity));
 }
 #endif
 

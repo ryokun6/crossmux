@@ -6,13 +6,15 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+#include <Logging.h>
+#include <Memory.h>
 #include <Txt.h>
 #include <Xtc.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "AppMetricCard.h"
@@ -418,12 +420,34 @@ bool ReadingStatsDetailActivity::storeBaseScreenBuffer() {
   freeBaseScreenBuffer();
 
   const size_t bufferSize = renderer.getBufferSize();
-  baseScreenBuffer = static_cast<uint8_t*>(malloc(bufferSize));
-  if (!baseScreenBuffer) {
+  if (bufferSize == 0) {
     return false;
   }
 
-  memcpy(baseScreenBuffer, frameBuffer, bufferSize);
+  // Chunked copy (same idea as GfxRenderer::storeBwBuffer): avoid one contiguous
+  // 48KB malloc that fragments the ~380KB heap while this activity is alive.
+  const size_t chunkCount = (bufferSize + kBaseScreenChunkSize - 1) / kBaseScreenChunkSize;
+  if (chunkCount == 0 || chunkCount > kBaseScreenMaxChunks) {
+    LOG_ERR("RSD", "Base screen buffer size unsupported (%u bytes)", static_cast<unsigned>(bufferSize));
+    return false;
+  }
+
+  for (size_t i = 0; i < chunkCount; ++i) {
+    const size_t offset = i * kBaseScreenChunkSize;
+    const size_t chunkSize = std::min(kBaseScreenChunkSize, bufferSize - offset);
+    auto chunk = makeUniqueNoThrow<uint8_t[]>(chunkSize);
+    if (!chunk) {
+      LOG_ERR("RSD", "OOM: base screen chunk %u (%u bytes)", static_cast<unsigned>(i),
+              static_cast<unsigned>(chunkSize));
+      freeBaseScreenBuffer();
+      return false;
+    }
+    memcpy(chunk.get(), frameBuffer + offset, chunkSize);
+    baseScreenChunks[i] = std::move(chunk);
+  }
+
+  baseScreenChunkCount = chunkCount;
+  baseScreenStoredSize = bufferSize;
   baseScreenBufferStored = true;
   baseScreenBookPath = bookPath;
   baseScreenCoverPath = resolvedCoverBmpPath;
@@ -432,33 +456,44 @@ bool ReadingStatsDetailActivity::storeBaseScreenBuffer() {
 }
 
 bool ReadingStatsDetailActivity::restoreBaseScreenBuffer() {
-  if (!baseScreenBufferStored || !baseScreenBuffer || baseScreenBookPath != bookPath ||
+  if (!baseScreenBufferStored || baseScreenChunkCount == 0 || baseScreenBookPath != bookPath ||
       baseScreenCoverPath != resolvedCoverBmpPath || baseScreenScrollOffset != scrollOffset) {
     return false;
   }
 
   uint8_t* frameBuffer = renderer.getFrameBuffer();
-  if (!frameBuffer) {
+  if (!frameBuffer || baseScreenStoredSize != renderer.getBufferSize()) {
     return false;
   }
 
-  memcpy(frameBuffer, baseScreenBuffer, renderer.getBufferSize());
+  for (size_t i = 0; i < baseScreenChunkCount; ++i) {
+    if (!baseScreenChunks[i]) {
+      return false;
+    }
+    const size_t offset = i * kBaseScreenChunkSize;
+    const size_t chunkSize = std::min(kBaseScreenChunkSize, baseScreenStoredSize - offset);
+    memcpy(frameBuffer + offset, baseScreenChunks[i].get(), chunkSize);
+  }
   return true;
 }
 
 void ReadingStatsDetailActivity::invalidateBaseScreenBuffer() {
+  // Must free, not only mark dirty — retaining ~48KB across invalidate left the
+  // heap holed while children (adjustment) and later allocs needed contiguous space.
+  freeBaseScreenBuffer();
+}
+
+void ReadingStatsDetailActivity::freeBaseScreenBuffer() {
+  // Reset every slot (not just chunkCount): a failed store may leave partial chunks.
+  for (auto& chunk : baseScreenChunks) {
+    chunk.reset();
+  }
+  baseScreenChunkCount = 0;
+  baseScreenStoredSize = 0;
   baseScreenBufferStored = false;
   baseScreenBookPath.clear();
   baseScreenCoverPath.clear();
   baseScreenScrollOffset = -1;
-}
-
-void ReadingStatsDetailActivity::freeBaseScreenBuffer() {
-  if (baseScreenBuffer) {
-    free(baseScreenBuffer);
-    baseScreenBuffer = nullptr;
-  }
-  invalidateBaseScreenBuffer();
 }
 
 void ReadingStatsDetailActivity::openAdjustment() {
@@ -467,6 +502,10 @@ void ReadingStatsDetailActivity::openAdjustment() {
     requestUpdate();
     return;
   }
+
+  // Drop the base-screen cache before stacking the child so ~48KB is not held
+  // while BookReadingAdjustmentActivity runs; requestUpdate on return redraws.
+  freeBaseScreenBuffer();
 
   startActivityForResult(
       std::make_unique<BookReadingAdjustmentActivity>(renderer, mappedInput, book->path, getDisplayTitle(*book)),

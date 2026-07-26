@@ -42,27 +42,53 @@ void WeReadSyncAllActivity::onEnter() {
 }
 
 void WeReadSyncAllActivity::onExit() {
+  stopFetchTask();
   ctx_.reset();
-  taskHandle_ = nullptr;
   fontUnload_.reset();
   Activity::onExit();
 }
 
 // ---- Task plumbing ---------------------------------------------------------
 
+void WeReadSyncAllActivity::stopFetchTask() {
+  if (!ctx_ || !ctx_->running.load()) {
+    taskHandle_ = nullptr;
+    return;
+  }
+  ctx_->cancel.store(true);
+  // Worker checks cancel around the HTTP POST; wait for clean exit so we
+  // don't vTaskDelete mid-TLS / JsonDocument work (matches FontDownload).
+  for (int i = 0; i < 40 && ctx_->running.load(); ++i) {
+    delay(100);
+  }
+  if (ctx_->running.load() && taskHandle_ != nullptr) {
+    LOG_ERR("WRSYNC", "fetch task still running on exit — forcing delete");
+    vTaskDelete(taskHandle_);
+    taskHandle_ = nullptr;
+    ctx_->running.store(false);
+  } else {
+    taskHandle_ = nullptr;
+  }
+}
+
 void WeReadSyncAllActivity::fetchTrampoline(void* arg) {
   auto* wrapper = static_cast<std::shared_ptr<Context>*>(arg);
   std::shared_ptr<Context> ctx = *wrapper;
   delete wrapper;
 
-  WeReadClient::Err err = WeReadClient::post(ctx->apiName.c_str(), *ctx->request, *ctx->response,
-                                             /*httpTimeoutMs=*/10000, ctx->filter.get());
-  ctx->filter.reset();
-  ctx->err = static_cast<int>(err);
-  ctx->state.store(err == WeReadClient::Err::Ok ? 1 : 2);
+  if (!ctx->cancel.load()) {
+    WeReadClient::Err err = WeReadClient::post(ctx->apiName.c_str(), *ctx->request, *ctx->response,
+                                               /*httpTimeoutMs=*/10000, ctx->filter.get());
+    ctx->filter.reset();
+    if (!ctx->cancel.load()) {
+      ctx->err = static_cast<int>(err);
+      ctx->state.store(err == WeReadClient::Err::Ok ? 1 : 2);
+    }
+  }
   // vTaskDelete(nullptr) doesn't return — drop the shared_ptr explicitly so
   // Context doesn't leak forever (otherwise back-to-back tasks exhaust the
   // heap within seconds).
+  ctx->running.store(false);
   ctx.reset();
   vTaskDelete(nullptr);
 }
@@ -75,6 +101,7 @@ void WeReadSyncAllActivity::spawnShelfFetch() {
   // already holds one.
   if (!fontUnload_) fontUnload_.emplace(renderer);
 
+  stopFetchTask();
   ctx_.reset();
 
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());
@@ -123,9 +150,11 @@ void WeReadSyncAllActivity::spawnShelfFetch() {
     phase_ = Phase::Error;
     return;
   }
+  ctx->running.store(true);
   BaseType_t rc = xTaskCreate(&fetchTrampoline, "WRSyncFetch", 4096, taskArg, 1, &taskHandle_);
   if (rc != pdPASS) {
     LOG_ERR("WRSYNC", "xTaskCreate failed");
+    ctx->running.store(false);
     delete taskArg;
     lastErr_ = WeReadClient::Err::Http;
     phase_ = Phase::Error;
@@ -141,6 +170,7 @@ void WeReadSyncAllActivity::spawnBookStepFetch() {
   // without having come through it.
   if (!fontUnload_) fontUnload_.emplace(renderer);
 
+  stopFetchTask();
   ctx_.reset();
 
   auto ctx = std::shared_ptr<Context>(new (std::nothrow) Context());
@@ -173,9 +203,11 @@ void WeReadSyncAllActivity::spawnBookStepFetch() {
     phase_ = Phase::Error;
     return;
   }
+  ctx->running.store(true);
   BaseType_t rc = xTaskCreate(&fetchTrampoline, "WRSyncFetch", 4096, taskArg, 1, &taskHandle_);
   if (rc != pdPASS) {
     LOG_ERR("WRSYNC", "xTaskCreate failed");
+    ctx->running.store(false);
     delete taskArg;
     lastErr_ = WeReadClient::Err::Http;
     phase_ = Phase::Error;
@@ -248,12 +280,14 @@ void WeReadSyncAllActivity::consumeResult() {
   if (phase_ == Phase::FetchingShelf) {
     if (s == 2) {
       lastErr_ = static_cast<WeReadClient::Err>(ctx_->err);
+      stopFetchTask();
       ctx_.reset();
       phase_ = Phase::Error;
       requestUpdate();
       return;
     }
     parseShelfResponseAndSave();
+    stopFetchTask();
     ctx_.reset();
     bookIdx_ = 0;
     stepIdx_ = 0;
@@ -271,6 +305,7 @@ void WeReadSyncAllActivity::consumeResult() {
   // phase_ == SyncingBook — drain a per-step result.
   if (s == 1) {
     const bool savedOk = WeReadBookCacheFlow::parseAndSave(stepIdx_, booksToSync_[bookIdx_].first, *ctx_->response);
+    stopFetchTask();
     ctx_.reset();
     if (!savedOk) {
       LOG_ERR("WRSYNC", "SD write failed at book %d step %d", bookIdx_, stepIdx_);
@@ -281,6 +316,7 @@ void WeReadSyncAllActivity::consumeResult() {
     }
   } else {
     const WeReadClient::Err err = static_cast<WeReadClient::Err>(ctx_->err);
+    stopFetchTask();
     ctx_.reset();
     if (WeReadBookCacheFlow::isFatalErr(err)) {
       lastErr_ = err;

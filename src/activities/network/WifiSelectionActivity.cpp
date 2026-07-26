@@ -18,6 +18,11 @@
 void WifiSelectionActivity::onEnter() {
   Activity::onEnter();
 
+  // A resident SD reader font pins ~75KB; with one loaded MaxAlloc~2KB starves
+  // the Wi‑Fi driver / lwIP. Drop it before any scan/connect — same as
+  // CrossPointWebServerActivity.cpp:75 and StandbyActivity. UI uses builtin fonts.
+  fontUnload_.emplace(renderer);
+
   // Load saved WiFi credentials - SD card operations need lock as we use SPI
   // for both
   {
@@ -85,6 +90,9 @@ void WifiSelectionActivity::onExit() {
   // Note: We do NOT disconnect WiFi here - the parent activity
   // (CrossPointWebServerActivity) manages WiFi connection state. We just clean
   // up the scan and task.
+
+  // Pair with onEnter emplace; destructor would reload too (StandbyActivity.cpp:147).
+  fontUnload_.reset();
 
   LOG_DBG("WIFI", "Free heap at onExit end: %d bytes", ESP.getFreeHeap());
 }

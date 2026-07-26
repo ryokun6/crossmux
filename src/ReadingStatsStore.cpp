@@ -575,6 +575,23 @@ bool ReadingStatsStore::persistToFile(const char* path) const {
     LOG_ERR("RST", "Refusing to write %s: the existing file failed to load", path);
     return false;
   }
+  // saveReadingStats builds a full JsonDocument of every book/day in heap. Under
+  // reader pressure (TC SD font + page scratch) MaxAlloc can fall to ~12–16KB; a
+  // throwing string/JSON alloc then abort()s (-fno-exceptions). Keep dirty and
+  // retry later when heap recovers (e.g. after leaving the reader).
+  constexpr uint32_t kMinFreeHeapForSave = 40 * 1024;
+  constexpr uint32_t kMinMaxAllocForSave = 20 * 1024;
+  const uint32_t freeHeap = ESP.getFreeHeap();
+  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
+  if (freeHeap < kMinFreeHeapForSave || maxAlloc < kMinMaxAllocForSave) {
+    LOG_ERR("RST", "Defer reading-stats save: Free=%u (need %u) MaxAlloc=%u (need %u)", static_cast<unsigned>(freeHeap),
+            static_cast<unsigned>(kMinFreeHeapForSave), static_cast<unsigned>(maxAlloc),
+            static_cast<unsigned>(kMinMaxAllocForSave));
+    // Keep dirty; advance lastSaveMs so we retry on the next deferred interval
+    // instead of on every page turn while MaxAlloc stays low.
+    lastSaveMs = millis();
+    return false;
+  }
   Storage.mkdir("/.crosspoint");
   const bool saved = JsonSettingsIO::saveReadingStats(*this, path);
   if (saved) {
