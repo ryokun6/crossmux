@@ -269,8 +269,6 @@ void EpubReaderActivity::onEnter() {
 
   loadCachedBookmarks();
 
-  loadCachedBookmarks();
-
   // Trigger first update
   requestUpdate();
 }
