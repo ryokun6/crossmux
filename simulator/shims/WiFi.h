@@ -51,6 +51,7 @@ class WiFiClass {
   String SSID() { return String("SimulatedWiFi"); }
   int RSSI() { return -50; }
   int scanNetworks() { return 1; }
+  void scanDelete() {}
   String SSID(int) { return String("SimulatedWiFi"); }
   int encryptionType(int) { return 0; }
   int RSSI(int) { return -50; }

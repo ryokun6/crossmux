@@ -542,11 +542,18 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
     const char* label = labelStr.c_str();
     int textX = tileRect.x + 16;
     const int lineHeight = renderer.getLineHeight(UI_12_FONT_ID);
-    // GenSen UI_12 ink sits high in the line box (low ascender vs advanceY).
-    // Text needs a stronger nudge than icons.
+    // Lyra menus were tuned for Ubuntu (intl). GenSen/HanRounded UI_12 ink sits
+    // high in the line box (low ascender vs advanceY), so CJK SKUs need a
+    // stronger optical nudge. Do not apply that nudge on intl — it drops
+    // Ubuntu text too low in the row.
+#ifdef ENABLE_CJK_VERSION
     constexpr int kMenuIconNudgeY = 3;
     constexpr int kMenuTextNudgeY = 7;
-    const int textY = tileRect.y + (LyraMetrics::values.menuRowHeight - lineHeight) / 2 + kMenuTextNudgeY;
+#else
+    constexpr int kMenuIconNudgeY = 2;
+    constexpr int kMenuTextNudgeY = 0;
+#endif
+    int textY = tileRect.y + (LyraMetrics::values.menuRowHeight - lineHeight) / 2 + kMenuTextNudgeY;
 
     if (rowIcon != nullptr) {
       UIIcon icon = rowIcon(i);
@@ -555,6 +562,10 @@ void LyraTheme::drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount
         const int iconTopY = tileRect.y + (LyraMetrics::values.menuRowHeight - mainMenuIconSize) / 2 + kMenuIconNudgeY;
         renderer.drawIcon(iconBitmap, textX, iconTopY, mainMenuIconSize, mainMenuIconSize);
         textX += mainMenuIconSize + hPaddingInSelection + 2;
+#ifndef ENABLE_CJK_VERSION
+        // Pre-GenSen path: align the Ubuntu label to the icon midpoint.
+        textY = iconTopY + mainMenuIconSize / 2 - lineHeight / 2 + 1;
+#endif
       }
     }
 
