@@ -214,7 +214,7 @@ Branch: `cursor/upstream-sync-1.5.1-2423` — merged `upstream/main` @ 1.5.1.
 
 | Gate | Result |
 |---|---|
-| `pio run` (default / intl) | SUCCESS — Flash ~87.8% |
+| `pio run` (default / intl) | SUCCESS — Flash ~87.9% |
 | `pio run -e gh_release_sc` | SUCCESS — Flash ~95.4%, WeRead linked, GenSen kept |
 | `pio run -e gh_release_tc` | SUCCESS — Flash ~98.0%, WeRead linked, GenSen kept |
 | Native `ctest` | **230/230 passed** |
