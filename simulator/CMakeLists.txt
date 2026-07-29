@@ -61,6 +61,12 @@ if(NOT EMSCRIPTEN)
     else()
         FetchContent_MakeAvailable(jpegdec)
     endif()
+    # SOURCE_SUBDIR=cmake-unused can leave jpegdec_SOURCE_DIR empty even after a
+    # successful populate; fall back to the conventional FetchContent layout.
+    if(NOT jpegdec_SOURCE_DIR)
+        set(jpegdec_SOURCE_DIR "${CMAKE_BINARY_DIR}/_deps/jpegdec-src")
+    endif()
+    set(JPEGDEC_ROOT "${jpegdec_SOURCE_DIR}")
 endif()
 
 # libcurl — backs the native simulator's esp_http_client shim
@@ -146,11 +152,10 @@ list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "FontDownloadActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderAuthActivity")
 
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX
-     "lib/Epub/Epub/converters/(ImageDecoderFactory|ImageToFramebufferDecoder|JpegToFramebufferConverter|PngToFramebufferConverter)\\.cpp$")list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Serialization/ObfuscationUtils")
+     "lib/Epub/Epub/converters/(ImageDecoderFactory|ImageToFramebufferDecoder|JpegToFramebufferConverter|PngToFramebufferConverter)\\.cpp$")
+list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Serialization/ObfuscationUtils")
 if(EMSCRIPTEN)
     list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/(JpegToBmpConverter|PngToBmpConverter)/")
-else()
-    list(APPEND CROSSPOINT_LIB ${jpegdec_SOURCE_DIR}/src/JPEGDEC.cpp)
 endif()
 
 # KOReaderSync credential store referenced via the KOREADER_STORE singleton in main.cpp.
