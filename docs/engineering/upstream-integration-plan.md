@@ -216,14 +216,14 @@ Branch: `cursor/upstream-sync-1.5.1-2423` — merged `upstream/main` @ 1.5.1.
 |---|---|
 | `pio run` (default / intl) | SUCCESS — Flash ~87.9% |
 | `pio run -e gh_release_sc` | SUCCESS — Flash ~95.4%, WeRead linked, GenSen kept |
-| `pio run -e gh_release_tc` | SUCCESS — Flash ~98.0%, WeRead linked, GenSen kept |
+| `pio run -e gh_release_tc` | SUCCESS — Flash ~98.1%, WeRead linked, GenSen kept |
 | Native `ctest` | **230/230 passed** |
 | `pio check` | PASSED (WordList typed FreeDeleter) |
 | Version | `1.5.1` in `platformio.ini` |
 
-**TC flash audit (post-#64/#70):** ~98.0% used (6,423,027 / 6,553,600). SP RSA +
-disclaimer strings + LWW sync grew flash vs post-arena ~97.5%. Arena `TextBlock`
-is a RAM/fragmentation win, not a flash shrink. No further safe flash cut without
+**TC flash audit (post-#44):** ~98.1% used (6,426,129 / 6,553,600). Reader
+tofu→SD prompt added ~0.5 KB vs post-hot-path ~98.0%. Arena `TextBlock` is a
+RAM/fragmentation win, not a flash shrink. No further safe flash cut without
 product tradeoffs (WeRead, GenSen coverage, or wolfSSL). Keep TC growth gated.
 
 Deferred items completed on this branch:
