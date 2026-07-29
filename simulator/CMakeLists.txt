@@ -144,12 +144,14 @@ list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/network/")
 # dedicated transport is included with the rest of its activity sources.
 list(APPEND CROSSPOINT_SRC ${REPO_ROOT}/src/network/HttpDownloader.cpp)
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/activities/network/")
-# OPDS browser + KOReader sync use HttpDownloader / credential store (available on
-# host). Keep other network-heavy activities stubbed.
+# OPDS browser + KOReader sync pull host-unavailable deps; stub in missing_symbols.cpp.
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "OtaUpdateActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "SdFirmwareUpdateActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "FontDownloadActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderAuthActivity")
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "OpdsBookBrowserActivity")
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSettingsActivity")
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSyncActivity")
 
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX
      "lib/Epub/Epub/converters/(ImageDecoderFactory|ImageToFramebufferDecoder|JpegToFramebufferConverter|PngToFramebufferConverter)\\.cpp$")
@@ -170,6 +172,7 @@ list(APPEND CROSSPOINT_LIB
     ${REPO_ROOT}/freeink-sdk/libs/ui/FreeInkUI/src/FreeInkUI.cpp
     ${REPO_ROOT}/lib/KOReaderSync/KOReaderCredentialStore.cpp
     ${REPO_ROOT}/lib/KOReaderSync/KOReaderDocumentId.cpp
+    ${REPO_ROOT}/lib/KOReaderSync/KOReaderJsonIO.cpp
     ${REPO_ROOT}/lib/KOReaderSync/ChapterXPathResolver.cpp
     ${REPO_ROOT}/lib/KOReaderSync/ProgressMapper.cpp
 )
@@ -183,6 +186,7 @@ set(SIMULATOR_HAL
     hal/HalClock.cpp
     hal/HalDisplay.cpp
     hal/HalGPIO.cpp
+    hal/HalOtaSlot.cpp
     hal/HalPowerManager.cpp
     hal/HalStorage.cpp
     hal/HalSystem.cpp

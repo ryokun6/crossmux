@@ -199,8 +199,12 @@ void SdFirmwareUpdateActivity::performUpdate() {}
 
 #include "SdCardFontSystem.h"
 #include "activities/settings/FontDownloadActivity.h"
-FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m, Purpose purpose)
-    : Activity("FontDownload", r, m), purpose_(purpose), fontInstaller_(sdFontSystem.registry()) {}
+FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m, Purpose purpose,
+                                           bool resumedAfterDefrag)
+    : Activity("FontDownload", r, m),
+      purpose_(purpose),
+      fontInstaller_(sdFontSystem.registry()),
+      resumedAfterDefrag_(resumedAfterDefrag) {}
 #ifdef ENABLE_CHINESE_VERSION
 bool FontDownloadActivity::wasChineseFontPromptShownThisBoot() { return true; }
 #endif
