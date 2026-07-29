@@ -2,6 +2,7 @@
 
 #include <Logging.h>
 #include <WiFi.h>
+#include <esp_netif_sntp.h>
 #include <esp_sntp.h>
 #include <sys/time.h>
 #include <time.h>
@@ -334,68 +335,135 @@ bool HalClock::writeTimeToRTC(const uint8_t hour, const uint8_t minute, const ui
   return writeRtcUtc(dt);
 }
 
-bool HalClock::syncFromNTP() {
-  if (WiFi.status() != WL_CONNECTED) {
-    LOG_ERR("CLK", "WiFi not connected, cannot sync NTP");
+bool HalClock::updateRtcFromSystemTime() {
+  if (!_available) return true;
+
+  const time_t now = time(nullptr);
+  if (now < static_cast<time_t>(VALID_CLOCK_THRESHOLD)) {
+    LOG_ERR("CLK", "System time is invalid; DS3231 was not updated");
     return false;
   }
 
-  LOG_INF("CLK", "Starting NTP sync...");
-  configTzTime("UTC0", "pool.ntp.org", "time.nist.gov");
-
-  constexpr int maxAttempts = 50;
-  for (int i = 0; i < maxAttempts; i++) {
-    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
-      const time_t now = time(nullptr);
-      UtcDateTime dt{};
-      epochToUtc(now, dt);
-
-      timeval tv = {.tv_sec = now, .tv_usec = 0};
-      settimeofday(&tv, nullptr);
-
-      if (_available) {
-        if (writeRtcUtc(dt)) {
-          LOG_INF("CLK", "RTC set to %04u-%02u-%02u %02u:%02u:%02u UTC", dt.year, dt.month, dt.day, dt.hour, dt.minute,
-                  dt.second);
-          return true;
-        }
-        return false;
-      }
-
-      LOG_INF("CLK", "System clock set from NTP (no persistent RTC)");
-      return true;
-    }
-    delay(100);
+  UtcDateTime dt{};
+  epochToUtc(now, dt);
+  if (!writeRtcUtc(dt)) {
+    LOG_ERR("CLK", "Failed to write UTC date and time to DS3231");
+    return false;
   }
 
-  LOG_ERR("CLK", "NTP sync timed out");
-  return false;
+  LOG_INF("CLK", "DS3231 set to %04u-%02u-%02u %02u:%02u:%02u UTC", dt.year, dt.month, dt.day, dt.hour, dt.minute,
+          dt.second);
+  return true;
 }
 
-void HalClock::setAutoSyncEnabled(const bool enabled) { _autoSyncEnabled = enabled; }
+bool HalClock::syncFromNTP() { return syncNow(5000); }
+
+bool HalClock::startSntp() {
+  if (_syncState == ClockSyncState::Syncing) return true;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    _syncState = ClockSyncState::Failed;
+    return false;
+  }
+
+  if (!_sntpInitialized) {
+#ifdef ENABLE_CHINESE_VERSION
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
+        3, ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "ntp.tencent.com", "cn.pool.ntp.org"));
+#else
+    esp_sntp_config_t config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(2, ESP_SNTP_SERVER_LIST("pool.ntp.org", "time.nist.gov"));
+#endif
+    config.start = false;
+    config.smooth_sync = false;
+    if (esp_netif_sntp_init(&config) != ESP_OK) {
+      LOG_ERR("CLK", "Failed to initialize SNTP service");
+      _syncState = ClockSyncState::Failed;
+      return false;
+    }
+    _sntpInitialized = true;
+  }
+
+  if (esp_netif_sntp_start() != ESP_OK) {
+    LOG_ERR("CLK", "Failed to start SNTP service");
+    _syncState = ClockSyncState::Failed;
+    return false;
+  }
+
+  _syncState = ClockSyncState::Syncing;
+  LOG_INF("CLK", "SNTP sync started");
+  return true;
+}
+
+void HalClock::stopSntp() {
+  if (!_sntpInitialized) return;
+  esp_netif_sntp_deinit();
+  _sntpInitialized = false;
+}
+
+void HalClock::completeSync() {
+  if (!hasValidTime()) {
+    LOG_ERR("CLK", "SNTP completed without a trustworthy system clock");
+    _syncState = ClockSyncState::Failed;
+    stopSntp();
+    return;
+  }
+
+  _syncState = ClockSyncState::Succeeded;
+  _lastSyncMs = millis();
+  stopSntp();
+  if (!updateRtcFromSystemTime()) {
+    LOG_ERR("CLK", "System clock synced, but DS3231 persistence failed");
+  }
+  LOG_INF("CLK", "System UTC clock synchronized");
+}
+
+void HalClock::setAutoSyncEnabled(const bool enabled) {
+  if (enabled && !_autoSyncEnabled) _wifiWasConnected = false;
+  _autoSyncEnabled = enabled;
+  if (!enabled) {
+    stopSntp();
+    if (_syncState == ClockSyncState::Syncing) _syncState = ClockSyncState::Idle;
+  }
+}
 
 void HalClock::update() {
-  // Background SNTP not ported onto the fork RTC path yet. Call sites only need
-  // a no-op tick until auto-sync is reimplemented.
-  (void)_autoSyncEnabled;
+  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiConnected) {
+    if (_syncState == ClockSyncState::Syncing) _syncState = ClockSyncState::Failed;
+    if (_wifiWasConnected) stopSntp();
+    _wifiWasConnected = false;
+    return;
+  }
+
+  if (_sntpInitialized && esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+    completeSync();
+  }
+
+  const bool fresh = _syncState == ClockSyncState::Succeeded && millis() - _lastSyncMs < CONFIG_LWIP_SNTP_UPDATE_DELAY;
+  const bool syncDue = !_wifiWasConnected || (_syncState == ClockSyncState::Succeeded && !fresh);
+  if (_autoSyncEnabled && !_sntpInitialized && syncDue) {
+    startSntp();
+  }
+  _wifiWasConnected = true;
 }
 
-bool HalClock::syncNow(const uint32_t /*timeoutMs*/) {
-  _syncState = ClockSyncState::Syncing;
-  const bool ok = syncFromNTP();
-  _syncState = ok ? ClockSyncState::Succeeded : ClockSyncState::Failed;
-  return ok;
+bool HalClock::syncNow(const uint32_t timeoutMs) {
+  if (!startSntp()) return false;
+
+  if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(timeoutMs)) != ESP_OK) {
+    LOG_ERR("CLK", "SNTP sync timed out");
+    _syncState = ClockSyncState::Failed;
+    if (!_autoSyncEnabled) stopSntp();
+    return false;
+  }
+
+  completeSync();
+  if (!_autoSyncEnabled) stopSntp();
+  return _syncState == ClockSyncState::Succeeded;
 }
 
-bool HalClock::requestSync() {
-  // Upstream starts async SNTP and returns whether the start succeeded. Until
-  // that path is ported, run the blocking sync and expose Succeeded/Failed so
-  // Standby/WeRead poll loops still terminate.
-  _syncState = ClockSyncState::Syncing;
-  const bool ok = syncFromNTP();
-  _syncState = ok ? ClockSyncState::Succeeded : ClockSyncState::Failed;
-  return ok;
-}
+bool HalClock::requestSync() { return startSntp(); }
 
 time_t HalClock::nowUtc() const {
   if (!hasValidTime()) return 0;
@@ -408,6 +476,8 @@ bool HalClock::setUtcTime(const time_t epoch) {
   UtcDateTime dt{};
   epochToUtc(epoch, dt);
   if (!setUtcDateTime(dt)) return false;
+  stopSntp();
   _syncState = ClockSyncState::Idle;
+  _lastSyncMs = 0;
   return true;
 }

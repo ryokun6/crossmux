@@ -35,7 +35,10 @@ class HalClock {
   mutable bool _hasCachedTime = false;
   mutable unsigned long _lastPollMs = 0;
   bool _autoSyncEnabled = true;
+  bool _wifiWasConnected = false;
+  bool _sntpInitialized = false;
   ClockSyncState _syncState = ClockSyncState::Idle;
+  unsigned long _lastSyncMs = 0;
 
   static constexpr unsigned long CLOCK_POLL_MS = 10000;  // 10 seconds
 
@@ -82,8 +85,9 @@ class HalClock {
   static time_t utcToEpoch(const UtcDateTime& dt);
   static void epochToUtc(time_t epoch, UtcDateTime& out);
 
-  // Upstream-compatible sync API. Auto background SNTP is not ported yet:
-  // requestSync/syncNow run the existing blocking NTP path and update syncState.
+  // Async SNTP: requestSync starts a non-blocking sync; update() completes it
+  // and optionally restarts when Wi-Fi reconnects / the LWIP update interval elapses.
+  // syncNow blocks until the wait deadline (or success).
   void setAutoSyncEnabled(bool enabled);
   void update();
   bool syncNow(uint32_t timeoutMs = 10000);
@@ -97,4 +101,8 @@ class HalClock {
   bool readRtcUtc(UtcDateTime& out) const;
   bool writeRtcUtc(const UtcDateTime& dt);
   bool writeTimeToRTC(uint8_t hour, uint8_t minute, uint8_t second);
+  bool updateRtcFromSystemTime();
+  bool startSntp();
+  void stopSntp();
+  void completeSync();
 };

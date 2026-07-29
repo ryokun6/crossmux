@@ -153,18 +153,27 @@ bool HalClock::formatDateTime(char* buf, const size_t bufSize, uint8_t utcOffset
 
 bool HalClock::syncFromNTP() { return false; }
 
-void HalClock::setAutoSyncEnabled(const bool enabled) { _autoSyncEnabled = enabled; }
+void HalClock::setAutoSyncEnabled(const bool enabled) {
+  _autoSyncEnabled = enabled;
+  if (!enabled && _syncState == ClockSyncState::Syncing) _syncState = ClockSyncState::Idle;
+}
 
-void HalClock::update() { (void)_autoSyncEnabled; }
+void HalClock::update() {
+  // Host has no esp_netif SNTP; keep the poll hook a no-op.
+  (void)_autoSyncEnabled;
+  (void)_wifiWasConnected;
+  (void)_sntpInitialized;
+  (void)_lastSyncMs;
+}
 
 bool HalClock::syncNow(const uint32_t /*timeoutMs*/) {
-  _syncState = ClockSyncState::Failed;
-  return false;
+  _syncState = hasValidTime() ? ClockSyncState::Succeeded : ClockSyncState::Failed;
+  return _syncState == ClockSyncState::Succeeded;
 }
 
 bool HalClock::requestSync() {
-  _syncState = ClockSyncState::Failed;
-  return false;
+  _syncState = hasValidTime() ? ClockSyncState::Succeeded : ClockSyncState::Failed;
+  return _syncState == ClockSyncState::Succeeded;
 }
 
 time_t HalClock::nowUtc() const {
@@ -179,5 +188,6 @@ bool HalClock::setUtcTime(const time_t epoch) {
   epochToUtc(epoch, dt);
   if (!setUtcDateTime(dt)) return false;
   _syncState = ClockSyncState::Idle;
+  _lastSyncMs = 0;
   return true;
 }
