@@ -36,6 +36,7 @@
 #include "activities/apps/weread/WeReadClient.h"
 #include "activities/apps/weread/WeReadProgressSyncActivity.h"
 #include "activities/apps/weread/WeReadStore.h"
+#include "activities/settings/FontDownloadActivity.h"
 #endif
 #include "MappedInputManager.h"
 #include "ProgressMapper.h"
@@ -344,12 +345,41 @@ void EpubReaderActivity::onExit() {
   }
 }
 
+#ifdef ENABLE_CHINESE_VERSION
+bool EpubReaderActivity::maybeOfferCompleteChineseFont() {
+  if (SETTINGS.sdFontFamilyName[0] != '\0') {
+    pendingMissingChineseCodepoint_.store(0, std::memory_order_relaxed);
+    return false;
+  }
+
+  const uint32_t codepoint = pendingMissingChineseCodepoint_.exchange(0, std::memory_order_relaxed);
+  if (codepoint == 0 || FontDownloadActivity::wasChineseFontPromptShownThisBoot()) return false;
+
+  LOG_INF("FONT", "Missing built-in Chinese glyph U+%04X; offering SD fonts", static_cast<unsigned>(codepoint));
+
+  // ActivityManager owns the downloader across frames, so it must live on the heap.
+  auto downloader =
+      makeUniqueNoThrow<FontDownloadActivity>(renderer, mappedInput, FontDownloadActivity::Purpose::PromptThenManage);
+  if (!downloader) {
+    LOG_ERR("FONT", "OOM allocating FontDownloadActivity (%zu bytes)", sizeof(FontDownloadActivity));
+    return false;
+  }
+
+  startActivityForResult(std::move(downloader), [this](const ActivityResult&) { requestUpdate(); });
+  return true;
+}
+#endif
+
 void EpubReaderActivity::loop() {
   if (!epub) {
     // Should never happen
     finish();
     return;
   }
+
+#ifdef ENABLE_CHINESE_VERSION
+  if (maybeOfferCompleteChineseFont()) return;
+#endif
 
   READING_STATS.tickActiveSession();
 
@@ -1429,6 +1459,9 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // Raw built-in fonts (GenSen) render directly and skip both the scan and its
   // temporary string.
   auto* fcm = renderer.getFontCacheManager();
+#ifdef ENABLE_CHINESE_VERSION
+  fcm->consumeMissingChineseCodepoint();  // discard status/UI glyphs left by the previous render
+#endif
   struct EndClear {
     FontCacheManager& manager;
     ~EndClear() { manager.clearCache(); }
@@ -1457,6 +1490,13 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   };
 
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+#ifdef ENABLE_CHINESE_VERSION
+  const uint32_t missingCodepoint = fcm->consumeMissingChineseCodepoint();
+  if (missingCodepoint != 0 && !FontDownloadActivity::wasChineseFontPromptShownThisBoot()) {
+    uint32_t expected = 0;
+    pendingMissingChineseCodepoint_.compare_exchange_strong(expected, missingCodepoint, std::memory_order_relaxed);
+  }
+#endif
   renderStatusBar();
   const auto tBwRender = millis();
 

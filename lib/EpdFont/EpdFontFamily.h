@@ -42,6 +42,10 @@ class EpdFontFamily {
   /// is non-null, it receives the EpdFontData that owns the returned glyph —
   /// callers must use that for bitmap lookup, not getData(style).
   const EpdGlyph* getGlyph(uint32_t cp, Style style = REGULAR, const EpdFontData** outData = nullptr) const;
+  /// Same as getGlyph; sets *usedReplacement when this family (styled→regular
+  /// included) lacks \p cp and a cross-family fallback or U+FFFD is used.
+  const EpdGlyph* getGlyph(uint32_t cp, Style style, bool* usedReplacement,
+                           const EpdFontData** outData = nullptr) const;
   /// Like getGlyph, but returns nullptr instead of substituting U+FFFD.
   /// Still applies same-family styled→regular fallback. Does not consult
   /// glyphFallback_ (callers that want cross-family fallback use getGlyph).

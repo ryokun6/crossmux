@@ -56,8 +56,15 @@ const EpdGlyph* EpdFontFamily::getGlyphNoReplacement(const uint32_t cp, const St
 }
 
 const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style, const EpdFontData** outData) const {
+  return getGlyph(cp, style, nullptr, outData);
+}
+
+const EpdGlyph* EpdFontFamily::getGlyph(const uint32_t cp, const Style style, bool* const usedReplacement,
+                                        const EpdFontData** outData) const {
+  if (usedReplacement) *usedReplacement = false;
   const EpdGlyph* glyph = getGlyphNoReplacement(cp, style, outData);
   if (glyph) return glyph;
+  if (usedReplacement) *usedReplacement = true;
 
   // Selected face (often a Latin-only SD font) lacks this codepoint — try the
   // builtin system font so CJK books still render instead of tofu / blank.

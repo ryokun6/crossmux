@@ -251,3 +251,4 @@ Landed after the 1.5.1 pin on this branch:
 - `#52` builtin scan skip (`needsPrewarmScan`) + idle SD-font next-page prewarm
 - Image `.pxc` RAM slot across grayscale passes (`releaseRenderCache`)
 - `#62` RoundedRaff cover continues reading (title stays in header)
+- `#44` reader tofu→SD prompt (`reportMissingChineseCodepoint` + once-per-boot `PromptThenManage`)

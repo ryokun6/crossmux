@@ -232,12 +232,26 @@ The hard ceiling is the 6.25 MB A/B-OTA slot. Today's headroom is ~1.4 MB,
 so a ~7000-char SC+TC pool would still fit, but the upcoming OTA delta
 shrinks proportionally.
 
+## Incomplete built-in → SD font prompt
+
+SC/TC firmware offers the guided font downloader when:
+
+- Text settings change the built-in family to 16/18pt, or
+- an EPUB page render hits a missing U+4E00–U+9FFF / U+F900–U+FAFF glyph
+  (horizontal and vertical).
+
+The render task records only the first such codepoint; `EpubReaderActivity::loop`
+opens `FontDownloadActivity` (`Purpose::PromptThenManage`). One prompt per boot;
+an active SD font is never rechecked. Confirming opens ordinary **Manage Fonts**.
+Downloads never change `sdFontFamilyName` — pick the installed family later in
+text settings. See [`docs/sd-card-fonts.md`](../sd-card-fonts.md).
+
 ## Known limitations
 
 - **No bold/italic CJK glyphs**: the bitmaps come from a single GenSenRounded2TW-R subset. UI elements that pass `EpdFontFamily::Style::Bold` render the regular weight under CN.
 - **Font-size dropdown affects rendered size**: each reader size (12/14/16/18pt) and UI size (10/12pt) and small font (8pt) has its own bitmap header. Switching size really does swap glyph bitmaps.
-- **Rare characters render as □ in reader at SMALL**: the SMALL (12pt) bitmap uses the 3500-char pool, which covers all of modern SC but omits classical / scientific rarities, Traditional Chinese variants, and most niche surnames/place names. MEDIUM (14pt, reader default) now uses the 7000 通用汉字 pool and covers most modern names, place names, and regulated chars from the 2013 通用规范汉字表. Expand SMALL by adding a feature-scoped `cn_<feature>_chars.txt` or by enlarging the pool — see "Expanding character coverage" above. Bumping `--top` alone does nothing.
-- **CJK in reader at LARGE/EXTRA_LARGE shows blank** for chars outside the i18n subset — by design, since 16/18pt reader sizes are tuned for English EPUB. Switch to MEDIUM to read Chinese.
+- **Rare characters render as □ in reader at SMALL**: the SMALL (12pt) bitmap uses the 3500-char pool, which covers all of modern SC but omits classical / scientific rarities, Traditional Chinese variants, and most niche surnames/place names. MEDIUM (14pt, reader default) now uses the 7000 通用汉字 pool and covers most modern names, place names, and regulated chars from the 2013 通用规范汉字表. The reader offers the complete-font downloader on the first detected missing CJK ideograph. Expand SMALL by adding a feature-scoped `cn_<feature>_chars.txt` or by enlarging the pool — see "Expanding character coverage" above. Bumping `--top` alone does nothing.
+- **CJK in reader at LARGE/EXTRA_LARGE shows blank** for chars outside the i18n subset — by design, since 16/18pt reader sizes are tuned for English EPUB. Switching to LARGE/EXTRA_LARGE offers the same downloader; otherwise switch to MEDIUM to read Chinese.
 - **`FontDecompressor` is bypassed for CJK** by design — bitmaps are stored raw because compressing 6 fonts × ~50 KB groups fragments the heap on boot.
 - **UI language codes are `zh-TW` / `zh-CN`**: enum members `ZH_TW` / `ZH_CN`; Traditional YAML is the single Taiwan-terminology source (`_language_name: 繁體中文`); SC UI is synthesized via OpenCC **tw2sp** at gen_i18n.
 

@@ -6,6 +6,19 @@
 
 #include <cstring>
 
+#ifdef ENABLE_CHINESE_VERSION
+namespace {
+constexpr bool isDownloadableChineseCodepoint(const uint32_t cp) {
+  return (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0xF900 && cp <= 0xFAFF);
+}
+
+static_assert(isDownloadableChineseCodepoint(0x4E00));
+static_assert(isDownloadableChineseCodepoint(0xFAFF));
+static_assert(!isDownloadableChineseCodepoint(0x4DFF));
+static_assert(!isDownloadableChineseCodepoint(0xFB00));
+}  // namespace
+#endif
+
 FontCacheManager::FontCacheManager(const std::map<int, EpdFontFamily>& fontMap,
                                    const std::map<int, SdCardFont*>& sdCardFonts)
     : fontMap_(fontMap), sdCardFonts_(sdCardFonts) {}
@@ -109,6 +122,21 @@ void FontCacheManager::recordText(const char* text, int fontId, EpdFontFamily::S
   scanStyleCounts_[face] += cpCount;
 }
 
+#ifdef ENABLE_CHINESE_VERSION
+void FontCacheManager::reportMissingChineseCodepoint(const int fontId, const uint32_t codepoint) {
+  if (missingChineseCodepoint_ != 0 || sdCardFonts_.count(fontId) != 0 || !isDownloadableChineseCodepoint(codepoint)) {
+    return;
+  }
+  missingChineseCodepoint_ = codepoint;
+}
+
+uint32_t FontCacheManager::consumeMissingChineseCodepoint() {
+  const uint32_t codepoint = missingChineseCodepoint_;
+  missingChineseCodepoint_ = 0;
+  return codepoint;
+}
+#endif
+
 // --- PrewarmScope implementation ---
 
 FontCacheManager::PrewarmScope::PrewarmScope(FontCacheManager& manager) : manager_(&manager) {
@@ -123,6 +151,9 @@ FontCacheManager::PrewarmScope::PrewarmScope(FontCacheManager& manager) : manage
   memset(manager_->scanStyleCounts_, 0, sizeof(manager_->scanStyleCounts_));
   for (uint8_t i = 0; i < 4; i++) manager_->scanStyleFace_[i] = i;
   manager_->scanFontId_ = -1;
+#ifdef ENABLE_CHINESE_VERSION
+  manager_->missingChineseCodepoint_ = 0;
+#endif
 }
 
 void FontCacheManager::PrewarmScope::endScanAndPrewarm() {

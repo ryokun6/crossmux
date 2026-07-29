@@ -3,6 +3,9 @@
 #include <Epub/FootnoteEntry.h>
 #include <Epub/Section.h>
 
+#ifdef ENABLE_CHINESE_VERSION
+#include <atomic>
+#endif
 #include <optional>
 
 #include "BookmarkEntry.h"
@@ -42,8 +45,10 @@ class EpubReaderActivity final : public Activity {
   bool pendingSyncSaveError = false;
   bool pendingSyncLaunchError = false;
 #ifdef ENABLE_CHINESE_VERSION
+  std::atomic<uint32_t> pendingMissingChineseCodepoint_{0};
   char wereadBookId_[64] = {};
   bool clearInitialProgressAfterSave_ = false;
+  bool maybeOfferCompleteChineseFont();
 #endif
   bool skipNextButtonCheck = false;  // Skip button processing for one frame after subactivity exit
   bool automaticPageTurnActive = false;

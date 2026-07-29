@@ -21,6 +21,19 @@ namespace {
 uint8_t resolveSdCardStyle(const SdCardFont& font, const EpdFontFamily::Style style) {
   return font.resolveStyle(static_cast<uint8_t>(style));
 }
+
+#ifdef ENABLE_CHINESE_VERSION
+const EpdGlyph* getGlyphMaybeReportMissing(FontCacheManager* fcm, const EpdFontFamily& font, const int fontId,
+                                           const uint32_t sourceCp, const uint32_t cp,
+                                           const EpdFontFamily::Style style) {
+  bool usedReplacement = false;
+  const EpdGlyph* glyph = font.getGlyph(cp, style, &usedReplacement);
+  if (usedReplacement && fcm) {
+    fcm->reportMissingChineseCodepoint(fontId, sourceCp);
+  }
+  return glyph;
+}
+#endif
 }  // namespace
 
 namespace {
@@ -521,6 +534,9 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       continue;
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const uint32_t sourceCp = cp;
+#endif
     cp = font.applyLigatures(cp, textCursor, style);
 
     // Differential rounding: snap (previous advance + current kern) as one unit so
@@ -531,7 +547,11 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseX += fp4::toPixel(prevAdvanceFP + kernFP);       // snap 12.4 fixed-point to nearest pixel
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const EpdGlyph* glyph = getGlyphMaybeReportMissing(fontCacheManager_, font, fontId, sourceCp, cp, style);
+#else
     const EpdGlyph* glyph = font.getGlyph(cp, style);
+#endif
 
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;
@@ -1901,6 +1921,9 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       continue;
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const uint32_t sourceCp = cp;
+#endif
     cp = font.applyLigatures(cp, text, style);
 
     // Differential rounding: snap (previous advance + current kern) as one unit,
@@ -1910,7 +1933,11 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseY -= fp4::toPixel(prevAdvanceFP + kernFP);       // snap 12.4 fixed-point to nearest pixel
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const EpdGlyph* glyph = getGlyphMaybeReportMissing(fontCacheManager_, font, fontId, sourceCp, cp, style);
+#else
     const EpdGlyph* glyph = font.getGlyph(cp, style);
+#endif
 
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;
@@ -1968,6 +1995,9 @@ void GfxRenderer::drawTextRotated90CCW(const int fontId, const int x, const int 
       continue;
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const uint32_t sourceCp = cp;
+#endif
     cp = font.applyLigatures(cp, text, style);
 
     if (prevCp != 0) {
@@ -1975,7 +2005,11 @@ void GfxRenderer::drawTextRotated90CCW(const int fontId, const int x, const int 
       lastBaseY += fp4::toPixel(prevAdvanceFP + kernFP);  // top→bottom within a vertical column
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const EpdGlyph* glyph = getGlyphMaybeReportMissing(fontCacheManager_, font, fontId, sourceCp, cp, style);
+#else
     const EpdGlyph* glyph = font.getGlyph(cp, style);
+#endif
 
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;
