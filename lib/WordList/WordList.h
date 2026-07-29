@@ -5,8 +5,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <memory>
 #include <string_view>
+#include <utility>
 
 #include "WordListView.h"
 
@@ -23,20 +23,50 @@
 // Growth uses malloc/realloc so OOM returns false instead of abort()ing. Callers
 // in the chapter indexer must check tryPushBack / reserveMore and fail the parse.
 //
+// Storage is raw char*/uint32_t* (not unique_ptr): PlatformIO's cppcheck treats
+// unique_ptr<T[], CustomDeleter>::get() as void*, which falsely trips
+// arithOperationsOnVoidPointer on every buffer_ + offset expression.
+//
 // Every token is stored NUL-terminated so cStr() can feed the C string APIs used
 // during measurement without a temporary copy.
 class WordList {
  public:
+  WordList() = default;
+  ~WordList() {
+    std::free(buffer_);
+    std::free(offsets_);
+  }
+  WordList(const WordList&) = delete;
+  WordList& operator=(const WordList&) = delete;
+  WordList(WordList&& other) noexcept
+      : buffer_(std::exchange(other.buffer_, nullptr)),
+        bufferSize_(std::exchange(other.bufferSize_, 0)),
+        bufferCap_(std::exchange(other.bufferCap_, 0)),
+        offsets_(std::exchange(other.offsets_, nullptr)),
+        offsetCount_(std::exchange(other.offsetCount_, 0)),
+        offsetCap_(std::exchange(other.offsetCap_, 0)) {}
+  WordList& operator=(WordList&& other) noexcept {
+    if (this != &other) {
+      std::free(buffer_);
+      std::free(offsets_);
+      buffer_ = std::exchange(other.buffer_, nullptr);
+      bufferSize_ = std::exchange(other.bufferSize_, 0);
+      bufferCap_ = std::exchange(other.bufferCap_, 0);
+      offsets_ = std::exchange(other.offsets_, nullptr);
+      offsetCount_ = std::exchange(other.offsetCount_, 0);
+      offsetCap_ = std::exchange(other.offsetCap_, 0);
+    }
+    return *this;
+  }
+
   size_t size() const { return offsetCount_ == 0 ? 0 : offsetCount_ - 1; }
   bool empty() const { return size() == 0; }
 
-  std::string_view operator[](const size_t index) const {
-    return {buffer_.get() + offsets_[index], tokenLength(index)};
-  }
-  const char* cStr(const size_t index) const { return buffer_.get() + offsets_[index]; }
+  std::string_view operator[](const size_t index) const { return {buffer_ + offsets_[index], tokenLength(index)}; }
+  const char* cStr(const size_t index) const { return buffer_ + offsets_[index]; }
   std::string_view back() const { return (*this)[size() - 1]; }
 
-  WordListView view() const { return {buffer_.get(), offsets_.get(), size()}; }
+  WordListView view() const { return {buffer_, offsets_, size()}; }
 
   // Soft-fail growth. Returns false on OOM; list unchanged.
   bool tryPushBack(const std::string_view token) {
@@ -50,7 +80,7 @@ class WordList {
     if (!ensureOffsets(offsetCount_ + 1)) return false;
 
     if (!token.empty()) {
-      std::memcpy(buffer_.get() + bufferSize_, token.data(), token.size());
+      std::memcpy(buffer_ + bufferSize_, token.data(), token.size());
     }
     bufferSize_ += token.size();
     buffer_[bufferSize_++] = '\0';
@@ -91,7 +121,7 @@ class WordList {
       // Shift tail right to make room.
       const size_t moveFrom = offsets_[index] + oldLength;
       const size_t moveLen = bufferSize_ - moveFrom;
-      std::memmove(buffer_.get() + moveFrom + delta, buffer_.get() + moveFrom, moveLen);
+      std::memmove(buffer_ + moveFrom + delta, buffer_ + moveFrom, moveLen);
       bufferSize_ += delta;
       for (size_t i = index + 1; i < offsetCount_; ++i) {
         offsets_[i] = static_cast<uint32_t>(offsets_[i] + delta);
@@ -100,14 +130,14 @@ class WordList {
       const size_t delta = oldLength - token.size();
       const size_t moveFrom = offsets_[index] + oldLength;
       const size_t moveLen = bufferSize_ - moveFrom;
-      std::memmove(buffer_.get() + moveFrom - delta, buffer_.get() + moveFrom, moveLen);
+      std::memmove(buffer_ + moveFrom - delta, buffer_ + moveFrom, moveLen);
       bufferSize_ -= delta;
       for (size_t i = index + 1; i < offsetCount_; ++i) {
         offsets_[i] = static_cast<uint32_t>(offsets_[i] - delta);
       }
     }
     if (!token.empty()) {
-      std::memcpy(buffer_.get() + offsets_[index], token.data(), token.size());
+      std::memcpy(buffer_ + offsets_[index], token.data(), token.size());
     }
     return true;
   }
@@ -123,8 +153,8 @@ class WordList {
     if (!ensureOffsets(offsetCount_ + 1)) return false;
 
     const size_t splitAtByte = offsets_[index] + byteOffset;
-    std::memmove(buffer_.get() + splitAtByte + insertedBytes, buffer_.get() + splitAtByte, bufferSize_ - splitAtByte);
-    std::memcpy(buffer_.get() + splitAtByte, inserted, insertedBytes);
+    std::memmove(buffer_ + splitAtByte + insertedBytes, buffer_ + splitAtByte, bufferSize_ - splitAtByte);
+    std::memcpy(buffer_ + splitAtByte, inserted, insertedBytes);
     bufferSize_ += insertedBytes;
 
     // Shift offset entries right and insert the new boundary.
@@ -152,7 +182,7 @@ class WordList {
     }
     const uint32_t base = offsets_[count];
     const size_t newSize = bufferSize_ - base;
-    std::memmove(buffer_.get(), buffer_.get() + base, newSize);
+    std::memmove(buffer_, buffer_ + base, newSize);
     bufferSize_ = newSize;
     const size_t newOffsetCount = offsetCount_ - count;
     for (size_t i = 0; i < newOffsetCount; ++i) {
@@ -170,13 +200,11 @@ class WordList {
     while (ncap < need) {
       ncap *= 2;
     }
-    char* old = buffer_.release();
-    char* p = static_cast<char*>(std::realloc(old, ncap));
+    char* p = static_cast<char*>(std::realloc(buffer_, ncap));
     if (p == nullptr) {
-      buffer_.reset(old);  // realloc failed: original block still valid
-      return false;
+      return false;  // realloc failed: original block still valid
     }
-    buffer_.reset(p);
+    buffer_ = p;
     bufferCap_ = ncap;
     return true;
   }
@@ -187,28 +215,19 @@ class WordList {
     while (ncap < need) {
       ncap *= 2;
     }
-    uint32_t* old = offsets_.release();
-    auto* p = static_cast<uint32_t*>(std::realloc(old, ncap * sizeof(uint32_t)));
+    auto* p = static_cast<uint32_t*>(std::realloc(offsets_, ncap * sizeof(uint32_t)));
     if (p == nullptr) {
-      offsets_.reset(old);
       return false;
     }
-    offsets_.reset(p);
+    offsets_ = p;
     offsetCap_ = ncap;
     return true;
   }
 
-  // Typed deleters so unique_ptr::get() stays char*/uint32_t* (void* arithmetic
-  // trips cppcheck arithOperationsOnVoidPointer under pio check).
-  template <typename T>
-  struct FreeDeleter {
-    void operator()(T* p) const { std::free(p); }
-  };
-
-  std::unique_ptr<char[], FreeDeleter<char>> buffer_;
+  char* buffer_ = nullptr;
   size_t bufferSize_ = 0;
   size_t bufferCap_ = 0;
-  std::unique_ptr<uint32_t[], FreeDeleter<uint32_t>> offsets_;
+  uint32_t* offsets_ = nullptr;
   size_t offsetCount_ = 0;
   size_t offsetCap_ = 0;
 };
