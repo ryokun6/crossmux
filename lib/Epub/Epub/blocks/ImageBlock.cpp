@@ -66,11 +66,11 @@ bool renderFromCache(GfxRenderer& renderer, const std::string& cachePath, int x,
   int rowsPerRead = 4096 / bytesPerRow;
   if (rowsPerRead < 1) rowsPerRead = 1;
   if (rowsPerRead > cachedHeight) rowsPerRead = cachedHeight;
-  uint8_t* readBuffer = (uint8_t*)malloc((size_t)rowsPerRead * bytesPerRow);
+  auto readBuffer = makeUniqueNoThrow<uint8_t[]>((size_t)rowsPerRead * bytesPerRow);
   if (!readBuffer) {
     // Fall back to a single-row buffer under memory pressure.
     rowsPerRead = 1;
-    readBuffer = (uint8_t*)malloc(bytesPerRow);
+    readBuffer = makeUniqueNoThrow<uint8_t[]>(bytesPerRow);
   }
   if (!readBuffer) {
     LOG_ERR("IMG", "Failed to allocate row buffer");
@@ -86,16 +86,15 @@ bool renderFromCache(GfxRenderer& renderer, const std::string& cachePath, int x,
     if (bufferRow >= rowsInBuffer) {
       const int toRead = (cachedHeight - row < rowsPerRead) ? (cachedHeight - row) : rowsPerRead;
       const size_t bytes = (size_t)toRead * bytesPerRow;
-      if (cacheFile.read(readBuffer, bytes) != static_cast<int>(bytes)) {
+      if (cacheFile.read(readBuffer.get(), bytes) != static_cast<int>(bytes)) {
         LOG_ERR("IMG", "Cache read error at row %d", row);
-        free(readBuffer);
         return false;
       }
       rowsInBuffer = toRead;
       bufferRow = 0;
     }
 
-    const uint8_t* rowBuffer = readBuffer + (size_t)bufferRow * bytesPerRow;
+    const uint8_t* rowBuffer = readBuffer.get() + (size_t)bufferRow * bytesPerRow;
     bufferRow++;
 
     const int destY = y + row;
@@ -113,7 +112,6 @@ bool renderFromCache(GfxRenderer& renderer, const std::string& cachePath, int x,
     }
   }
 
-  free(readBuffer);
   LOG_DBG("IMG", "Cache render complete");
   return true;
 }

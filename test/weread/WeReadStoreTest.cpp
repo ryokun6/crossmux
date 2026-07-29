@@ -187,6 +187,66 @@ TEST_F(WeReadStoreTest, RejectsWrt1AndMapsProgressWithoutLoadingTheCatalog) {
   EXPECT_FALSE(WeReadStore::mapChapterToFraction(tocPath, "missing", 0, fraction));
 }
 
+TEST_F(WeReadStoreTest, MapsGeneratedChapterPagesWithoutWholeBookApproximation) {
+  ASSERT_TRUE(WeReadStore::ensureRoot());
+  const std::string tocPath = WeReadStore::tocPath("precise-book");
+  WeReadStore::IndexWriter writer;
+  ASSERT_TRUE(writer.begin(tocPath, WeReadStore::kTocMagic, sizeof(WeReadStore::TocRecord)));
+  const uint32_t words[] = {100, 0, 300};
+  for (uint32_t i = 0; i < 3; ++i) {
+    WeReadStore::TocRecord record;
+    snprintf(record.chapterUid, sizeof(record.chapterUid), "chapter-%u", i);
+    record.wordCount = words[i];
+    record.chapterIdx = i;
+    ASSERT_TRUE(writer.append(&record));
+  }
+  ASSERT_TRUE(writer.finish());
+
+  WeReadStore::TocRecord chapter;
+  uint32_t offset = 0;
+  float fraction = 0.0f;
+  ASSERT_TRUE(WeReadStore::mapPageToChapter(tocPath, 0, 1, 3, chapter, offset, fraction));
+  EXPECT_STREQ(chapter.chapterUid, "chapter-0");
+  EXPECT_EQ(offset, 50U);
+  EXPECT_FLOAT_EQ(fraction, 0.125f);
+
+  ASSERT_TRUE(WeReadStore::mapPageToChapter(tocPath, 2, 1, 3, chapter, offset, fraction));
+  EXPECT_STREQ(chapter.chapterUid, "chapter-2");
+  EXPECT_EQ(offset, 150U);
+  EXPECT_FLOAT_EQ(fraction, 0.625f);
+
+  ASSERT_TRUE(WeReadStore::mapPageToChapter(tocPath, 2, 0, 3, chapter, offset, fraction));
+  EXPECT_EQ(offset, 0U);
+  EXPECT_FLOAT_EQ(fraction, 0.25f);
+  ASSERT_TRUE(WeReadStore::mapPageToChapter(tocPath, 2, 2, 3, chapter, offset, fraction));
+  EXPECT_EQ(offset, 300U);
+  EXPECT_FLOAT_EQ(fraction, 1.0f);
+
+  EXPECT_FALSE(WeReadStore::mapPageToChapter(tocPath, 1, 0, 1, chapter, offset, fraction));
+  EXPECT_FALSE(WeReadStore::mapPageToChapter(tocPath, 3, 0, 1, chapter, offset, fraction));
+  EXPECT_FALSE(WeReadStore::mapPageToChapter(tocPath, 0, 3, 3, chapter, offset, fraction));
+
+  uint32_t tocIndex = 0;
+  float chapterFraction = 0.0f;
+  ASSERT_TRUE(WeReadStore::mapChapterToPosition(tocPath, "chapter-2", 100, tocIndex, chapterFraction, fraction));
+  EXPECT_EQ(tocIndex, 2U);
+  EXPECT_NEAR(chapterFraction, 1.0f / 3.0f, 0.000001f);
+  EXPECT_FLOAT_EQ(fraction, 0.5f);
+}
+
+TEST(WeReadStore, ParsesOnlyGeneratedChapterHrefs) {
+  uint32_t tocIndex = 0;
+  EXPECT_TRUE(WeReadStore::parseGeneratedChapterHref("ch000042.xhtml", tocIndex));
+  EXPECT_EQ(tocIndex, 42U);
+  EXPECT_TRUE(WeReadStore::parseGeneratedChapterHref("OPS/text/ch1234567.xhtml", tocIndex));
+  EXPECT_EQ(tocIndex, 1234567U);
+
+  EXPECT_FALSE(WeReadStore::parseGeneratedChapterHref("chapter000042.xhtml", tocIndex));
+  EXPECT_FALSE(WeReadStore::parseGeneratedChapterHref("ch.xhtml", tocIndex));
+  EXPECT_FALSE(WeReadStore::parseGeneratedChapterHref("ch000042.xhtml#anchor", tocIndex));
+  EXPECT_FALSE(WeReadStore::parseGeneratedChapterHref("ch4294967296.xhtml", tocIndex));
+}
+
 TEST_F(WeReadStoreTest, FindsOnlyTheExactGeneratedBookPath) {
   ASSERT_TRUE(WeReadStore::ensureRoot());
   WeReadStore::IndexWriter shelf;
@@ -532,8 +592,29 @@ TEST_F(WeReadStoreTest, SessionRoundTripsOnlyWhitelistedCookiesAndRejectsBadMagi
   EXPECT_FALSE(WeReadStore::loadSession(loaded));
 }
 
+TEST_F(WeReadStoreTest, DisclaimerAcceptanceRequiresExactMarker) {
+  EXPECT_FALSE(WeReadStore::hasAcceptedDisclaimer());
+  ASSERT_TRUE(WeReadStore::acceptDisclaimer());
+  EXPECT_TRUE(WeReadStore::hasAcceptedDisclaimer());
+
+  const auto overwriteMarker = [this](const char* value, const size_t size) {
+    std::ofstream file(hostPath(WeReadStore::kDisclaimerAcceptancePath), std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(file.good());
+    file.write(value, static_cast<std::streamsize>(size));
+    file.close();
+  };
+
+  overwriteMarker("", 0);
+  EXPECT_FALSE(WeReadStore::hasAcceptedDisclaimer());
+  overwriteMarker("WRD1", 4);
+  EXPECT_FALSE(WeReadStore::hasAcceptedDisclaimer());
+  overwriteMarker("BAD1\n", 5);
+  EXPECT_FALSE(WeReadStore::hasAcceptedDisclaimer());
+}
+
 TEST_F(WeReadStoreTest, ClearsSessionAndShelfButPreservesDownloadedContent) {
   ASSERT_TRUE(WeReadStore::ensureRoot());
+  ASSERT_TRUE(WeReadStore::acceptDisclaimer());
   WeReadStore::Session session;
   ASSERT_TRUE(session.setCookie("wr_vid", "12345", 5));
   ASSERT_TRUE(session.setCookie("wr_skey", "secret", 6));
@@ -561,6 +642,7 @@ TEST_F(WeReadStoreTest, ClearsSessionAndShelfButPreservesDownloadedContent) {
   EXPECT_FALSE(Storage.exists(WeReadStore::kSessionPath));
   EXPECT_FALSE(Storage.exists(WeReadStore::kShelfPath));
   EXPECT_FALSE(Storage.exists("/.crosspoint/weread/shelf.bin.part"));
+  EXPECT_TRUE(WeReadStore::hasAcceptedDisclaimer());
   EXPECT_TRUE(Storage.exists("/.crosspoint/weread/book-1/toc.bin"));
   EXPECT_TRUE(Storage.exists("/.crosspoint/weread/book-1/chapters/000000.xhtml"));
   EXPECT_TRUE(Storage.exists(bookPath.c_str()));
