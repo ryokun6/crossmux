@@ -22,6 +22,7 @@ that matches your task — don't load everything at once.
 | [japanese-korean-build.md](japanese-korean-build.md) | Working on `gh_release_ja` / `gh_release_ko` or regenerating GenSen JP / Resource Han Rounded KR fonts. |
 | [device-variants.md](device-variants.md) | Building or flashing for the Xteink X3 vs X4, runtime device detection (one binary, both panels), and the per-device hardware differences. |
 | [upstream-merge-policy.md](upstream-merge-policy.md) | Resolving a sync conflict on `AGENTS.md` / upstream `.skills/SKILL.md` — how to keep the map thin and route upstream changes into these docs. |
+| [upstream-integration-plan.md](upstream-integration-plan.md) | Absorbing `0x1abin/crossmux` 1.5.x into ryOS: keep/take/merge matrix, WeRead replacement, phased sync gates. |
 
 ## Related docs outside this directory
 
