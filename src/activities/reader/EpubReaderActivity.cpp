@@ -1,6 +1,7 @@
 #include "EpubReaderActivity.h"
 
 #include <Epub/Page.h>
+#include <Epub/blocks/ImageBlock.h>
 #include <Epub/blocks/TextBlock.h>
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
@@ -221,6 +222,8 @@ void EpubReaderActivity::onEnter() {
     return;
   }
 
+  ImageBlock::clearSessionRenderFailures();
+
   // Start the refresh cadence at a full interval so opening a book paints with a FAST refresh
   // instead of dropping straight into the slower HALF ghost-cleanup path.
   pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
@@ -349,6 +352,34 @@ void EpubReaderActivity::loop() {
   }
 
   READING_STATS.tickActiveSession();
+
+  // Idle glyph prewarm for the likely next page (currentPage + 1). The scan
+  // pass draws nothing (FCM scan mode suppresses pixels), so the displayed
+  // framebuffer is untouched. Debounced past rapid page-flipping, one attempt
+  // per position, and deferred while a render owns the CPU or the heap is at
+  // the render floor. Cross-chapter prewarm is out of scope.
+  constexpr unsigned long IDLE_PREWARM_DEBOUNCE_MS = 400;
+  auto* fcm = renderer.getFontCacheManager();
+  if (section && !RenderLock::peek() && renderer.hasFrameBuffer() && lastRenderCompleteMs != 0 &&
+      millis() - lastRenderCompleteMs > IDLE_PREWARM_DEBOUNCE_MS && ESP.getFreeHeap() > RENDER_MIN_FREE_HEAP &&
+      ESP.getMaxAllocHeap() > RENDER_MIN_MAX_ALLOC && fcm && fcm->canIdlePrewarm(SETTINGS.getReaderFontId()) &&
+      (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
+    RenderLock lock;
+    if (section && (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
+      idlePrewarmSpine = currentSpineIndex;
+      idlePrewarmPage = section->currentPage;
+      const int nextPage = section->currentPage + 1;
+      if (nextPage < static_cast<int>(section->pageCount)) {
+        if (const auto p = section->loadPage(nextPage)) {
+          const auto t0 = millis();
+          auto scope = fcm->createPrewarmScope();
+          p->render(renderer, SETTINGS.getReaderFontId(), 0, 0);
+          scope.endScanAndPrewarm();
+          LOG_DBG("ERS", "Idle prewarm: page %d in %lums", nextPage, millis() - t0);
+        }
+      }
+    }
+  }
 
   // End-of-Book screen reached (currentSpineIndex == spine count) means the book is
   // finished. Two independent finished-book features key off this same condition.
@@ -1295,6 +1326,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (showDictionaryMessage) {
     GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
   }
+
+  lastRenderCompleteMs = millis();
 }
 
 void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportWidth, const uint16_t viewportHeight) {
@@ -1375,15 +1408,45 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto t0 = millis();
   const int fontId = SETTINGS.getReaderFontId();
 
-  // Font prewarm: scan pass accumulates text, then prewarm, then real render
-  auto* fcm = renderer.getFontCacheManager();
-  auto scope = fcm->createPrewarmScope();
-  TextBlock::fakeBold = SETTINGS.fakeBold;
-  page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);  // scan pass
-  scope.endScanAndPrewarm();
-  const auto tPrewarm = millis();
+  // The image pixel-cache RAM slot lives for exactly one page render (it feeds
+  // the BW double-refresh and every grayscale band pass); release it on every
+  // exit so nothing stays resident across page turns.
+  struct PxcSlotGuard {
+    ~PxcSlotGuard() { ImageBlock::releaseRenderCache(); }
+  } pxcSlotGuard;
 
   const bool pageHasImages = page->hasImages();
+  if (pageHasImages && page->hasImagesNeedingDecode()) {
+    // Decode/cache only missing images before the SD-font prewarm allocates its
+    // per-page bitmap. This keeps JPEGDEC and the CJK mini bitmap out of the
+    // heap at the same time.
+    page->renderImagesNeedingDecode(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+    ImageBlock::releaseRenderCache();
+    renderer.clearScreen();
+  }
+
+  // Compressed and SD fonts need a scan pass to build their page glyph cache.
+  // Raw built-in fonts (GenSen) render directly and skip both the scan and its
+  // temporary string.
+  auto* fcm = renderer.getFontCacheManager();
+  struct RawFontCacheGuard {
+    FontCacheManager* manager = nullptr;
+    ~RawFontCacheGuard() {
+      if (manager) manager->clearCache();
+    }
+  } rawFontCacheGuard;
+  std::optional<FontCacheManager::PrewarmScope> prewarmScope;
+  TextBlock::fakeBold = SETTINGS.fakeBold;
+  if (fcm->needsPrewarmScan(fontId)) {
+    prewarmScope.emplace(*fcm);
+    page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);  // scan pass
+    prewarmScope->endScanAndPrewarm();
+  } else {
+    fcm->clearCache();
+    fcm->resetStats();
+    rawFontCacheGuard.manager = fcm;
+  }
+  const auto tPrewarm = millis();
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
   auto renderGrayscalePass = [&]() {

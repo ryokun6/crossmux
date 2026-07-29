@@ -22,6 +22,13 @@ class EpubReaderActivity final : public Activity {
   // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
   // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
   int pagesUntilFullRefresh = 0;
+  // Idle-time glyph prewarm: after a page settles, scan the LIKELY next page
+  // (scan mode draws nothing) and load its missing glyphs from SD during idle,
+  // so the next turn's in-render prewarm is a cache hit instead of ~100 ms of
+  // SD reads on the page-turn critical path. One attempt per position.
+  int idlePrewarmSpine = -1;
+  int idlePrewarmPage = -1;
+  unsigned long lastRenderCompleteMs = 0;
   int cachedSpineIndex = 0;
   int cachedChapterTotalPageCount = 0;
   unsigned long lastPageTurnTime = 0UL;
@@ -71,6 +78,11 @@ class EpubReaderActivity final : public Activity {
   void renderContents(std::unique_ptr<Page> page, int orientedMarginTop, int orientedMarginRight,
                       int orientedMarginBottom, int orientedMarginLeft);
   void renderStatusBar() const;
+  // Heap floor for optional render-adjacent work (idle prewarm). Page
+  // deserialization and glyph caching allocate through throwing paths that
+  // abort() on OOM; skip deferrable work below it.
+  static constexpr size_t RENDER_MIN_FREE_HEAP = 24 * 1024;
+  static constexpr size_t RENDER_MIN_MAX_ALLOC = 24 * 1024;
   void silentIndexNextChapterIfNeeded(uint16_t viewportWidth, uint16_t viewportHeight);
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
   // Jump to a percentage of the book (0-100), mapping it to spine and page.

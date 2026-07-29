@@ -19,6 +19,8 @@ class FontCacheManager {
   void prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F, bool addRegularFallback = true);
   void logStats(const char* label = "render");
   void resetStats();
+  bool canIdlePrewarm(int fontId) const;
+  bool needsPrewarmScan(int fontId) const;
 
   // Scan-mode API: called by GfxRenderer::drawText() during scan pass
   bool isScanning() const;

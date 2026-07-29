@@ -425,7 +425,10 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   return true;
 }
 
-std::unique_ptr<Page> Section::loadPageFromSectionFile() {
+std::unique_ptr<Page> Section::loadPage(const int pageIndex) {
+  if (pageIndex < 0 || pageIndex >= static_cast<int>(pageCount)) {
+    return nullptr;
+  }
   if (!Storage.openFileForRead("SCT", filePath, file)) {
     return nullptr;
   }
@@ -433,7 +436,7 @@ std::unique_ptr<Page> Section::loadPageFromSectionFile() {
   file.seek(HEADER_SIZE - sizeof(uint32_t) * 4);
   uint32_t lutOffset;
   serialization::readPod(file, lutOffset);
-  file.seek(lutOffset + sizeof(uint32_t) * currentPage);
+  file.seek(lutOffset + sizeof(uint32_t) * pageIndex);
   uint32_t pagePos;
   serialization::readPod(file, pagePos);
   file.seek(pagePos);
@@ -443,6 +446,8 @@ std::unique_ptr<Page> Section::loadPageFromSectionFile() {
   file.close();
   return page;
 }
+
+std::unique_ptr<Page> Section::loadPageFromSectionFile() { return loadPage(currentPage); }
 
 std::string Section::getTextFromSectionFile() {
   std::string fullText;

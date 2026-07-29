@@ -59,6 +59,23 @@ void FontCacheManager::resetStats() {
   }
 }
 
+bool FontCacheManager::canIdlePrewarm(const int fontId) const {
+  return sdCardFonts_.find(fontId) != sdCardFonts_.end();
+}
+
+bool FontCacheManager::needsPrewarmScan(const int fontId) const {
+  if (sdCardFonts_.count(fontId) != 0) return true;
+
+  const auto familyIt = fontMap_.find(fontId);
+  if (familyIt == fontMap_.end()) return false;
+  for (uint8_t i = 0; i < 4; i++) {
+    const auto style = static_cast<EpdFontFamily::Style>(i);
+    const EpdFontData* data = familyIt->second.getData(style);
+    if (data && data->groups) return true;
+  }
+  return false;
+}
+
 bool FontCacheManager::isScanning() const { return scanMode_ == ScanMode::Scanning; }
 
 void FontCacheManager::resolveScanStyleFaces(int fontId) {
