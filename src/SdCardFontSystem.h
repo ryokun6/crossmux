@@ -21,7 +21,7 @@ class SdCardFontSystem {
   /// Call before entering the reader or after settings change.
   /// Also re-discovers if the registry has been marked dirty (e.g. by web upload).
   void ensureLoaded(GfxRenderer& renderer);
-  void ensureLoaded(GfxRenderer& renderer, bool /*allowFlashCache*/) { ensureLoaded(renderer); }
+  void ensureLoaded(GfxRenderer& renderer, bool allowFlashCache);
   void releaseLoadedFont(GfxRenderer& renderer);
 
   /// Resolve an SD card font ID from family name + fontSize enum.

@@ -9,7 +9,6 @@
 #include "EpdFont.h"
 #include "EpdFontData.h"
 
-class HalFile;
 class EpdFontFamily;
 
 // On-disk binary format version for .cpfont files. Defined as a preprocessor
@@ -38,9 +37,11 @@ class SdCardFont {
   SdCardFont& operator=(SdCardFont&&) = delete;
 
   // Load .cpfont file: reads header + intervals into RAM, records file layout offsets.
-  // Supports v4 (multi-style) format.
+  // Supports v4 (multi-style) format. When preferFlash is true and the inactive
+  // OTA slot holds a matching cache entry, metadata/glyph I/O reads flash first.
   // Returns true on success.
-  bool load(const char* path);
+  bool load(const char* path, bool preferFlash = false);
+  bool usingFlash() const { return useFlash_; }
 
   // Pre-read glyphs needed for the given UTF-8 text from SD card.
   // styleMask: bitmask of styles to prewarm (bit 0=regular, 1=bold, 2=italic, 3=bolditalic).
@@ -279,13 +280,15 @@ class SdCardFont {
   // Merge sortedNew (sorted by codepoint, no overlap with existing) into the
   // advance table for styleIdx, preserving sort order; cap-truncates the tail.
   void mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sortedNew, uint32_t newCount);
-  // Read advanceX for a resolved glyph index from an already-open .cpfont.
-  uint16_t readAdvanceFromOpenFile(HalFile& file, uint8_t styleIdx, int32_t glyphIndex) const;
-  uint16_t getAdvanceOrLoadWithFile(uint32_t codepoint, uint8_t style, HalFile* openFile) const;
-
   Stats stats_;
   uint32_t contentHash_ = 0;
   bool loaded_ = false;
+  // Mutable so const measurement/miss paths can clear the flash flag on fallback.
+  mutable bool useFlash_ = false;
+  size_t flashPayloadSize_ = 0;
+
+  // Flash-or-SD .cpfont reader (defined in SdCardFont.cpp).
+  class FontFile;
 
   // Per-style helpers
   void freeStyleMiniData(PerStyle& s);
@@ -294,7 +297,7 @@ class SdCardFont {
   void freeStyleKernLigatureData(PerStyle& s);
   void freeStyleMiniKern(PerStyle& s);
   bool styleIntervalsLoaded(const PerStyle& s) const;
-  bool loadStyleIntervalsFromFile(PerStyle& s, HalFile* alreadyOpen = nullptr);
+  bool loadStyleIntervalsFromFile(PerStyle& s);
   bool loadStyleKernLigatureData(PerStyle& s);
   bool buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, uint32_t cpCount);
   void applyKernLigaturePointers(PerStyle& s, EpdFontData& data) const;
@@ -304,6 +307,9 @@ class SdCardFont {
   template <typename Iter>
   int buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, bool includeHyphen, uint8_t styleMask);
   int prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint32_t cpCount, bool metadataOnly);
+  bool loadSelectedSource();
+  uint16_t readAdvanceFromOpenFile(FontFile& file, uint8_t styleIdx, int32_t glyphIndex) const;
+  uint16_t getAdvanceOrLoadWithFile(uint32_t codepoint, uint8_t style, FontFile* openFile) const;
 
   // Global helpers
   void freeAll();

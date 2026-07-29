@@ -48,7 +48,8 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
   if (SETTINGS.sdFontFamilyName[0] != '\0') {
     const auto* family = registry_.findFamily(SETTINGS.sdFontFamilyName);
     if (family) {
-      if (manager_.loadFamily(*family, renderer, fontSizeEnumFromSettings())) {
+      const bool preferFlash = SETTINGS.sdFontFlashPreload != 0;
+      if (manager_.loadFamily(*family, renderer, fontSizeEnumFromSettings(), preferFlash)) {
         LOG_DBG("SDFS", "Loaded SD card font family: %s", SETTINGS.sdFontFamilyName);
         wireBuiltinGlyphFallback(renderer, SETTINGS.sdFontFamilyName);
       } else {
@@ -64,7 +65,9 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
   LOG_DBG("SDFS", "SD font system ready (%d families discovered)", registry_.getFamilyCount());
 }
 
-void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
+void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) { ensureLoaded(renderer, true); }
+
+void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache) {
   // If the web server (or another task) installed/deleted fonts, re-discover.
   // Track whether we just re-discovered so we can force a reload below even
   // when the wanted family/size still maps to the same point size — the file
@@ -78,6 +81,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
   const char* wantedFamily = SETTINGS.sdFontFamilyName;
   const std::string& currentFamily = manager_.currentFamilyName();
   const uint8_t sizeEnum = fontSizeEnumFromSettings();
+  const bool preferFlash = allowFlashCache && SETTINGS.sdFontFlashPreload != 0;
 
   if (wantedFamily[0] == '\0') {
     if (!currentFamily.empty()) {
@@ -115,7 +119,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
 
   const auto* family = registry_.findFamily(wantedFamily);
   if (family) {
-    if (manager_.loadFamily(*family, renderer, sizeEnum)) {
+    if (manager_.loadFamily(*family, renderer, sizeEnum, preferFlash)) {
       LOG_DBG("SDFS", "Loaded SD font family: %s", wantedFamily);
       wireBuiltinGlyphFallback(renderer, wantedFamily);
     } else {

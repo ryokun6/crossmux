@@ -86,7 +86,7 @@ Legend: **K** = keep ours · **T** = take upstream · **M** = manual merge · **
 | `lib/EpdFont/builtinFonts/notosans_cjk_*.h` | **K** | Ignore upstream font header conflicts |
 | Font build scripts / charsets | **K** + selective **T** | Keep GenSen/OpenCC pipelines; borrow upstream “complete SD font” guidance strings/flow |
 | `SdCardFont*` + flash cache | **M** | Take `#57` API (`allowFlashCache`, inactive slot) onto our SD font manager; keep `ScopedSdFontUnload` |
-| `HalClock` / `TimeUtils` / DateTime settings | **M** | Prefer upstream UTC-everywhere + X3 RTC restore; keep our `DateTimeEditActivity` if still needed for manual edit UX |
+| `HalClock` / `TimeUtils` / DateTime settings | **M** | Prefer upstream UTC-everywhere + X3 RTC restore; manual edit lives in `DateTimeSettingsActivity` (orphan `DateTimeEditActivity` removed) |
 | `platformio.ini` | **M** | Keep SKU envs; add wolfSSL + `patch_wolfssl.py` only as needed for WeRead; do **not** drop mbedTLS custom_sdkconfig work |
 | `.gitmodules` / SDK | **K** | Stay on `open-x4-sdk`; map any upstream `freeink::SecureClient` usage to community-sdk equivalents or a thin shim |
 | `SCOPE.md` / READMEs | **K** | Keep ryOS scope; fold upstream WeRead security notice into USER_GUIDE / chinese-build |
@@ -220,8 +220,8 @@ Branch: `cursor/upstream-sync-1.5.1-2423` — merged `upstream/main` @ 1.5.1.
 | Native `ctest` | **225/225 passed** |
 | Version | `1.5.1` in `platformio.ini` |
 
-Deferred / stubbed (follow-ups):
-- Full SD-font inactive-OTA flash cache (`SdCardFontCache` stub; format header kept)
-- Dictionary reader activities (excluded from `build_src_filter`)
-- `DateTimeEditActivity` (excluded; DateTimeSettings uses HalClock bridge)
-- Background SNTP auto-sync on HalClock (blocking `syncNow`/`requestSync` bridge)
+Deferred items completed on this branch:
+- Full SD-font inactive-OTA flash cache (`SdCardFontCache` + `FontFile` / `preferFlash` on fork `SdCardFont`)
+- Dictionary reader activities (TextBlock accessors + menu/long-press entry)
+- Removed orphan `DateTimeEditActivity` (`DateTimeSettingsActivity::ManualEdit` covers UX)
+- Background SNTP auto-sync on HalClock (`esp_netif_sntp_*` + DS3231 persist)
