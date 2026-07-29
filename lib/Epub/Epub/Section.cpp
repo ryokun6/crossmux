@@ -24,16 +24,16 @@ namespace {
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
 #ifdef CHINESE_UI_SIMPLIFIED
-constexpr uint8_t SECTION_FILE_VERSION = 82;  // SC: flat TextBlock arena + prior segment-break fix
+constexpr uint8_t SECTION_FILE_VERSION = 86;  // SC: <br> margin strip + prior TextBlock arena
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 81;  // TC: flat TextBlock arena + prior segment-break fix
+constexpr uint8_t SECTION_FILE_VERSION = 85;  // TC: <br> margin strip + prior TextBlock arena
 #endif
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 83;  // JA: flat TextBlock arena + prior segment-break fix
+constexpr uint8_t SECTION_FILE_VERSION = 87;  // JA: <br> margin strip + prior TextBlock arena
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 84;  // KO: flat TextBlock arena + prior segment-break fix
+constexpr uint8_t SECTION_FILE_VERSION = 88;  // KO: <br> margin strip + prior TextBlock arena
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 55;  // Latin: flat TextBlock arena layout
+constexpr uint8_t SECTION_FILE_VERSION = 56;  // Latin: <br> margin strip + prior TextBlock arena
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +

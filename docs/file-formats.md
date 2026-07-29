@@ -98,7 +98,7 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry independent version counters:
-> Traditional (**81**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**82**). The byte
+> Traditional (**85**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**86**). The byte
 > layout is identical to the Latin version below; only the word-stream contents
 > differ (per-character CJK tokenization), so caches are not reusable across
 > flavors. TC keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
@@ -106,9 +106,9 @@ if (parsedSize != fileSize) {
 > remaps those marks to FE1x presentation forms like Japanese (corner-biased /
 > GB/T 直排偏右). Brackets and parentheses remap to FE3x/FE4x on all CJK SKUs.
 >
-> Japanese builds use version **83**; Korean builds use version **84**.
+> Japanese builds use version **87**; Korean builds use version **88**.
 >
-> Latin builds use version **55**. Counters track `writingMode`, em-based
+> Latin builds use version **56**. Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
 > (﹁﹂︵︒ etc. on JA/KO/SC/Latin; TC keeps upright centered 點號), horizontal
 > inter-paragraph spacing in vertical-rl, and normal brackets in rotated numeric
@@ -146,7 +146,9 @@ if (parsedSize != fileSize) {
 >
 > Latin **55** / CJK **81/82/83/84** switch `TextBlock` to a flat arena on disk
 > (one blob for offsets/xpos/styles/focus/text plus per-word ruby strings).
-> Prior vector-of-string caches are invalidated automatically on version mismatch.
+> Latin **56** / CJK **85/86/87/88** strip container top/bottom margins on
+> non-empty `<br>` line breaks and inject a line-height gap for empty `<br>`
+> section separators (`fromBrElement`). Prior caches are invalidated on mismatch.
 >
 > CJK versions also enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
@@ -369,3 +371,19 @@ if (parsedSize != fileSize) {
     std::warning(std::format("Unparsed data detected: {} bytes remaining at offset 0x{:X}", fileSize - parsedSize, parsedSize));
 }
 ```
+
+## WeRead cache
+
+WeRead private data lives under `/.crosspoint/weread/` (SC+TC). Generated EPUBs
+are under `/WeRead/`.
+
+- `disclaimer.accepted` is exactly five bytes `WRD1\n`. A missing, truncated, or
+  unknown marker shows the first-run disclaimer again. Logout preserves this file.
+
+## WeRead cache
+
+WeRead private data lives under `/.crosspoint/weread/` (SC+TC). Generated EPUBs
+are under `/WeRead/`.
+
+- `disclaimer.accepted` is exactly five bytes `WRD1\n`. A missing, truncated, or
+  unknown marker shows the first-run disclaimer again. Logout preserves this file.
