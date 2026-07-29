@@ -4,10 +4,10 @@
 // int-returning sha256 API. Implement it with OpenSSL (already linked by the
 // native simulator) so we do not depend on system libmbedtls ABI quirks.
 
+#include <openssl/evp.h>
+
 #include <cstddef>
 #include <cstdint>
-
-#include <openssl/evp.h>
 
 struct mbedtls_sha256_context {
   EVP_MD_CTX* md = nullptr;

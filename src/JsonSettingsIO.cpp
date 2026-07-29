@@ -1,5 +1,4 @@
 #include "JsonSettingsIO.h"
-#include "BookmarkEntry.h"
 
 #include <ArduinoJson.h>
 #include <HalStorage.h>
@@ -11,6 +10,7 @@
 #include <utility>
 
 #include "AchievementsStore.h"
+#include "BookmarkEntry.h"
 #include "OpdsServerStore.h"
 #include "ReadingStatsStore.h"
 #include "util/BookIdentity.h"

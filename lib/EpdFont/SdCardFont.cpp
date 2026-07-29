@@ -10,7 +10,6 @@
 #include <memory>
 
 #include "EpdFontFamily.h"
-
 #include "SdCardFontCache.h"
 
 #ifdef ENABLE_CHINESE_VERSION

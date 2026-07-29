@@ -273,7 +273,8 @@ void StandbyActivity::beginClockSync() {
     finishTimeSync();
     return;
   }
-  syncState_ = SyncState::ClockSyncing;  syncStartMs_ = millis();
+  syncState_ = SyncState::ClockSyncing;
+  syncStartMs_ = millis();
   LOG_DBG("STANDBY", "Clock sync started");
 }
 

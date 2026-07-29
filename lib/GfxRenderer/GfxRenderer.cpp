@@ -1450,7 +1450,6 @@ void GfxRenderer::invertScreen() const {
   }
 }
 
-
 void GfxRenderer::tapToLogical(float nx, float ny, int& outX, int& outY) const {
   int phyX = static_cast<int>(nx * panelWidth);
   int phyY = static_cast<int>(ny * panelHeight);

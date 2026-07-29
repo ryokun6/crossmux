@@ -1,7 +1,7 @@
 #include "WifiSelectionActivity.h"
-#include <HalClock.h>
 
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <I18n.h>
 #include <Logging.h>
 #include <WiFi.h>

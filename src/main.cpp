@@ -592,8 +592,8 @@ void setup() {
     activityManager.goToReader(APP_STATE.openEpubPath);
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_FONT_DOWNLOAD) {
     // resumedAfterDefrag=true: auto-reconnect Wi‑Fi then HTTPS on clean heap.
-    activityManager.replaceActivity(std::make_unique<FontDownloadActivity>(renderer, mappedInputManager,
-                                              FontDownloadActivity::Purpose::Manage, true));
+    activityManager.replaceActivity(std::make_unique<FontDownloadActivity>(
+        renderer, mappedInputManager, FontDownloadActivity::Purpose::Manage, true));
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_OTA_UPDATE) {
     activityManager.replaceActivity(std::make_unique<OtaUpdateActivity>(renderer, mappedInputManager, true));
   } else if (resume == BootResume::Silent) {

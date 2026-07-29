@@ -319,10 +319,8 @@ void RoundedRaffTheme::drawList(const GfxRenderer& renderer, Rect rect, int item
               renderer.truncatedText(kTitleFontId, valueText.c_str(), maxValueWidth, EpdFontFamily::REGULAR);
           const int valueW = renderer.getTextWidth(kTitleFontId, truncatedValue.c_str(), EpdFontFamily::REGULAR);
           const int valueX = rowX + rowWidth - kInteractiveInsetX - valueW;
-          const int valueY = rowY + (rowHeight - renderer.getLineHeight(kTitleFontId)) / 2 +
-                             kCompactTextOpticalNudgeY;
-          renderer.drawText(kTitleFontId, valueX, valueY, truncatedValue.c_str(), !isSelected,
-                            EpdFontFamily::REGULAR);
+          const int valueY = rowY + (rowHeight - renderer.getLineHeight(kTitleFontId)) / 2 + kCompactTextOpticalNudgeY;
+          renderer.drawText(kTitleFontId, valueX, valueY, truncatedValue.c_str(), !isSelected, EpdFontFamily::REGULAR);
           if (dimmed) drawDitherMask(renderer, valueX, valueY, valueW, renderer.getLineHeight(kTitleFontId));
           textAreaWidth = std::max(0, textAreaWidth - valueW - kMinValueGap);
         }
@@ -358,8 +356,7 @@ void RoundedRaffTheme::drawList(const GfxRenderer& renderer, Rect rect, int item
       }
     } else {
       auto title = renderer.truncatedText(kTitleFontId, rowTitle(i).c_str(), textAreaWidth, EpdFontFamily::BOLD);
-      const int titleY = rowY + (rowHeight - renderer.getLineHeight(kTitleFontId)) / 2 +
-                         kCompactTextOpticalNudgeY;
+      const int titleY = rowY + (rowHeight - renderer.getLineHeight(kTitleFontId)) / 2 + kCompactTextOpticalNudgeY;
       renderer.drawText(kTitleFontId, rowX + kInteractiveInsetX, titleY, title.c_str(), !isSelected,
                         EpdFontFamily::BOLD);
       if (dimmed) {

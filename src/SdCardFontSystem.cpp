@@ -139,6 +139,4 @@ int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t /*fontSizeEn
   return manager_.getFontId(familyName);
 }
 
-void SdCardFontSystem::releaseLoadedFont(GfxRenderer& renderer) {
-  manager_.unloadAll(renderer);
-}
+void SdCardFontSystem::releaseLoadedFont(GfxRenderer& renderer) { manager_.unloadAll(renderer); }
