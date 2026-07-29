@@ -133,6 +133,8 @@ file(GLOB_RECURSE CROSSPOINT_LIB
 if(EMSCRIPTEN)
     list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/activities/apps/weread/")
 endif()
+# Device-only wolfSSL SNI wrap (max-fragment for weread.qq.com).
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/platform/wolfssl_max_fragment\\.cpp$")
 
 # Real HAL .cpp is replaced by simulator/hal/.
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/hal/Hal.*\\.cpp$")

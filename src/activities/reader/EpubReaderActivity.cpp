@@ -14,6 +14,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -30,6 +31,11 @@
 #include "EpubReaderUtils.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
+#ifdef ENABLE_CHINESE_VERSION
+#include "activities/apps/weread/WeReadClient.h"
+#include "activities/apps/weread/WeReadProgressSyncActivity.h"
+#include "activities/apps/weread/WeReadStore.h"
+#endif
 #include "MappedInputManager.h"
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
@@ -228,11 +234,24 @@ void EpubReaderActivity::onEnter() {
 
   epub->setupCacheDir();
 
+#ifdef ENABLE_CHINESE_VERSION
+  wereadBookId_[0] = '\0';
+  clearInitialProgressAfterSave_ = false;
+  if (WeReadStore::findBookIdForPath(epub->getPath(), wereadBookId_, sizeof(wereadBookId_)) &&
+      strncmp(wereadBookId_, "MP_WXS_", 7) == 0) {
+    wereadBookId_[0] = '\0';
+  }
+  bool hasSavedProgress = false;
+#endif
+
   HalFile f;
   if (Storage.openFileForRead("ERS", epub->getCachePath() + "/progress.bin", f)) {
     uint8_t data[6];
     int dataSize = f.read(data, 6);
     if (dataSize == 4 || dataSize == 6) {
+#ifdef ENABLE_CHINESE_VERSION
+      hasSavedProgress = true;
+#endif
       currentSpineIndex = data[0] + (data[1] << 8);
       nextPageNumber = data[2] + (data[3] << 8);
       if (nextPageNumber == UINT16_MAX) {
@@ -269,6 +288,19 @@ void EpubReaderActivity::onEnter() {
       getStatsChapterTitle(*epub, currentSpineIndex), 0);
 
   loadCachedBookmarks();
+
+#ifdef ENABLE_CHINESE_VERSION
+  if (wereadBookId_[0]) {
+    float initialProgress = 0.0f;
+    const bool loaded = WeReadStore::loadInitialProgress(wereadBookId_, initialProgress);
+    if (hasSavedProgress || !loaded || initialProgress <= 0.0f) {
+      WeReadStore::clearInitialProgress(wereadBookId_);
+    } else {
+      clearInitialProgressAfterSave_ = true;
+      jumpToPercent(static_cast<int>(initialProgress * 100.0f + 0.5f));
+    }
+  }
+#endif
 
   // Trigger first update
   requestUpdate();
@@ -745,6 +777,11 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::SYNC: {
+#ifdef ENABLE_CHINESE_VERSION
+      if (wereadBookId_[0] && launchWeReadSync()) {
+        break;
+      }
+#endif
       launchKOReaderSync();
       break;
     }
@@ -855,8 +892,63 @@ void EpubReaderActivity::launchKOReaderSync() {
   activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
       renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, std::move(localKoPos),
       std::move(localChapterName), paragraphIndex));
-  // acted: launched the sync activity
 }
+
+#ifdef ENABLE_CHINESE_VERSION
+bool EpubReaderActivity::launchWeReadSync() {
+  if (!wereadBookId_[0] || !epub) return false;
+  const int currentPage = section ? section->currentPage : nextPageNumber;
+  const int totalPages = section ? section->pageCount : cachedChapterTotalPageCount;
+  const float chapterFraction =
+      totalPages > 1 ? static_cast<float>(currentPage) / static_cast<float>(totalPages - 1) : 0.0f;
+  const float localFraction = epub->calculateProgress(currentSpineIndex, chapterFraction);
+  std::string savedEpubPath = epub->getPath();
+
+  if (!saveProgress(currentSpineIndex, currentPage, totalPages)) {
+    LOG_ERR("WRSync", "Aborting sync because current progress could not be saved");
+    pendingSyncSaveError = true;
+    requestUpdate();
+    return true;
+  }
+
+  WeReadClient::ProgressSyncInput input;
+  input.localFraction = localFraction;
+  input.localSpineIndex = static_cast<uint16_t>(currentSpineIndex);
+  input.localPageNumber = static_cast<uint16_t>(currentPage);
+  input.localPageCount = static_cast<uint16_t>(totalPages);
+  WeReadStore::BookOptions options;
+  input.hasLocalTocIndex =
+      WeReadStore::loadBookOptions(WeReadStore::bookDirectory(wereadBookId_), options) &&
+      WeReadStore::parseGeneratedChapterHref(epub->getSpineItem(currentSpineIndex).href, input.localTocIndex);
+  LOG_INF("WRSync", "local chapter mapping: precise=%u spine=%u toc=%u page=%u/%u",
+          static_cast<unsigned>(input.hasLocalTocIndex), static_cast<unsigned>(input.localSpineIndex),
+          static_cast<unsigned>(input.localTocIndex), static_cast<unsigned>(input.localPageNumber),
+          static_cast<unsigned>(input.localPageCount));
+
+  auto sync = makeUniqueNoThrow<WeReadProgressSyncActivity>(renderer, mappedInput, std::move(savedEpubPath),
+                                                            wereadBookId_, input);
+  if (!sync) {
+    LOG_ERR("WRSync", "OOM: WeReadProgressSyncActivity (%u bytes)",
+            static_cast<unsigned>(sizeof(WeReadProgressSyncActivity)));
+    pendingSyncLaunchError = true;
+    requestUpdate();
+    return true;
+  }
+
+  LOG_DBG("WRSync", "Releasing epub for sync (heap before: %u)", static_cast<unsigned>(ESP.getFreeHeap()));
+  {
+    RenderLock lock(*this);
+    if (section) {
+      nextPageNumber = section->currentPage;
+    }
+    section.reset();
+    epub.reset();
+  }
+  LOG_DBG("WRSync", "Epub released (heap after: %u)", static_cast<unsigned>(ESP.getFreeHeap()));
+  activityManager.replaceActivity(std::move(sync));
+  return true;
+}
+#endif
 
 void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
   // No-op if the selected orientation matches current settings.
@@ -985,9 +1077,13 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   }
 
   const auto showPendingSyncSaveError = [this]() {
-    if (!pendingSyncSaveError) return;
-    pendingSyncSaveError = false;
-    GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
+    if (pendingSyncSaveError) {
+      pendingSyncSaveError = false;
+      GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
+    } else if (pendingSyncLaunchError) {
+      pendingSyncLaunchError = false;
+      GUI.drawPopup(renderer, tr(STR_SYNC_FAILED_MSG));
+    }
   };
 
   // edge case handling for sub-zero spine index
@@ -1265,7 +1361,13 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   READING_STATS.updateProgress(static_cast<uint8_t>(progressPercent), progressPercent >= 100,
                                getStatsChapterTitle(*epub, spineIndex),
                                getStatsChapterProgressPercent(currentPage, pageCount));
-  return EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount);
+  const bool saved = EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount);
+#ifdef ENABLE_CHINESE_VERSION
+  if (saved && clearInitialProgressAfterSave_ && wereadBookId_[0] && WeReadStore::clearInitialProgress(wereadBookId_)) {
+    clearInitialProgressAfterSave_ = false;
+  }
+#endif
+  return saved;
 }
 void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int orientedMarginTop,
                                         const int orientedMarginRight, const int orientedMarginBottom,

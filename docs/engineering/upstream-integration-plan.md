@@ -234,6 +234,15 @@ Deferred items completed on this branch:
 - Adopted `freeink-sdk` + WeRead wolfSSL (plan originally preferred staying on open-x4)
 
 Follow-ups still open:
-- TC flash headroom (~97.4%) before more CN-only growth
+- TC flash headroom (~97.5%) before more CN-only growth (re-check after wolfSSL SP_RSA / max-fragment)
 - Full ruby layout pipeline (arena already serializes empty ruby strings)
 - Host `HalOtaSlot` completeness for inactive-slot sim paths
+- Post-1.5.1 still deferred: AirPage standalone app, Nightly OTA, Lyra theme, SDK bump `e514a868`
+
+Landed after the 1.5.1 pin on this branch:
+- Page deserialize reserve clamp + null TextBlock check
+- ImageBlock row-buffer RAII (`makeUniqueNoThrow`)
+- CJK/web-novel `<br>` margin strip (`fromBrElement`) + section cache 56 / 85–88
+- Dictionary typed lookup/index failures
+- WeRead disclaimer (#70) + last-write-wins progress sync (#64)
+- Reader WeRead sync re-wired after the 1.5.1 merge drop

@@ -33,6 +33,11 @@ class EpubReaderActivity final : public Activity {
   float pendingSpineProgress = 0.0f;
   bool pendingScreenshot = false;
   bool pendingSyncSaveError = false;
+  bool pendingSyncLaunchError = false;
+#ifdef ENABLE_CHINESE_VERSION
+  char wereadBookId_[64] = {};
+  bool clearInitialProgressAfterSave_ = false;
+#endif
   bool skipNextButtonCheck = false;  // Skip button processing for one frame after subactivity exit
   bool automaticPageTurnActive = false;
   bool showBookmarkMessage = false;
@@ -74,6 +79,9 @@ class EpubReaderActivity final : public Activity {
   // Returns true if sync acted (launched sync, showed credentials hint, or surfaced a
   // save error). CrossMux always acts on no-credentials by opening the hint screen.
   void launchKOReaderSync();
+#ifdef ENABLE_CHINESE_VERSION
+  bool launchWeReadSync();
+#endif
   void applyOrientation(uint8_t orientation);
   void applyWritingMode(uint8_t writingMode);
   uint8_t effectiveWritingMode() const;
