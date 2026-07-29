@@ -214,11 +214,16 @@ Branch: `cursor/upstream-sync-1.5.1-2423` — merged `upstream/main` @ 1.5.1.
 
 | Gate | Result |
 |---|---|
-| `pio run` (default / intl) | SUCCESS — Flash ~87.4% |
+| `pio run` (default / intl) | SUCCESS — Flash ~87.5% |
 | `pio run -e gh_release_sc` | SUCCESS — Flash ~94.8%, WeRead linked, GenSen kept |
-| `pio run -e gh_release_tc` | SUCCESS — Flash ~97.4%, WeRead linked, GenSen kept |
+| `pio run -e gh_release_tc` | SUCCESS — Flash ~97.5%, WeRead linked, GenSen kept |
 | Native `ctest` | **225/225 passed** |
+| `pio check` | PASSED (WordList typed FreeDeleter) |
 | Version | `1.5.1` in `platformio.ini` |
+
+**TC flash audit (post-arena):** ~97.5% used (6,386,915 / 6,553,600). Arena `TextBlock` is a
+RAM/fragmentation win, not a flash shrink. No further safe flash cut without
+product tradeoffs (WeRead, GenSen coverage, or wolfSSL). Keep TC growth gated.
 
 Deferred items completed on this branch:
 - Full SD-font inactive-OTA flash cache (`SdCardFontCache` + `FontFile` / `preferFlash` on fork `SdCardFont`)
