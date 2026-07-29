@@ -37,11 +37,45 @@ inline bool utf8IsCjkBreakable(const uint32_t cp) {
          || (cp >= 0xAC00 && cp <= 0xD7AF)     // Hangul Syllables
          || (cp >= 0xD7B0 && cp <= 0xD7FF)     // Hangul Jamo Extended-B
          || (cp >= 0xF900 && cp <= 0xFAFF)     // CJK Compatibility Ideographs
+         || (cp >= 0xFE10 && cp <= 0xFE1F)     // Vertical Forms (︐︒︵ etc.)
          || (cp >= 0xFE30 && cp <= 0xFE4F)     // CJK Compatibility Forms
          || (cp >= 0xFF01 && cp <= 0xFF60)     // Fullwidth Latin / Punctuation
          || (cp >= 0xFF65 && cp <= 0xFFEF)     // Halfwidth Katakana / Hangul
          || (cp >= 0x20000 && cp <= 0x2A6DF)   // CJK Extension B
          || (cp >= 0x2A700 && cp <= 0x2B73F);  // CJK Extension C
+}
+
+// Returns true for Hangul codepoints. Korean is the only CJK script written with
+// spaces between words, so a few layout rules treat it differently from the
+// no-space CJK scripts (CSS Text 4.1.2 segment-break transformation exempts Hangul).
+inline bool utf8IsHangul(const uint32_t cp) {
+  return (cp >= 0x1100 && cp <= 0x11FF)      // Hangul Jamo
+         || (cp >= 0x3130 && cp <= 0x318F)   // Hangul Compatibility Jamo
+         || (cp >= 0xA960 && cp <= 0xA97F)   // Hangul Jamo Extended-A
+         || (cp >= 0xAC00 && cp <= 0xD7AF)   // Hangul Syllables
+         || (cp >= 0xD7B0 && cp <= 0xD7FF)   // Hangul Jamo Extended-B
+         || (cp >= 0xFFA0 && cp <= 0xFFDC);  // Halfwidth Hangul
+}
+
+// CSS Text §4.1 white-space collapsing for CJK source runs.
+// A whitespace run collapses to either one space or nothing:
+//   • If the run contains a segment break (\n/\r), apply the East Asian
+//     segment-break transform: remove between two no-space CJK neighbors
+//     (Han/Kana/etc.); Hangul or non-CJK on either side keeps a space.
+//     Indentation spaces/tabs around that break do NOT force a space — otherwise
+//     pretty-printed Chinese/Japanese HTML (`中\\n  文`) would sprout gaps.
+//   • If the run is only spaces/tabs (no segment break), always keep a space
+//     (Korean word spacing; intentional spaces in any CJK text).
+// leftCp==0 means no previous glyph (start of block); then only a real space
+// run yields a spaceBefore on the first word.
+inline bool utf8CjkWhitespaceBecomesSpace(const bool hadRealSpace, const bool hadSegmentBreak, const uint32_t leftCp,
+                                          const uint32_t rightCp) {
+  if (hadSegmentBreak && leftCp != 0) {
+    const bool leftNoSpaceCjk = utf8IsCjkBreakable(leftCp) && !utf8IsHangul(leftCp);
+    const bool rightNoSpaceCjk = utf8IsCjkBreakable(rightCp) && !utf8IsHangul(rightCp);
+    return !(leftNoSpaceCjk && rightNoSpaceCjk);
+  }
+  return hadRealSpace;
 }
 
 // Returns true for any codepoint in a CJK script block (Han, Kana, Hangul, Bopomofo,
