@@ -2,32 +2,23 @@
 
 #include <Logging.h>
 #include <WiFi.h>
+#include <esp_netif_sntp.h>
 #include <esp_sntp.h>
 #include <sys/time.h>
 #include <time.h>
 
-#include <cassert>
-#include <cstdio>
-
-HalClock halClock;  // Singleton instance
+HalClock halClock;
 
 namespace {
-constexpr uint32_t VALID_CLOCK_THRESHOLD = 1704067200UL;  // 2024-01-01 UTC
 
-// DS3231 register layout (BCD encoded):
-//   0x00: Seconds
-//   0x01: Minutes
-//   0x02: Hours    (bit 6 = 12/24 mode, bits 5-0 = hours in 24h mode)
-//   0x03: Day of week
-//   0x04: Date
-//   0x05: Month / century
-//   0x06: Year (00-99)
+// Earliest UTC instant that can represent 2024-01-01 in the supported UTC+14
+// local offset.
+constexpr time_t MIN_TRUSTED_EPOCH = 1704016800;  // 2023-12-31 10:00 UTC
+constexpr uint16_t MIN_TRUSTED_YEAR = 2023;
+constexpr uint16_t MAX_RTC_YEAR = 2099;
+constexpr time_t MAX_RTC_WRITE_SKEW_SECONDS = 2;
 
-uint8_t bcdToDec(uint8_t bcd) { return ((bcd >> 4) * 10) + (bcd & 0x0F); }
-uint8_t decToBcd(uint8_t dec) { return ((dec / 10) << 4) | (dec % 10); }
-
-// Howard Hinnant days-from-civil (proleptic Gregorian).
-int32_t daysFromCivil(int year, int month, int day) {
+int32_t daysFromCivil(int year, const unsigned month, const unsigned day) {
   year -= month <= 2;
   const int era = (year >= 0 ? year : year - 399) / 400;
   const unsigned yearOfEra = static_cast<unsigned>(year - era * 400);
@@ -36,338 +27,235 @@ int32_t daysFromCivil(int year, int month, int day) {
   return era * 146097 + static_cast<int>(dayOfEra) - 719468;
 }
 
-void civilFromDays(int z, int& year, int& month, int& day) {
-  z += 719468;
-  const int era = (z >= 0 ? z : z - 146096) / 146097;
-  const unsigned dayOfEra = static_cast<unsigned>(z - era * 146097);
-  const unsigned yearOfEra = (dayOfEra - dayOfEra / 1460 + dayOfEra / 36524 - dayOfEra / 146096) / 365;
-  year = static_cast<int>(yearOfEra) + era * 400;
-  const unsigned dayOfYear = dayOfEra - (365 * yearOfEra + yearOfEra / 4 - yearOfEra / 100);
-  const unsigned monthPart = (5 * dayOfYear + 2) / 153;
-  day = static_cast<int>(dayOfYear - (153 * monthPart + 2) / 5 + 1);
-  month = static_cast<int>(monthPart + (monthPart < 10 ? 3 : -9));
-  year += (month <= 2);
-}
-
-void buildPosixTz(const int32_t offsetSecEast, char* buf, const size_t bufSize) {
-  // POSIX TZ offset is positive west of UTC; negate the east-positive offset.
-  const int32_t posixSec = -offsetSecEast;
-  const int32_t absSec = posixSec >= 0 ? posixSec : -posixSec;
-  const int hours = static_cast<int>(absSec / 3600);
-  const int mins = static_cast<int>((absSec % 3600) / 60);
-  const char sign = posixSec >= 0 ? '-' : '+';
-  if (mins == 0) {
-    snprintf(buf, bufSize, "UTC%c%d", sign, hours);
-  } else {
-    snprintf(buf, bufSize, "UTC%c%d:%02d", sign, hours, mins);
+bool rtcDateTimeToEpoch(const Rtc::DateTime& rtcTime, time_t& epoch) {
+  if (rtcTime.year < MIN_TRUSTED_YEAR || rtcTime.year > MAX_RTC_YEAR || rtcTime.month < 1 || rtcTime.month > 12 ||
+      rtcTime.day < 1 || rtcTime.day > 31 || rtcTime.hour > 23 || rtcTime.minute > 59 || rtcTime.second > 59) {
+    return false;
   }
+
+  const int64_t seconds = static_cast<int64_t>(daysFromCivil(rtcTime.year, rtcTime.month, rtcTime.day)) * 86400 +
+                          static_cast<int64_t>(rtcTime.hour) * 3600 + static_cast<int64_t>(rtcTime.minute) * 60 +
+                          rtcTime.second;
+  const time_t converted = static_cast<time_t>(seconds);
+  if (converted < MIN_TRUSTED_EPOCH || static_cast<int64_t>(converted) != seconds) return false;
+
+  struct tm roundTrip{};
+  if (!gmtime_r(&converted, &roundTrip) || roundTrip.tm_year != static_cast<int>(rtcTime.year) - 1900 ||
+      roundTrip.tm_mon != static_cast<int>(rtcTime.month) - 1 || roundTrip.tm_mday != rtcTime.day ||
+      roundTrip.tm_hour != rtcTime.hour || roundTrip.tm_min != rtcTime.minute || roundTrip.tm_sec != rtcTime.second) {
+    return false;
+  }
+
+  epoch = converted;
+  return true;
 }
 
-uint8_t centuryBitForYear(const uint16_t year) { return (year >= 2000) ? 0 : static_cast<uint8_t>(0x80); }
+bool epochToRtcDateTime(const time_t epoch, Rtc::DateTime& rtcTime) {
+  if (epoch < MIN_TRUSTED_EPOCH) return false;
 
-uint16_t yearFromRtcCentury(const uint8_t centuryBit, const uint8_t yearBcd) {
-  const uint8_t yearTwo = bcdToDec(yearBcd);
-  return static_cast<uint16_t>((centuryBit ? 1900 : 2000) + yearTwo);
+  struct tm utcTime{};
+  if (!gmtime_r(&epoch, &utcTime)) return false;
+
+  const int year = utcTime.tm_year + 1900;
+  if (year < MIN_TRUSTED_YEAR || year > MAX_RTC_YEAR) return false;
+
+  rtcTime.year = static_cast<uint16_t>(year);
+  rtcTime.month = static_cast<uint8_t>(utcTime.tm_mon + 1);
+  rtcTime.day = static_cast<uint8_t>(utcTime.tm_mday);
+  rtcTime.hour = static_cast<uint8_t>(utcTime.tm_hour);
+  rtcTime.minute = static_cast<uint8_t>(utcTime.tm_min);
+  rtcTime.second = static_cast<uint8_t>(utcTime.tm_sec);
+  rtcTime.weekday = static_cast<uint8_t>(utcTime.tm_wday);
+  return true;
 }
+
 }  // namespace
 
-int32_t HalClock::biasedOffsetToSeconds(const uint8_t utcOffsetQuarterHoursBiased) {
-  uint8_t biased = utcOffsetQuarterHoursBiased;
-  if (biased > 104) biased = 48;
-  return (static_cast<int32_t>(biased) - 48) * 15 * 60;
-}
-
-time_t HalClock::utcToEpoch(const UtcDateTime& dt) {
-  const int32_t days = daysFromCivil(static_cast<int>(dt.year), static_cast<int>(dt.month), static_cast<int>(dt.day));
-  return static_cast<time_t>(days) * 86400 + dt.hour * 3600 + dt.minute * 60 + dt.second;
-}
-
-void HalClock::epochToUtc(const time_t epoch, UtcDateTime& out) {
-  if (epoch < 0) {
-    out = {};
-    return;
-  }
-  const time_t dayEpoch = epoch / 86400;
-  const int32_t daySeconds = static_cast<int32_t>(epoch % 86400);
-  int year = 0;
-  int month = 0;
-  int day = 0;
-  civilFromDays(static_cast<int>(dayEpoch), year, month, day);
-  out.year = static_cast<uint16_t>(year);
-  out.month = static_cast<uint8_t>(month);
-  out.day = static_cast<uint8_t>(day);
-  out.hour = static_cast<uint8_t>(daySeconds / 3600);
-  out.minute = static_cast<uint8_t>((daySeconds % 3600) / 60);
-  out.second = static_cast<uint8_t>(daySeconds % 60);
-}
-
 void HalClock::begin() {
-  if (!gpio.deviceIsX3()) {
-    _available = false;
-    return;
-  }
+  _rtcAvailable = _sdkRtc.begin();
+  LOG_INF("CLK", _rtcAvailable ? "External RTC found" : "Using software clock");
 
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);
-  if (Wire.endTransmission(false) != 0) {
-    LOG_INF("CLK", "DS3231 RTC not found");
-    _available = false;
-    return;
+  if (!hasValidTime() && restoreSystemTimeFromRtc()) {
+    LOG_INF("CLK", "System UTC clock restored from external RTC");
   }
-  Wire.requestFrom(I2C_ADDR_DS3231, static_cast<uint8_t>(1));
-  if (Wire.available() < 1) {
-    _available = false;
-    return;
-  }
-  Wire.read();
-
-  _available = true;
-  LOG_INF("CLK", "DS3231 RTC found");
-
-  uint8_t h = 0;
-  uint8_t m = 0;
-  getTime(h, m);
 }
 
-void HalClock::applySavedTimezone(const uint8_t utcOffsetQuarterHoursBiased) {
-  char tz[20];
-  buildPosixTz(biasedOffsetToSeconds(utcOffsetQuarterHoursBiased), tz, sizeof(tz));
-  setenv("TZ", tz, 1);
-  tzset();
+time_t HalClock::nowUtc() const {
+  const time_t now = time(nullptr);
+  return now >= MIN_TRUSTED_EPOCH ? now : 0;
 }
 
-bool HalClock::hasValidTime() const {
-  if (_available) return true;
-  return static_cast<uint32_t>(time(nullptr)) >= VALID_CLOCK_THRESHOLD;
+bool HalClock::hasValidTime() const { return nowUtc() != 0; }
+
+bool HalClock::restoreSystemTimeFromRtc() {
+  if (!_rtcAvailable) return false;
+
+  Rtc::DateTime rtcTime{};
+  time_t epoch = 0;
+  if (!_sdkRtc.now(rtcTime) || !rtcDateTimeToEpoch(rtcTime, epoch)) return false;
+
+  const struct timeval systemTime = {epoch, 0};
+  if (settimeofday(&systemTime, nullptr) != 0) {
+    LOG_ERR("CLK", "Failed to restore system time from external RTC");
+    return false;
+  }
+  return true;
 }
 
-bool HalClock::hydrateSystemFromRtc() {
-  if (!_available) return false;
+bool HalClock::updateRtcFromSystemTime() {
+  if (!_rtcAvailable) return true;
 
-  UtcDateTime dt{};
-  if (!readRtcUtc(dt)) return false;
-
-  const time_t epoch = utcToEpoch(dt);
-  if (epoch < static_cast<time_t>(VALID_CLOCK_THRESHOLD)) return false;
-
-  timeval tv = {.tv_sec = epoch, .tv_usec = 0};
-  if (settimeofday(&tv, nullptr) != 0) {
-    LOG_ERR("CLK", "Failed to hydrate system time from DS3231");
+  const time_t now = nowUtc();
+  Rtc::DateTime rtcTime{};
+  if (!epochToRtcDateTime(now, rtcTime)) {
+    LOG_ERR("CLK", "System time is invalid; external RTC was not updated");
+    return false;
+  }
+  if (!_sdkRtc.set(rtcTime)) {
+    LOG_ERR("CLK", "Failed to write UTC date and time to external RTC");
     return false;
   }
 
-  LOG_INF("CLK", "System time hydrated from DS3231: %04u-%02u-%02u %02u:%02u:%02u UTC", dt.year, dt.month, dt.day,
-          dt.hour, dt.minute, dt.second);
-  return true;
-}
-
-bool HalClock::readRtcUtc(UtcDateTime& out) const {
-  if (!_available) return false;
-
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);
-  if (Wire.endTransmission(false) != 0) return false;
-  Wire.requestFrom(I2C_ADDR_DS3231, static_cast<uint8_t>(7));
-  if (Wire.available() < 7) return false;
-
-  const uint8_t rawSec = Wire.read();
-  const uint8_t rawMin = Wire.read();
-  const uint8_t rawHour = Wire.read();
-  Wire.read();  // day of week
-  const uint8_t rawDate = Wire.read();
-  const uint8_t rawMonth = Wire.read();
-  const uint8_t rawYear = Wire.read();
-
-  out.second = bcdToDec(rawSec & 0x7F);
-  out.minute = bcdToDec(rawMin & 0x7F);
-
-  if (rawHour & 0x40) {
-    uint8_t h12 = bcdToDec(rawHour & 0x1F);
-    const bool pm = rawHour & 0x20;
-    if (h12 == 12) h12 = 0;
-    out.hour = pm ? static_cast<uint8_t>(h12 + 12) : h12;
-  } else {
-    out.hour = bcdToDec(rawHour & 0x3F);
+  Rtc::DateTime verifiedTime{};
+  time_t verifiedEpoch = 0;
+  if (!_sdkRtc.now(verifiedTime) || !rtcDateTimeToEpoch(verifiedTime, verifiedEpoch)) {
+    LOG_ERR("CLK", "External RTC write could not be verified");
+    return false;
   }
-
-  out.day = bcdToDec(rawDate & 0x3F);
-  out.month = bcdToDec(rawMonth & 0x1F);
-  out.year = yearFromRtcCentury(rawMonth & 0x80, rawYear);
-  return true;
-}
-
-bool HalClock::getUtcDateTime(UtcDateTime& out) const {
-  if (_available) {
-    const unsigned long now = millis();
-    if (_lastPollMs != 0 && (now - _lastPollMs) < CLOCK_POLL_MS && _hasCachedTime) {
-      if (!readRtcUtc(out)) return false;
-      out.hour = _cachedHour;
-      out.minute = _cachedMinute;
-      return true;
-    }
-
-    if (!readRtcUtc(out)) {
-      if (!_hasCachedTime) return false;
-      out.hour = _cachedHour;
-      out.minute = _cachedMinute;
-      return true;
-    }
-
-    _cachedHour = out.hour;
-    _cachedMinute = out.minute;
-    _hasCachedTime = true;
-    _lastPollMs = now;
-    return true;
-  }
-
-  epochToUtc(time(nullptr), out);
-  return hasValidTime();
-}
-
-bool HalClock::getTime(uint8_t& hour, uint8_t& minute) const {
-  UtcDateTime dt{};
-  if (!getUtcDateTime(dt)) return false;
-  hour = dt.hour;
-  minute = dt.minute;
-  return true;
-}
-
-bool HalClock::writeRtcUtc(const UtcDateTime& dt) {
-  assert(dt.hour < 24);
-  assert(dt.minute < 60);
-  assert(dt.second < 60);
-  assert(dt.day >= 1 && dt.day <= 31);
-  assert(dt.month >= 1 && dt.month <= 12);
-
-  Wire.beginTransmission(I2C_ADDR_DS3231);
-  Wire.write(DS3231_SEC_REG);
-  Wire.write(decToBcd(dt.second));
-  Wire.write(decToBcd(dt.minute));
-  Wire.write(decToBcd(dt.hour));
-  Wire.write(decToBcd(1));  // day-of-week unused by firmware
-  Wire.write(decToBcd(dt.day));
-  Wire.write(static_cast<uint8_t>(decToBcd(dt.month) | centuryBitForYear(dt.year)));
-  Wire.write(decToBcd(static_cast<uint8_t>(dt.year % 100)));
-  if (Wire.endTransmission() != 0) {
-    LOG_ERR("CLK", "Failed to write date/time to DS3231");
+  const time_t writeSkew = verifiedEpoch >= now ? verifiedEpoch - now : now - verifiedEpoch;
+  if (writeSkew > MAX_RTC_WRITE_SKEW_SECONDS) {
+    LOG_ERR("CLK", "External RTC write verification differs by %lld seconds", static_cast<long long>(writeSkew));
     return false;
   }
 
-  _lastPollMs = 0;
-  _cachedHour = dt.hour;
-  _cachedMinute = dt.minute;
-  _hasCachedTime = true;
+  LOG_INF("CLK", "External RTC set to %04u-%02u-%02u %02u:%02u:%02u UTC", static_cast<unsigned>(verifiedTime.year),
+          static_cast<unsigned>(verifiedTime.month), static_cast<unsigned>(verifiedTime.day),
+          static_cast<unsigned>(verifiedTime.hour), static_cast<unsigned>(verifiedTime.minute),
+          static_cast<unsigned>(verifiedTime.second));
   return true;
 }
 
-bool HalClock::setUtcDateTime(const UtcDateTime& dt) {
-  const time_t epoch = utcToEpoch(dt);
-  if (epoch < 0) return false;
+bool HalClock::setUtcTime(const time_t epoch) {
+  if (epoch < MIN_TRUSTED_EPOCH) return false;
 
-  timeval tv = {.tv_sec = epoch, .tv_usec = 0};
-  if (settimeofday(&tv, nullptr) != 0) {
-    LOG_ERR("CLK", "Failed to set system time");
+  const struct timeval systemTime = {epoch, 0};
+  if (settimeofday(&systemTime, nullptr) != 0) {
+    LOG_ERR("CLK", "Failed to set system UTC clock");
     return false;
   }
 
-  if (_available && !writeRtcUtc(dt)) return false;
-  return true;
-}
-
-bool HalClock::formatTime(char* buf, const size_t bufSize, uint8_t utcOffsetQuarterHoursBiased,
-                          const bool use12Hour) const {
-  if (bufSize < (use12Hour ? 9u : 6u)) return false;
-  UtcDateTime utc{};
-  if (!getUtcDateTime(utc)) return false;
-
-  if (utcOffsetQuarterHoursBiased > 104) utcOffsetQuarterHoursBiased = 104;
-  const int offsetQuarterHours = static_cast<int>(utcOffsetQuarterHoursBiased) - 48;
-  int totalMinutes = static_cast<int>(utc.hour) * 60 + static_cast<int>(utc.minute) + offsetQuarterHours * 15;
-  totalMinutes = ((totalMinutes % 1440) + 1440) % 1440;
-
-  const int hour24 = totalMinutes / 60;
-  const int min = totalMinutes % 60;
-  if (use12Hour) {
-    const bool pm = hour24 >= 12;
-    int hour12 = hour24 % 12;
-    if (hour12 == 0) hour12 = 12;
-    snprintf(buf, bufSize, "%d:%02d %s", hour12, min, pm ? "PM" : "AM");
-  } else {
-    snprintf(buf, bufSize, "%02d:%02d", hour24, min);
+  stopSntp();
+  _syncState = ClockSyncState::Idle;
+  _lastSyncMs = 0;
+  if (!updateRtcFromSystemTime()) {
+    LOG_ERR("CLK", "System clock set, but external RTC persistence failed");
   }
   return true;
 }
 
-bool HalClock::formatDateTime(char* buf, const size_t bufSize, uint8_t utcOffsetQuarterHoursBiased) const {
-  if (bufSize < 17) return false;
-  UtcDateTime utc{};
-  if (!getUtcDateTime(utc)) return false;
+bool HalClock::startSntp() {
+  if (_syncState == ClockSyncState::Syncing) return true;
 
-  if (utcOffsetQuarterHoursBiased > 104) utcOffsetQuarterHoursBiased = 104;
-  const int offsetQuarterHours = static_cast<int>(utcOffsetQuarterHoursBiased) - 48;
-  int64_t totalSeconds = static_cast<int64_t>(utcToEpoch(utc)) + static_cast<int64_t>(offsetQuarterHours) * 15 * 60;
-
-  const int64_t daySeconds = ((totalSeconds % 86400) + 86400) % 86400;
-  const int64_t dayOrdinal = (totalSeconds - daySeconds) / 86400;
-
-  int year = 0;
-  int month = 0;
-  int day = 0;
-  civilFromDays(static_cast<int>(dayOrdinal), year, month, day);
-
-  const int hour24 = static_cast<int>(daySeconds / 3600);
-  const int min = static_cast<int>((daySeconds % 3600) / 60);
-  snprintf(buf, bufSize, "%04d-%02d-%02d %02d:%02d", year, month, day, hour24, min);
-  return true;
-}
-
-bool HalClock::writeTimeToRTC(const uint8_t hour, const uint8_t minute, const uint8_t second) {
-  UtcDateTime dt{};
-  if (!readRtcUtc(dt)) {
-    dt.year = 2024;
-    dt.month = 1;
-    dt.day = 1;
-  }
-  dt.hour = hour;
-  dt.minute = minute;
-  dt.second = second;
-  return writeRtcUtc(dt);
-}
-
-bool HalClock::syncFromNTP() {
   if (WiFi.status() != WL_CONNECTED) {
-    LOG_ERR("CLK", "WiFi not connected, cannot sync NTP");
+    _syncState = ClockSyncState::Failed;
     return false;
   }
 
-  LOG_INF("CLK", "Starting NTP sync...");
-  configTzTime("UTC0", "pool.ntp.org", "time.nist.gov");
-
-  constexpr int maxAttempts = 50;
-  for (int i = 0; i < maxAttempts; i++) {
-    if (sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
-      const time_t now = time(nullptr);
-      UtcDateTime dt{};
-      epochToUtc(now, dt);
-
-      timeval tv = {.tv_sec = now, .tv_usec = 0};
-      settimeofday(&tv, nullptr);
-
-      if (_available) {
-        if (writeRtcUtc(dt)) {
-          LOG_INF("CLK", "RTC set to %04u-%02u-%02u %02u:%02u:%02u UTC", dt.year, dt.month, dt.day, dt.hour, dt.minute,
-                  dt.second);
-          return true;
-        }
-        return false;
-      }
-
-      LOG_INF("CLK", "System clock set from NTP (no persistent RTC)");
-      return true;
+  if (!_sntpInitialized) {
+#ifdef ENABLE_CHINESE_VERSION
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(
+        3, ESP_SNTP_SERVER_LIST("ntp.aliyun.com", "ntp.tencent.com", "cn.pool.ntp.org"));
+#else
+    esp_sntp_config_t config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG_MULTIPLE(2, ESP_SNTP_SERVER_LIST("pool.ntp.org", "time.nist.gov"));
+#endif
+    config.start = false;
+    config.smooth_sync = false;
+    if (esp_netif_sntp_init(&config) != ESP_OK) {
+      LOG_ERR("CLK", "Failed to initialize SNTP service");
+      _syncState = ClockSyncState::Failed;
+      return false;
     }
-    delay(100);
+    _sntpInitialized = true;
   }
 
-  LOG_ERR("CLK", "NTP sync timed out");
-  return false;
+  if (esp_netif_sntp_start() != ESP_OK) {
+    LOG_ERR("CLK", "Failed to start SNTP service");
+    _syncState = ClockSyncState::Failed;
+    return false;
+  }
+
+  _syncState = ClockSyncState::Syncing;
+  LOG_INF("CLK", "SNTP sync started");
+  return true;
+}
+
+void HalClock::stopSntp() {
+  if (!_sntpInitialized) return;
+  esp_netif_sntp_deinit();
+  _sntpInitialized = false;
+}
+
+void HalClock::completeSync() {
+  if (!hasValidTime()) {
+    LOG_ERR("CLK", "SNTP completed without a trustworthy system clock");
+    _syncState = ClockSyncState::Failed;
+    stopSntp();
+    return;
+  }
+
+  _syncState = ClockSyncState::Succeeded;
+  _lastSyncMs = millis();
+  stopSntp();
+  if (!updateRtcFromSystemTime()) {
+    LOG_ERR("CLK", "System clock synced, but external RTC persistence failed");
+  }
+  LOG_INF("CLK", "System UTC clock synchronized");
+}
+
+bool HalClock::requestSync() { return startSntp(); }
+
+bool HalClock::syncNow(const uint32_t timeoutMs) {
+  if (!startSntp()) return false;
+
+  if (esp_netif_sntp_sync_wait(pdMS_TO_TICKS(timeoutMs)) != ESP_OK) {
+    LOG_ERR("CLK", "SNTP sync timed out");
+    _syncState = ClockSyncState::Failed;
+    if (!_autoSyncEnabled) stopSntp();
+    return false;
+  }
+
+  completeSync();
+  if (!_autoSyncEnabled) stopSntp();
+  return _syncState == ClockSyncState::Succeeded;
+}
+
+void HalClock::setAutoSyncEnabled(const bool enabled) {
+  if (enabled && !_autoSyncEnabled) _wifiWasConnected = false;
+  _autoSyncEnabled = enabled;
+  if (!enabled) {
+    stopSntp();
+    if (_syncState == ClockSyncState::Syncing) _syncState = ClockSyncState::Idle;
+  }
+}
+
+void HalClock::update() {
+  const bool wifiConnected = WiFi.status() == WL_CONNECTED;
+  if (!wifiConnected) {
+    if (_syncState == ClockSyncState::Syncing) _syncState = ClockSyncState::Failed;
+    if (_wifiWasConnected) stopSntp();
+    _wifiWasConnected = false;
+    return;
+  }
+
+  if (_sntpInitialized && esp_sntp_get_sync_status() == SNTP_SYNC_STATUS_COMPLETED) {
+    completeSync();
+  }
+
+  const bool fresh = _syncState == ClockSyncState::Succeeded && millis() - _lastSyncMs < CONFIG_LWIP_SNTP_UPDATE_DELAY;
+  const bool syncDue = !_wifiWasConnected || (_syncState == ClockSyncState::Succeeded && !fresh);
+  if (_autoSyncEnabled && !_sntpInitialized && syncDue) {
+    startSntp();
+  }
+  _wifiWasConnected = true;
 }

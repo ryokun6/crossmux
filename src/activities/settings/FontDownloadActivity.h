@@ -32,10 +32,17 @@
 
 class FontDownloadActivity : public Activity {
  public:
+  // Manage: settings entry. PromptThenManage: first-boot Chinese font flash preload.
   // resumedAfterDefrag: silent-restart resume path — skip the MaxAlloc defrag
   // reboot (already done) and auto-reconnect Wi‑Fi before fetching fonts.json.
+  enum class Purpose : uint8_t { Manage, PromptThenManage };
+
   explicit FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                bool resumedAfterDefrag = false);
+                                Purpose purpose = Purpose::Manage, bool resumedAfterDefrag = false);
+
+#ifdef ENABLE_CHINESE_VERSION
+  static bool wasChineseFontPromptShownThisBoot();
+#endif
 
   void onEnter() override;
   void onExit() override;
@@ -80,6 +87,7 @@ class FontDownloadActivity : public Activity {
   };
 
   State state_ = WIFI_SELECTION;
+  Purpose purpose_;
   FontInstaller fontInstaller_;
   ButtonNavigator buttonNavigator_;
   bool resumedAfterDefrag_ = false;
@@ -105,6 +113,7 @@ class FontDownloadActivity : public Activity {
   std::atomic<bool> downloadTaskRunning_{false};
   DownloadJob downloadJob_ = DownloadJob::None;
 
+  void startWifiSelection();
   void onWifiSelectionComplete(bool success);
   bool fetchAndParseManifest();
   void downloadFamily(ManifestFamily& family);

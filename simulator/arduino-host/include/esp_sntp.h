@@ -1,7 +1,6 @@
 #pragma once
-// Host stub for ESP-IDF SNTP. The simulator has no Wi-Fi path; consumers (StandbyActivity)
-// gate the SNTP calls behind a "already synced" flag in CROSSPOINT_EMULATED builds, so
-// these stubs exist only to make the firmware sources compile and link on the host.
+// Host stub for ESP-IDF SNTP. The host clock is already valid, so these calls
+// only need to let the shared firmware sources compile and link.
 
 #include <cstdint>
 
@@ -17,6 +16,9 @@ typedef enum {
 } esp_sntp_operatingmode_t;
 
 inline bool esp_sntp_enabled() { return false; }
+inline void esp_sntp_setoperatingmode(esp_sntp_operatingmode_t) {}
+inline void esp_sntp_setservername(uint8_t, const char*) {}
+inline void esp_sntp_init() {}
 inline void esp_sntp_stop() {}
 inline void esp_sntp_setoperatingmode(esp_sntp_operatingmode_t) {}
 inline void esp_sntp_setservername(uint8_t, const char*) {}

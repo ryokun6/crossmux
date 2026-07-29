@@ -51,8 +51,13 @@ void KOReaderAuthActivity::performAuthentication() {
       state = FAILED;
       // Credential problems show the ryOS account blurb; other failures keep
       // the transport/server detail from errorString().
-      credentialFailure = (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS);
-      errorMessage = credentialFailure ? tr(STR_LOGIN_SETTINGS_HINT) : KOReaderSyncClient::errorString(result);
+      if (result == KOReaderSyncClient::USER_EXISTS) {
+        errorMessage = tr(STR_USERNAME_TAKEN);
+        credentialFailure = false;
+      } else {
+        credentialFailure = (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS);
+        errorMessage = credentialFailure ? tr(STR_LOGIN_SETTINGS_HINT) : KOReaderSyncClient::errorString(result);
+      }
     }
   }
   requestUpdate();

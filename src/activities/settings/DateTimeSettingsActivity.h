@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
@@ -14,9 +16,48 @@ class DateTimeSettingsActivity final : public Activity {
   void render(RenderLock&&) override;
 
  private:
-  ButtonNavigator buttonNavigator;
-  int selectedIndex = 0;
-  int visibleItemCount = 0;
+  enum class Mode : uint8_t {
+    Menu,
+    ManualEdit,
+  };
 
-  void handleSelection();
+  enum class MenuItem : uint8_t {
+    AutoTime,
+    DateTime,
+    TimeZone,
+    Hour24,
+    SyncNow,
+    Count,
+  };
+
+  enum class EditField : uint8_t {
+    Year,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    Count,
+  };
+
+  static constexpr int MENU_ITEM_COUNT = static_cast<int>(MenuItem::Count);
+  static constexpr int EDIT_FIELD_COUNT = static_cast<int>(EditField::Count);
+
+  ButtonNavigator buttonNavigator;
+  Mode mode = Mode::Menu;
+  int selectedMenuItem = 0;
+  int selectedEditField = 0;
+  int year = 2024;
+  unsigned month = 1;
+  unsigned day = 1;
+  unsigned hour = 0;
+  unsigned minute = 0;
+
+  void loopMenu();
+  void loopManualEdit();
+  void renderMenu();
+  void renderManualEdit();
+  void activateMenuItem();
+  void beginManualEdit();
+  void adjustEditField(int delta);
+  bool applyManualTime();
 };

@@ -1,6 +1,6 @@
 # Device Variants — Xteink X3 vs X4
 
-> Deep reference for [AGENTS.md](../../AGENTS.md). How one firmware binary runs
+> Deep reference for [CLAUDE.md](../../CLAUDE.md). How one firmware binary runs
 > on both the Xteink X3 and X4, how the device is detected at boot, what differs
 > between the two panels, and how to build / flash / verify for X3.
 
@@ -14,8 +14,7 @@ flash it — the device identifies itself:
 
 ```bash
 pio run -e gh_release        # international
-pio run -e gh_release_tc     # Traditional Chinese zh-TW
-pio run -e gh_release_sc     # Simplified Chinese zh-CN
+pio run -e gh_release_cn     # Simplified-Chinese (see chinese-build.md)
 pio run -t upload            # build + flash to whatever is plugged in
 ```
 
@@ -94,13 +93,44 @@ To clear a wrong cached detection, **erase NVS** (full chip erase, or wipe the
 | Panel | 800 × 480, **SSD1677** | 792 × 528, **UC81xx** |
 | Framebuffer | 48000 B | 52272 B |
 | Buffer allocation | `MAX_BUFFER_SIZE = 52272` (static, covers both) — [EInkDisplay.h:35](../../open-x4-sdk/libs/display/EInkDisplay/include/EInkDisplay.h) |
-| Geometry switch | default 800×480 | `setDisplayX3()` before `begin()` — [HalDisplay.cpp:15](../../lib/hal/HalDisplay.cpp) |
+| Geometry switch | default 800×480 | `setDisplayX3()` before `begin()` — [HalDisplay.cpp:39](../../lib/hal/HalDisplay.cpp) |
+| Display SPI clock | **20 MHz** (SSD1677 in-spec maximum) | UC81xx profile default, unchanged |
 | Battery | ADC on GPIO0 | BQ27220 fuel gauge (I²C) — [HalPowerManager.cpp](../../lib/hal/HalPowerManager.cpp) |
-| USB / charge detect | GPIO20 reads HIGH | BQ27220 charge current > 0 — [HalGPIO.cpp:272-287](../../lib/hal/HalGPIO.cpp). At 100% SoC the gauge may report 0 mA even with a cable attached, so `isUsbConnected()` can be false while CDC serial still works. |
-| RTC clock | session-only (NTP; lost at power-off) | DS3231 persists UTC across sleep — [HalClock.cpp](../../lib/hal/HalClock.cpp) |
+| USB / charge detect | GPIO20 reads HIGH | sign of BQ27220 current — [HalGPIO.cpp:272-287](../../lib/hal/HalGPIO.cpp) |
+| Clock persistence | ESP system clock; survives deep sleep/reset, not full power loss | ESP system clock plus DS3231 UTC backup — [HalClock.cpp](../../lib/hal/HalClock.cpp) |
 | Tilt page-turn | none | QMI8658 gyro, X3-only — [HalTiltSensor.cpp:55](../../lib/hal/HalTiltSensor.cpp) |
 | Theme button layout | stacked on the right | up-left / down-right — [BaseTheme.cpp:194](../../src/components/themes/BaseTheme.cpp), [LyraTheme.cpp:399](../../src/components/themes/lyra/LyraTheme.cpp) |
 | Grayscale / refresh | SSD1677 fast LUT | UC81xx OEM pipeline + "AA-pre-BW" preconditioning — [EInkDisplay.h:56-94](../../open-x4-sdk/libs/display/EInkDisplay/include/EInkDisplay.h) |
+
+The X4 FAST path is tuned in the application HAL rather than by modifying the
+SDK gitlink: `crossPointX4Ssd1677Config()` selects the SSD1677 driver's
+incremental DU sequence (`0x1C`), and `HalDisplay::begin()` selects a 20 MHz SPI
+clock before the driver starts. The setting stays within the controller limit
+and does not change the single-framebuffer RAM budget. Its tradeoff is panel
+quality: the weaker DU waveform can leave more ghosting than the SDK's stock
+`0xFC` sequence on some panel samples. Verify menus, text pages, high-contrast
+borders, and grayscale images on real X4 hardware; if persistent residue is
+unacceptable, retain 20 MHz but restore the stock waveform override. X3 never
+constructs the SSD1677 driver, so neither tuning applies to it.
+
+### Unified system clock and optional RTC
+
+The POSIX/ESP system UTC clock is the runtime source on every device.
+`HalClock::begin()` probes the optional external RTC and uses it only to restore
+an invalid system clock after power loss. A stopped, unreadable, absent, or
+invalid RTC naturally falls back to the same software-clock path; business and
+UI code never branch on X3/X4 or RTC availability.
+
+Network and manual updates set the system clock first, then write the UTC value
+back to an available RTC. A failed RTC write is logged but does not invalidate
+the successfully updated system time. The RTC is not polled periodically while
+the device is running.
+
+`clockUtcOffsetQ` remains a fixed display offset used by the status bar and
+Standby faces; it does not change the process-wide timezone. Every device exposes
+automatic sync, manual date/time, fixed offset, 12/24-hour format, and one-shot
+sync under **Settings → System → Date & Time**. Chinese builds default a missing
+`clockUtcOffsetQ` to UTC+8; an existing saved value is preserved.
 
 The SPI display pins (`EPD_SCLK=8`, `EPD_MOSI=10`, `EPD_CS=21`, `EPD_DC=4`,
 `EPD_RST=5`, `EPD_BUSY=6`) and the ADC button layout are **identical** on both
@@ -111,41 +141,10 @@ All rendering reads geometry from `getScreenWidth()` / `getScreenHeight()`
 this is why X3 "just works" without per-screen code (see
 [ui-and-input.md](ui-and-input.md), golden rule #8).
 
-## USB serial / debug on X3 (pogo charger)
-
-The magnetic pogo dock is usually **charge-only**. For serial logs, `pio upload`,
-and the web flasher you need a **data-capable USB-C cable** into the device’s
-USB-C port (or a dock that forwards D+/D−). The ESP32-C3 exposes USB Serial/JTAG
-CDC (`/dev/tty.usbmodem*` / `ttyACM*`).
-
-- Release builds (`gh_release*`) define `ENABLE_SERIAL_LOG` — logs flow whenever
-  the host enumerates CDC; they are not gated on `isUsbConnected()`.
-- Monitor: `python3 scripts/debugging_monitor.py` (see
-  [testing-and-debugging.md](testing-and-debugging.md)).
-- If USB flashing is locked: hold **side-UP + Power** at boot to enter SD-card
-  firmware update recovery ([main.cpp](../../src/main.cpp) recovery path).
-- Crash reports also land on the SD card root without USB.
-
-**HTTPS / OTA on X3:** Wi‑Fi + mbedTLS need a large contiguous heap block
-(`MaxAlloc`). The build shrinks TLS record buffers via `custom_sdkconfig` in
-`platformio.ini` (16K in / 4K out). Manage Fonts / Check for updates also unload
-the resident SD font and may briefly silent-restart once when `MaxAlloc` is
-still too low (see `SilentRestart.h` + those activities). The CA-verify skip
-(`shouldAttachCrtBundle()` in `src/network/HttpDownloader.cpp`) is **not**
-device-gated: it keys off the host, so X3 and X4 share one TLS trust posture. It
-covers only GitHub's asset CDN (`release-assets.githubusercontent.com`,
-`objects.githubusercontent.com`), whose RSA-4096 root verify cannot fit X3's heap;
-`github.com` and `api.github.com` serve cheap EC chains and stay verified. OTA
-install therefore stages the asset to SD via `HttpDownloader::downloadToFile()`
-and checks its SHA-256 against the digest from the CA-verified
-`api.github.com` release JSON before flashing through
-`firmware_flash::flashFromSdPath()`. Do not add a per-device policy there — see
-[build-system.md](build-system.md).
-
 ## Build & flash for X3
 
 Same envs as X4 (`platformio.ini`): `default`, `gh_release`, `gh_release_rc`,
-`slim`, `gh_release_tc`, `gh_release_tc_rc`, `gh_release_sc`, `gh_release_sc_rc`. Flash any of them to an X3:
+`slim`, `gh_release_cn`, `gh_release_cn_rc`. Flash any of them to an X3:
 
 ```bash
 pio run -e gh_release -t upload
@@ -179,10 +178,8 @@ X3 to the simulator is possible but out of scope here.)
   scores.
 - **Web API** — `device` field is `"X3"` / `"X4"`
   ([CrossPointWebServer.cpp:382](../../src/network/CrossPointWebServer.cpp)).
-- **UI** — X3-only menu items: manual date/time editing (DS3231 persistence) and
-  Tilt Page Turn (QMI8658). Both devices share **Settings > System > Date & Time**
-  for timezone, 12/24-hour format, and NTP sync; X4 time is session-only (lost at
-  power-off) while X3 retains it in the DS3231 across sleep cycles.
+- **UI** — the X3-only Tilt Page Turn item appears only when the QMI8658 is
+  detected. Clock and Date & Time settings are available on every device.
 
 ## Adding a future device variant
 
@@ -191,7 +188,8 @@ The pattern generalizes. To add an "Xn":
 1. extend `DeviceType` and add `deviceIsXn()` ([HalGPIO.h](../../lib/hal/HalGPIO.h)),
 2. add an I²C (or other) fingerprint pass in `detectDeviceTypeWithFingerprint()`,
 3. add `setDisplayXn()` + the panel's controller path in the SDK `EInkDisplay`,
-4. branch the affected HAL peripherals (battery, RTC, IMU) and theme layout,
+4. keep optional peripherals (battery, RTC, IMU) behind their HAL classes and
+   branch layout only where physical geometry requires it,
 5. keep everything runtime-dispatched — do **not** introduce a build env.
 
 See also: [build-system.md](build-system.md) (envs & flags),

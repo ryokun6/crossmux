@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <BoardConfig.h>
 #include <Epub.h>
 #include <FontCacheManager.h>
 #include <FontDecompressor.h>
@@ -6,6 +7,7 @@
 #include <HalClock.h>
 #include <HalDisplay.h>
 #include <HalGPIO.h>
+#include <HalOtaSlot.h>
 #include <HalPowerManager.h>
 #include <HalStorage.h>
 #include <HalSystem.h>
@@ -307,49 +309,6 @@ void silentRestartToOtaUpdate() {
   ESP.restart();
 }
 
-// Verify power button press duration on wake-up from deep sleep
-// Pre-condition: isWakeupByPowerButton() == true
-void verifyPowerButtonDuration() {
-  if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP) {
-    // Fast path for short press
-    // Needed because inputManager.isPressed() may take up to ~500ms to return the correct state
-    return;
-  }
-
-  // Give the user up to 1000ms to start holding the power button, and must hold for SETTINGS.getPowerButtonDuration()
-  const auto start = millis();
-  bool abort = false;
-  // Subtract the current time, because inputManager only starts counting the HeldTime from the first update()
-  // This way, we remove the time we already took to reach here from the duration,
-  // assuming the button was held until now from millis()==0 (i.e. device start time).
-  const uint16_t calibration = start;
-  const uint16_t calibratedPressDuration =
-      (calibration < SETTINGS.getPowerButtonDuration()) ? SETTINGS.getPowerButtonDuration() - calibration : 1;
-
-  gpio.update();
-  // Needed because inputManager.isPressed() may take up to ~500ms to return the correct state
-  while (!gpio.isPressed(HalGPIO::BTN_POWER) && millis() - start < 1000) {
-    delay(10);  // only wait 10ms each iteration to not delay too much in case of short configured duration.
-    gpio.update();
-  }
-
-  t2 = millis();
-  if (gpio.isPressed(HalGPIO::BTN_POWER)) {
-    do {
-      delay(10);
-      gpio.update();
-    } while (gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() < calibratedPressDuration);
-    abort = gpio.getPowerButtonHeldTime() < calibratedPressDuration;
-  } else {
-    abort = true;
-  }
-
-  if (abort) {
-    // Button released too early. Returning to sleep.
-    // IMPORTANT: Re-arm the wakeup trigger before sleeping again
-    powerManager.startDeepSleep(gpio);
-  }
-}
 void waitForPowerRelease() {
   gpio.update();
   while (gpio.isPressed(HalGPIO::BTN_POWER)) {
@@ -417,14 +376,15 @@ void enterDeepSleep(bool fromTimeout = false) {
   powerManager.startDeepSleep(gpio);
 }
 
-void setupDisplayAndFonts(bool seamless = false) {
+bool setupDisplayAndFonts(bool seamless = false) {
   display.begin(seamless);
   renderer.begin();
   activityManager.begin();
   LOG_DBG("MAIN", "Display initialized");
 
   // Initialize font decompressor for compressed reader fonts
-  if (!fontDecompressor.init()) {
+  const bool fontDecompressorReady = fontDecompressor.init();
+  if (!fontDecompressorReady) {
     LOG_ERR("MAIN", "Font decompressor init failed");
   }
   fontCacheManager.setFontDecompressor(&fontDecompressor);
@@ -448,9 +408,12 @@ void setupDisplayAndFonts(bool seamless = false) {
   sdFontSystem.begin(renderer);
 
   LOG_DBG("MAIN", "Fonts setup");
+  return fontDecompressorReady;
 }
 
 void setup() {
+  BoardConfig::holdPowerRails();
+
   t1 = millis();
 
 #ifdef ENABLE_SERIAL_LOG
@@ -461,10 +424,13 @@ void setup() {
   // worked without the delay because USB was already enumerated.
   delay(250);
   Serial.begin(115200);
+#if LOG_SERIAL_HAS_TX_TIMEOUT
   logSerial.setTxTimeoutMs(1);  // This is a load-bearing 1. Do not modify.
+#endif
 #endif
 
   HalSystem::begin();
+  const bool otaPendingAtBoot = HalOtaSlot::runningImageState() == HalOtaSlot::RunningImageState::PendingVerify;
 
   // Read-and-clear so a panic later in setup() doesn't loop into silent reboot.
   // Bound the target range too — RTC_NOINIT memory is uninitialized on cold boot.
@@ -485,8 +451,16 @@ void setup() {
   // We need 6 open files concurrently when parsing a new chapter
   if (!Storage.begin()) {
     LOG_ERR("MAIN", "SD card initialization failed");
-    setupDisplayAndFonts(isSilentReboot);
+    const bool fontsReady = setupDisplayAndFonts(isSilentReboot);
     activityManager.goToFullScreenMessage("SD card error", EpdFontFamily::BOLD);
+    activityManager.requestUpdateAndWait();
+    if (otaPendingAtBoot && fontsReady) {
+      if (HalOtaSlot::confirmRunningImage()) {
+        LOG_INF("OTA", "Running image confirmed after SD error display");
+      } else {
+        LOG_ERR("OTA", "Running image confirmation failed after SD error display");
+      }
+    }
     return;
   }
 
@@ -499,6 +473,7 @@ void setup() {
   }
   halClock.applySavedTimezone(SETTINGS.clockUtcOffsetQ);
   halClock.hydrateSystemFromRtc();
+  halClock.setAutoSyncEnabled(SETTINGS.clockAutoSync != 0);
 
   APP_STATE.loadFromFile();
   RECENT_BOOKS.loadFromFile();
@@ -514,8 +489,10 @@ void setup() {
   switch (wakeupReason) {
     case HalGPIO::WakeupReason::PowerButton:
       LOG_DBG("MAIN", "Verifying power button press duration");
-      gpio.verifyPowerButtonWakeup(SETTINGS.getPowerButtonDuration(),
-                                   SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
+      if (!gpio.verifyPowerButtonWakeup(SETTINGS.getPowerButtonDuration(),
+                                        SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP)) {
+        powerManager.startDeepSleep(gpio);
+      }
       break;
     case HalGPIO::WakeupReason::AfterUSBPower:
       // If USB power caused a cold boot, go back to sleep
@@ -558,32 +535,47 @@ void setup() {
   const BootResume resume = isSilentReboot              ? BootResume::Silent
                             : !APP_STATE.showBootScreen ? BootResume::QuickResume
                                                         : BootResume::Splash;
+  bool allowFastInitialReaderRefresh = false;
 
-  setupDisplayAndFonts(resume != BootResume::Splash);
+  const bool fontsReady = setupDisplayAndFonts(resume != BootResume::Splash);
+  const bool postOtaBoot = otaPendingAtBoot && fontsReady && activityManager.goToPostOtaBoot(!recoveryFirmwareMode);
 
-  switch (resume) {
-    case BootResume::Silent:
-      // Splash skipped: the routing block below picks the target activity; the
-      // panel keeps showing the pre-reboot popup until that first paint lands.
-      break;
-    case BootResume::QuickResume:
-      // One-shot flag: re-arm the splash for the next non-quick-resume boot. Save
-      // before any painting so a hang in the blocking paint path can't strand
-      // us in a quick-resume-with-no-frame loop on the next boot.
-      APP_STATE.showBootScreen = true;
-      APP_STATE.saveToFile();
-      if (loadSleepFrameBuffer()) {
-        // Frame restored: swap the sleep moon for the loading icon.
-        const auto pageHeight = renderer.getScreenHeight();
-        renderer.drawImage(LoadingIcon, 0, pageHeight - LOADINGICON_HEIGHT, LOADINGICON_WIDTH, LOADINGICON_HEIGHT);
-        renderer.displayBuffer(HalDisplay::HALF_REFRESH);
-      } else {
-        activityManager.goToBoot();  // frame file missing, fall back to the splash
-      }
-      break;
-    case BootResume::Splash:
-      activityManager.goToBoot();
-      break;
+  if (!postOtaBoot) {
+    switch (resume) {
+      case BootResume::Silent:
+        // Splash skipped: the routing block below picks the target activity; the
+        // panel keeps showing the pre-reboot popup until that first paint lands.
+        break;
+      case BootResume::QuickResume:
+        // One-shot flag: re-arm the splash for the next non-quick-resume boot. Save
+        // before any painting so a hang in the blocking paint path can't strand
+        // us in a quick-resume-with-no-frame loop on the next boot.
+        APP_STATE.showBootScreen = true;
+        APP_STATE.saveToFile();
+        if (loadSleepFrameBuffer()) {
+          const bool useDifferentialRefresh = gpio.deviceIsX3();
+          if (useDifferentialRefresh) {
+            // begin() clears the X3 controller RAM, so restore the saved frame as
+            // the baseline before replacing the moon with the loading icon.
+            renderer.cleanupGrayscaleWithFrameBuffer();
+          }
+
+          const auto pageHeight = renderer.getScreenHeight();
+          renderer.drawImage(LoadingIcon, 0, pageHeight - LOADINGICON_HEIGHT, LOADINGICON_WIDTH, LOADINGICON_HEIGHT);
+          if (useDifferentialRefresh) {
+            renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
+            allowFastInitialReaderRefresh = true;
+          } else {
+            renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+          }
+        } else {
+          activityManager.goToBoot();  // frame file missing, fall back to the splash
+        }
+        break;
+      case BootResume::Splash:
+        activityManager.goToBoot();
+        break;
+    }
   }
 
   if (recoveryFirmwareMode) {
@@ -593,12 +585,15 @@ void setup() {
   } else if (HalSystem::isRebootFromPanic()) {
     // If we rebooted from a panic, go to crash report screen to show the panic info
     activityManager.goToCrashReport();
+  } else if (postOtaBoot) {
+    activityManager.goHome();
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_READER &&
              !APP_STATE.openEpubPath.empty()) {
     activityManager.goToReader(APP_STATE.openEpubPath);
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_FONT_DOWNLOAD) {
     // resumedAfterDefrag=true: auto-reconnect Wi‑Fi then HTTPS on clean heap.
-    activityManager.replaceActivity(std::make_unique<FontDownloadActivity>(renderer, mappedInputManager, true));
+    activityManager.replaceActivity(std::make_unique<FontDownloadActivity>(renderer, mappedInputManager,
+                                              FontDownloadActivity::Purpose::Manage, true));
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_OTA_UPDATE) {
     activityManager.replaceActivity(std::make_unique<OtaUpdateActivity>(renderer, mappedInputManager, true));
   } else if (resume == BootResume::Silent) {
@@ -617,10 +612,14 @@ void setup() {
     APP_STATE.openEpubPath = "";
     APP_STATE.readerActivityLoadCount++;
     APP_STATE.saveToFile();
-    activityManager.goToReader(path);
+    activityManager.goToReader(path, allowFastInitialReaderRefresh);
   }
 
   if (resume == BootResume::Silent) {
+    if (postOtaBoot) {
+      // Apply the queued Home replacement before waiting for its first physical paint.
+      activityManager.loop();
+    }
     // Block until the first paint physically completes. refreshDisplay()
     // waits on the panel BUSY pin so when this returns the user can see the
     // new activity. Without the wait, an edge captured by gpio.update()
@@ -647,8 +646,10 @@ void loop() {
   const unsigned long loopStartTime = millis();
   static unsigned long lastMemPrint = 0;
 
+  gpio.setSharedConfirmPowerShortPressEmitsPower(SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP);
   gpio.update();
   halTiltSensor.update(SETTINGS.tiltPageTurn, SETTINGS.orientation, activityManager.isReaderActivity());
+  halClock.update();
 
   renderer.setFadingFix(SETTINGS.fadingFix);
 
@@ -675,9 +676,9 @@ void loop() {
     }
   }
 
-  // Check for any real user activity (button press, button release, or tilt).
+  // Check for any real user activity (button, touch, or tilt).
   static unsigned long lastActivityTime = millis();
-  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || halTiltSensor.hadActivity()) {
+  if (gpio.wasAnyPressed() || gpio.wasAnyReleased() || gpio.wasTouchActivity() || halTiltSensor.hadActivity()) {
     lastActivityTime = millis();         // Reset inactivity timer
     powerManager.setPowerSaving(false);  // Restore normal CPU frequency on user activity
   }
@@ -733,8 +734,10 @@ void loop() {
   if (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FORCE_REFRESH &&
       mappedInputManager.wasReleased(MappedInputManager::Button::Power)) {
     LOG_DBG("MAIN", "Manual screen refresh triggered");
-    RenderLock lock;
-    renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    if (!activityManager.handleForcedRefresh()) {
+      RenderLock lock;
+      renderer.displayBuffer(HalDisplay::HALF_REFRESH);
+    }
   }
 
   // Refresh the battery icon when USB is plugged or unplugged.

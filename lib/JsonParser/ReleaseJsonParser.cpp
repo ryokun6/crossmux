@@ -11,41 +11,11 @@ void safeCopy(char* dst, size_t dstSize, const char* src, size_t srcLen) {
   dst[n] = '\0';
 }
 
-constexpr char DIGEST_PREFIX[] = "sha256:";
-constexpr size_t DIGEST_PREFIX_LEN = sizeof(DIGEST_PREFIX) - 1;
-
-int hexNibble(char c) {
-  if (c >= '0' && c <= '9') return c - '0';
-  if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-  if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-  return -1;
-}
-
-// "sha256:<2*outSize hex chars>" -> outSize raw bytes. Rejects anything else
-// (other algorithms, truncated hex, stray whitespace) so the caller can treat a
-// false return as "no usable digest" and fail closed.
-bool parseSha256Digest(const char* value, size_t len, uint8_t* out, size_t outSize) {
-  if (len != DIGEST_PREFIX_LEN + outSize * 2) return false;
-  if (memcmp(value, DIGEST_PREFIX, DIGEST_PREFIX_LEN) != 0) return false;
-  const char* hex = value + DIGEST_PREFIX_LEN;
-  for (size_t i = 0; i < outSize; i++) {
-    const int hi = hexNibble(hex[i * 2]);
-    const int lo = hexNibble(hex[i * 2 + 1]);
-    if (hi < 0 || lo < 0) return false;
-    out[i] = static_cast<uint8_t>((hi << 4) | lo);
-  }
-  return true;
-}
-
 }  // namespace
 
-ReleaseJsonParser::ReleaseJsonParser(const char* requestedFirmwareAssetName)
+ReleaseJsonParser::ReleaseJsonParser()
     : parser(JsonCallbacks{this, sOnKey, sOnString, sOnNumber, sOnBool, sOnNull, sOnObjectStart, sOnObjectEnd,
-                           sOnArrayStart, sOnArrayEnd}),
-      assetCallback(nullptr),
-      assetCallbackCtx(nullptr) {
-  const char* assetName = requestedFirmwareAssetName != nullptr ? requestedFirmwareAssetName : "firmware.bin";
-  safeCopy(firmwareAssetName, sizeof(firmwareAssetName), assetName, strlen(assetName));
+                           sOnArrayStart, sOnArrayEnd, nullptr}) {
   reset();
 }
 
@@ -60,53 +30,28 @@ void ReleaseJsonParser::reset() {
   firmwareSize = 0;
   tagFound = false;
   firmwareFound = false;
-  memset(firmwareDigest, 0, sizeof(firmwareDigest));
-  firmwareDigestFound = false;
   currentAssetName[0] = '\0';
   currentAssetUrl[0] = '\0';
   currentAssetSize = 0;
-  memset(currentAssetDigest, 0, sizeof(currentAssetDigest));
-  currentAssetDigestFound = false;
 }
 
 void ReleaseJsonParser::feed(const char* data, size_t len) { parser.feed(data, len); }
-
-// Deliberately not cleared by reset(): the callback is wiring set up by the owner
-// once, while reset() only drops parsed content so the same parser can take a
-// second response.
-void ReleaseJsonParser::setAssetCallback(const AssetCallback callback, void* ctx) {
-  assetCallback = callback;
-  assetCallbackCtx = ctx;
-}
 
 bool ReleaseJsonParser::foundTag() const { return tagFound; }
 bool ReleaseJsonParser::foundFirmware() const { return firmwareFound; }
 const char* ReleaseJsonParser::getTagName() const { return tagName; }
 const char* ReleaseJsonParser::getFirmwareUrl() const { return firmwareUrl; }
 size_t ReleaseJsonParser::getFirmwareSize() const { return firmwareSize; }
-bool ReleaseJsonParser::foundFirmwareDigest() const { return firmwareDigestFound; }
-const uint8_t* ReleaseJsonParser::getFirmwareDigest() const { return firmwareDigest; }
 
 void ReleaseJsonParser::commitAsset() {
-  // Announced before the scratch is cleared, and only for an asset that actually
-  // carried a name — a truncated response can close an object that never got one.
-  if (assetCallback != nullptr && currentAssetName[0] != '\0') {
-    const Asset asset{currentAssetName, currentAssetUrl, currentAssetSize, currentAssetDigest, currentAssetDigestFound};
-    assetCallback(assetCallbackCtx, asset);
-  }
-
-  if (strcmp(currentAssetName, firmwareAssetName) == 0) {
+  if (strcmp(currentAssetName, "firmware.bin") == 0) {
     memcpy(firmwareUrl, currentAssetUrl, sizeof(firmwareUrl));
     firmwareSize = currentAssetSize;
-    memcpy(firmwareDigest, currentAssetDigest, sizeof(firmwareDigest));
-    firmwareDigestFound = currentAssetDigestFound;
     firmwareFound = true;
   }
   currentAssetName[0] = '\0';
   currentAssetUrl[0] = '\0';
   currentAssetSize = 0;
-  memset(currentAssetDigest, 0, sizeof(currentAssetDigest));
-  currentAssetDigestFound = false;
 }
 
 // -- SAX callbacks (static trampolines) -------------------------------------
@@ -133,8 +78,6 @@ void ReleaseJsonParser::sOnKey(void* ctx, const char* key, size_t len) {
           self->lastKey = LastKey::ASSET_URL;
         else if (len == 4 && memcmp(key, "size", 4) == 0)
           self->lastKey = LastKey::ASSET_SIZE;
-        else if (len == 6 && memcmp(key, "digest", 6) == 0)
-          self->lastKey = LastKey::ASSET_DIGEST;
         else
           self->lastKey = LastKey::NONE;
       }
@@ -161,12 +104,6 @@ void ReleaseJsonParser::sOnString(void* ctx, const char* value, size_t len) {
     case LastKey::ASSET_URL:
       if (self->position == Position::IN_ASSET_OBJECT && self->assetDepth == 1)
         safeCopy(self->currentAssetUrl, sizeof(self->currentAssetUrl), value, len);
-      break;
-    case LastKey::ASSET_DIGEST:
-      if (self->position == Position::IN_ASSET_OBJECT && self->assetDepth == 1) {
-        self->currentAssetDigestFound =
-            parseSha256Digest(value, len, self->currentAssetDigest, sizeof(self->currentAssetDigest));
-      }
       break;
     default:
       break;
@@ -203,11 +140,6 @@ void ReleaseJsonParser::sOnObjectStart(void* ctx) {
       self->currentAssetName[0] = '\0';
       self->currentAssetUrl[0] = '\0';
       self->currentAssetSize = 0;
-      // Cleared here too, not just in commitAsset(): every other scratch field is
-      // reset on entry, and a digest that outlived its own asset would be the one
-      // stale value with a security consequence.
-      self->currentAssetDigestFound = false;
-      memset(self->currentAssetDigest, 0, sizeof(self->currentAssetDigest));
       self->lastKey = LastKey::NONE;
       break;
     case Position::IN_ASSET_OBJECT:

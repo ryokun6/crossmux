@@ -11,11 +11,7 @@
 class Stream;
 
 /**
- * HTTP client utility for fetching content and downloading files. Built on
- * esp_http_client: https is verified against the CA bundle (except GitHub's
- * asset-serving CDN hosts, on every device — github.com / api.github.com are
- * verified; see HttpDownloader.cpp), plain http for local servers (transport is
- * chosen from the URL scheme).
+ * HTTP client utility for fetching content and downloading files.
  */
 class HttpDownloader {
  public:
@@ -23,29 +19,27 @@ class HttpDownloader {
   // Called with each body chunk as it arrives; return false to abort. Lets a
   // streaming parser consume the response without buffering the whole body.
   using DataCallback = std::function<bool(const uint8_t* data, size_t len)>;
-
   enum DownloadError {
     OK = 0,
     HTTP_ERROR,
     FILE_ERROR,
     ABORTED,
-    AUTH_FAILED,  // HTTP 401/403 — credentials missing or wrong
   };
 
   /**
    * Fetch text content from a URL with optional credentials.
    */
-  static DownloadError fetchUrl(const std::string& url, std::string& outContent, const std::string& username = "",
-                                const std::string& password = "");
+  static bool fetchUrl(const std::string& url, std::string& outContent, const std::string& username = "",
+                       const std::string& password = "");
 
-  static DownloadError fetchUrl(const std::string& url, Stream& stream, const std::string& username = "",
-                                const std::string& password = "");
+  static bool fetchUrl(const std::string& url, Stream& stream, const std::string& username = "",
+                       const std::string& password = "");
 
   /**
    * Stream the response body to onData as it arrives, without buffering it.
    */
-  static DownloadError fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username = "",
-                                const std::string& password = "");
+  static bool fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username = "",
+                       const std::string& password = "");
 
   /**
    * Download a file to the SD card with optional credentials.
@@ -53,12 +47,4 @@ class HttpDownloader {
   static DownloadError downloadToFile(const std::string& url, const std::string& destPath,
                                       ProgressCallback progress = nullptr, bool* cancelFlag = nullptr,
                                       const std::string& username = "", const std::string& password = "");
-
-  // application/json POST with Bearer auth. Response body is exposed to
-  // onResponse as a pull-style Stream so the caller (e.g. ArduinoJson) can
-  // deserialize it without buffering. Same TLS posture as fetchUrl: verified
-  // https via the CA bundle, plain http for local servers. Returns false on
-  // any transport / status failure, or if onResponse returns false.
-  static bool postJson(const std::string& url, const std::string& payload, const std::string& bearerToken,
-                       const std::function<bool(Stream&)>& onResponse, int timeoutMs = 60000);
 };

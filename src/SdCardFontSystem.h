@@ -20,11 +20,14 @@ class SdCardFontSystem {
   /// Ensure the correct SD font family is loaded for the current settings.
   /// Call before entering the reader or after settings change.
   /// Also re-discovers if the registry has been marked dirty (e.g. by web upload).
-  void ensureLoaded(GfxRenderer& renderer);
+  void ensureLoaded(GfxRenderer& renderer, bool allowFlashCache = true);
 
-  /// Resolve an SD card font ID from family name + fontSize enum.
+  /// Release the resident SD font without changing the saved selection.
+  void releaseLoadedFont(GfxRenderer& renderer);
+
+  /// Resolve an SD card font ID from family name + reader point size.
   /// Returns 0 if not found. Used by CrossPointSettings::getReaderFontId().
-  int resolveFontId(const char* familyName, uint8_t fontSizeEnum) const;
+  int resolveFontId(const char* familyName, uint8_t pointSize) const;
 
   /// Access the registry (e.g. for settings UI to enumerate available fonts).
   const SdCardFontRegistry& registry() const { return registry_; }
@@ -45,14 +48,11 @@ class SdCardFontSystem {
     }
   }
 
-  /// Drop the resident SD .cpfont so HTTPS/OTA can claim a larger MaxAlloc.
-  /// Call ensureLoaded() afterward to restore the user's selection.
-  void unloadAll(GfxRenderer& renderer) { manager_.unloadAll(renderer); }
-
  private:
-  /// After a successful loadFamily, point the SD font at the builtin reader
-  /// font so missing glyphs (CJK in a Latin-only .cpfont) still render.
-  void wireBuiltinGlyphFallback(GfxRenderer& renderer, const char* familyName);
+  // In global builds, load size-matched SD CJK fallbacks for the built-in UI
+  // fonts. CN builds already embed their UI glyphs and keep only the reader
+  // size resident to preserve contiguous heap.
+  void setupUiFallbacks(GfxRenderer& renderer);
 
   SdCardFontRegistry registry_;
   SdCardFontManager manager_;

@@ -1,10 +1,15 @@
 #include "FontDownloadActivity.h"
 
+#ifdef ENABLE_CHINESE_VERSION
+#include <atomic>
+#endif
+
 #include <ArduinoJson.h>
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <WiFi.h>
 #include <esp_rom_crc.h>
 
@@ -40,22 +45,69 @@ constexpr UBaseType_t kDownloadTaskPriority = 1;
 // user barely notices for a download that just fails.
 constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 20 * 1024;
 constexpr const char* MANIFEST_TMP = "/fonts_manifest.tmp";
+
+#ifdef ENABLE_CHINESE_VERSION
+std::atomic<bool> chineseFontPromptShownThisBoot{false};
+#endif
 }  // namespace
 
 FontDownloadActivity::FontDownloadActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
-                                           bool resumedAfterDefrag)
+                                           const Purpose purpose, const bool resumedAfterDefrag)
     : Activity("FontDownload", renderer, mappedInput),
+      purpose_(purpose),
       fontInstaller_(sdFontSystem.registry()),
       resumedAfterDefrag_(resumedAfterDefrag) {}
+
+#ifdef ENABLE_CHINESE_VERSION
+bool FontDownloadActivity::wasChineseFontPromptShownThisBoot() {
+  return chineseFontPromptShownThisBoot.load(std::memory_order_relaxed);
+}
+#endif
 
 // --- Lifecycle ---
 
 void FontDownloadActivity::onEnter() {
   Activity::onEnter();
+
+  switch (purpose_) {
+    case Purpose::Manage:
+      startWifiSelection();
+      return;
+    case Purpose::PromptThenManage: {
+      auto confirmation = makeUniqueNoThrow<ConfirmationActivity>(
+          renderer, mappedInput, tr(STR_CHINESE_FONT_INCOMPLETE), tr(STR_DOWNLOAD_FULL_CHINESE_FONT),
+          ConfirmationActivity::BodyPlacement::PopupTitle);
+      if (!confirmation) {
+        LOG_ERR("FONT", "OOM allocating ConfirmationActivity (%zu bytes)", sizeof(ConfirmationActivity));
+        finish();
+        return;
+      }
+#ifdef ENABLE_CHINESE_VERSION
+      chineseFontPromptShownThisBoot.store(true, std::memory_order_relaxed);
+#endif
+      startActivityForResult(std::move(confirmation), [this](const ActivityResult& result) {
+        if (result.isCancelled) {
+          finish();
+          return;
+        }
+        startWifiSelection();
+      });
+      return;
+    }
+  }
+}
+
+void FontDownloadActivity::startWifiSelection() {
   WiFi.mode(WIFI_STA);
   // autoConnect=true: after a defrag reboot this reconnects the last SSID without
   // a full scan UI, which is what left MaxAlloc too small for TLS.
-  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput, true),
+  auto wifiSelection = makeUniqueNoThrow<WifiSelectionActivity>(renderer, mappedInput, true);
+  if (!wifiSelection) {
+    LOG_ERR("FONT", "OOM allocating WifiSelectionActivity (%zu bytes)", sizeof(WifiSelectionActivity));
+    finish();
+    return;
+  }
+  startActivityForResult(std::move(wifiSelection),
                          [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
 }
 
