@@ -44,6 +44,13 @@ class TextBlock final : public Block {
   const std::vector<std::string>& getWords() const { return words; }
   bool isEmpty() override { return words.empty(); }
   size_t wordCount() const { return words.size(); }
+  // Dictionary / arena-style accessors (vector-backed TextBlock).
+  bool valid() const { return !words.empty(); }
+  const char* wordText(size_t i) const { return words[i].c_str(); }
+  int16_t wordXAt(size_t i) const { return wordXpos[i]; }
+  EpdFontFamily::Style wordStyle(size_t i) const { return wordStyles[i]; }
+  // Fork TextBlock has no ruby layout; keep the upstream call site compiling.
+  int getRubyShift(int /*ascender*/) const { return 0; }
   // given a renderer works out where to break the words into lines
   void render(const GfxRenderer& renderer, int fontId, int x, int y) const;
   BlockType getType() override { return TEXT_BLOCK; }

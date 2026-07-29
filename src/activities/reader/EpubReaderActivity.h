@@ -36,6 +36,8 @@ class EpubReaderActivity final : public Activity {
   bool skipNextButtonCheck = false;  // Skip button processing for one frame after subactivity exit
   bool automaticPageTurnActive = false;
   bool showBookmarkMessage = false;
+  bool showDictionaryMessage = false;
+  unsigned long dictionaryMessageTime = 0UL;
   bool ignoreNextConfirmRelease = false;
   bool currentPageBookmarked = false;
   bool bookmarkRemoved = false;  // true when last toggle removed (controls popup text)
@@ -80,6 +82,7 @@ class EpubReaderActivity final : public Activity {
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
+  void openDictionaryWordSelect();
 
   // Footnote navigation
   void navigateToHref(const std::string& href, bool savePosition = false);

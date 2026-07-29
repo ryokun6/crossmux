@@ -1687,6 +1687,20 @@ bool GfxRenderer::copyBufferToRegion(int lx, int ly, int lw, int lh, const uint8
   return true;
 }
 
+size_t GfxRenderer::readFramebufferRegion(int x, int y, int w, int h, uint8_t* dst, size_t dstCapacity) const {
+  if (dst == nullptr || w <= 0 || h <= 0) return 0;
+  const size_t needed = getRegionByteSize(x, y, w, h);
+  if (needed == 0 || needed > dstCapacity) return 0;
+  return copyRegionToBuffer(x, y, w, h, dst, dstCapacity) ? needed : 0;
+}
+
+void GfxRenderer::writeFramebufferRegion(int x, int y, int w, int h, const uint8_t* src) {
+  if (src == nullptr || w <= 0 || h <= 0) return;
+  const size_t needed = getRegionByteSize(x, y, w, h);
+  if (needed == 0) return;
+  (void)copyBufferToRegion(x, y, w, h, src, needed);
+}
+
 int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style style) const {
   // Advance table fast-path for SD card fonts during layout
   auto sdIt = sdCardFonts_.find(fontId);
