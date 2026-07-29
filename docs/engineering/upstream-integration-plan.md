@@ -236,6 +236,7 @@ Deferred items completed on this branch:
 
 Follow-ups still open:
 - TC flash headroom (~98.0%) before more CN-only growth
+- Incremental/partial section build (`Section::startBuild` / `suspendBuild`)
 - Full ruby layout pipeline (arena already serializes empty ruby strings)
 - Host `HalOtaSlot` completeness for inactive-slot sim paths
 - Post-1.5.1 still deferred: AirPage standalone app, Nightly OTA, Lyra theme, SDK bump `e514a868`
@@ -247,3 +248,6 @@ Landed after the 1.5.1 pin on this branch:
 - Dictionary typed lookup/index failures
 - WeRead disclaimer (#70) + last-write-wins progress sync (#64)
 - Reader WeRead sync re-wired after the 1.5.1 merge drop
+- `#52` builtin scan skip (`needsPrewarmScan`) + idle SD-font next-page prewarm
+- Image `.pxc` RAM slot across grayscale passes (`releaseRenderCache`)
+- `#62` RoundedRaff cover continues reading (title stays in header)
