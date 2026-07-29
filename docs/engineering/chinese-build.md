@@ -23,7 +23,7 @@ gates every Chinese-only resource:
 | Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers skipped. Six per-size CJK headers — TC files `notosans_cjk_*.h` or SC files `notosans_sc_*.h` — raw 2-bit bitmaps. Coverage tiers: 8/10/12pt ~3500 common; 14pt ~7000 + symbols; 16/18pt i18n-only. |
 | `src/main.cpp` font globals | Each Latin `EpdFont`/`EpdFontFamily` aliases the matching-size CJK symbol (`notosans_cjk_*`). Bold/italic share Regular. |
 | EPUB / TXT layout ([lib/Epub/Epub/ParsedText.cpp](../../lib/Epub/Epub/ParsedText.cpp), [CjkKinsoku.h](../../lib/Epub/Epub/CjkKinsoku.h), [CjkPunctCompression.h](../../lib/Epub/Epub/CjkPunctCompression.h), [TxtReaderActivity.cpp](../../src/activities/reader/TxtReaderActivity.cpp)) | CJK punctuation rules (行頭/行末/分離 禁则) for EPUB horizontal lines and vertical-rl columns, plus TXT horizontal wrap; full-width padding on EPUB. 標點擠壓 (punctuation compression) for TC/SC when Reader setting `punctCompressionEnabled` is on (default); see section cache versions 70/71 in [file-formats.md](../file-formats.md). |
-| Activities (`src/activities/apps/weread/`) | Compiled in via `build_src_filter`. |
+| Activities (`src/activities/apps/weread/`) | Offline QR WeRead stack compiled in via `build_src_filter` on TC/SC (not JA/KO). Uses `freeink-sdk` SecureNet/wolfSSL. |
 | First-boot language | `Language::ZH_TW` or `Language::ZH_CN` by SKU; international defaults to `EN`. |
 
 **Flash budget** (default `partitions.csv`, dual A/B app slot = 6.25 MB) — each Chinese SKU separately:
@@ -35,7 +35,7 @@ gates every Chinese-only resource:
 | 1 CJK font header 14pt | ~1.62 MB |
 | 2 CJK font headers 16/18pt | ~400 KB |
 | i18n strings (EN + one Chinese) | ~16 KB |
-| **Total** | **~6.24 MB / 6.25 MB (~95.3%)**, ~300 KB headroom |
+| **Total (measured post-1.5.1 sync)** | SC ~94.5% / TC ~97.2% of 6.25 MB app slot (WeRead + GenSen + wolfSSL) |
 
 A/B OTA rollback works exactly like the Latin build — the firmware fits in
 both app slots, and a failed update can auto-revert.
