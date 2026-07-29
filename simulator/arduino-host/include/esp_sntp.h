@@ -20,8 +20,5 @@ inline void esp_sntp_setoperatingmode(esp_sntp_operatingmode_t) {}
 inline void esp_sntp_setservername(uint8_t, const char*) {}
 inline void esp_sntp_init() {}
 inline void esp_sntp_stop() {}
-inline void esp_sntp_setoperatingmode(esp_sntp_operatingmode_t) {}
-inline void esp_sntp_setservername(uint8_t, const char*) {}
-inline void esp_sntp_init() {}
 inline sntp_sync_status_t sntp_get_sync_status() { return SNTP_SYNC_STATUS_RESET; }
 inline void configTime(long, int, const char*, const char* = nullptr, const char* = nullptr) {}
