@@ -198,15 +198,17 @@ class WordList {
     return true;
   }
 
-  // Custom deleters so unique_ptr can free realloc'd blocks.
+  // Typed deleters so unique_ptr::get() stays char*/uint32_t* (void* arithmetic
+  // trips cppcheck arithOperationsOnVoidPointer under pio check).
+  template <typename T>
   struct FreeDeleter {
-    void operator()(void* p) const { std::free(p); }
+    void operator()(T* p) const { std::free(p); }
   };
 
-  std::unique_ptr<char[], FreeDeleter> buffer_;
+  std::unique_ptr<char[], FreeDeleter<char>> buffer_;
   size_t bufferSize_ = 0;
   size_t bufferCap_ = 0;
-  std::unique_ptr<uint32_t[], FreeDeleter> offsets_;
+  std::unique_ptr<uint32_t[], FreeDeleter<uint32_t>> offsets_;
   size_t offsetCount_ = 0;
   size_t offsetCap_ = 0;
 };
