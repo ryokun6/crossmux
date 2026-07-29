@@ -98,17 +98,17 @@ if (parsedSize != fileSize) {
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry independent version counters:
-> Traditional (**73**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**74**). The byte
+> Traditional (**81**) and Simplified / `CHINESE_UI_SIMPLIFIED` (**82**). The byte
 > layout is identical to the Latin version below; only the word-stream contents
 > differ (per-character CJK tokenization), so caches are not reusable across
-> flavors. TC **73** keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
-> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC **74**
+> flavors. TC keeps 點號 (`、` `。` `，` `：` `；` `！` `？`, plus occasional
+> `．`) upright and centered in vertical-rl per CLREQ / Taiwan MOE. SC
 > remaps those marks to FE1x presentation forms like Japanese (corner-biased /
 > GB/T 直排偏右). Brackets and parentheses remap to FE3x/FE4x on all CJK SKUs.
 >
-> Japanese builds use version **75**; Korean builds use version **76**.
+> Japanese builds use version **83**; Korean builds use version **84**.
 >
-> Latin builds use version **54**. Counters track `writingMode`, em-based
+> Latin builds use version **55**. Counters track `writingMode`, em-based
 > in-column CJK pitch, CCW sideways Latin, vertical presentation-form punct
 > (﹁﹂︵︒ etc. on JA/KO/SC/Latin; TC keeps upright centered 點號), horizontal
 > inter-paragraph spacing in vertical-rl, and normal brackets in rotated numeric
@@ -143,6 +143,10 @@ if (parsedSize != fileSize) {
 > no-space CJK neighbors (Hangul exempt), including when indent spaces surround
 > the break so pretty-printed Chinese/Japanese HTML stays tight. Helper:
 > `utf8CjkWhitespaceBecomesSpace()` in `lib/Utf8/Utf8.h`.
+>
+> Latin **55** / CJK **81/82/83/84** switch `TextBlock` to a flat arena on disk
+> (one blob for offsets/xpos/styles/focus/text plus per-word ruby strings).
+> Prior vector-of-string caches are invalidated automatically on version mismatch.
 >
 > CJK versions also enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
@@ -204,7 +208,8 @@ enum WordStyle : u8 {
     UNDERLINE = 4,
     STRIKETHROUGH = 8,
     SUP = 16,
-    SUB = 32
+    SUB = 32,
+    RUBY_CONTINUE = 64
 };
 
 enum TextAlign : u8 {
@@ -230,20 +235,18 @@ struct BlockStyle {
     bool textIndentDefined;
     bool isRtl;
     bool directionDefined;
+    bool isVerticalRtl;
 };
 
 struct TextBlock {
     u16 wordCount;
-    String words[wordCount];
-    s16 wordXPos[wordCount];
-    WordStyle wordStyle[wordCount];
-
     u8 hasFocus;
-    if (hasFocus != 0) {
-        u8 wordFocusBoundary[wordCount] [[comment("UTF-8 byte boundary between bold prefix and suffix")]];
-        u16 wordFocusSuffixX[wordCount] [[comment("Suffix x offset from word start")]];
-    }
-
+    u16 textBytes;
+    // Arena mirrors RAM layout (see lib/Epub/Epub/blocks/TextBlock.h):
+    // textOff[u16]*N, xpos[s16]*N, [focusSuffixX[u16]*N if hasFocus],
+    // styles[u8]*N, [focusBoundary[u8]*N if hasFocus], text[char]*textBytes.
+    u8 arena[/* arenaSize(wordCount, hasFocus, textBytes) */];
+    String rubyTexts[wordCount];
     BlockStyle blockStyle;
 };
 

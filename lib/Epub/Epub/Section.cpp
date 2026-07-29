@@ -24,16 +24,16 @@ namespace {
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
 #ifdef CHINESE_UI_SIMPLIFIED
-constexpr uint8_t SECTION_FILE_VERSION = 78;  // SC: CSS segment-break wins over indent spaces
+constexpr uint8_t SECTION_FILE_VERSION = 82;  // SC: flat TextBlock arena + prior segment-break fix
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 77;  // TC: CSS segment-break wins over indent spaces
+constexpr uint8_t SECTION_FILE_VERSION = 81;  // TC: flat TextBlock arena + prior segment-break fix
 #endif
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 79;  // JA: CSS segment-break wins over indent spaces
+constexpr uint8_t SECTION_FILE_VERSION = 83;  // JA: flat TextBlock arena + prior segment-break fix
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 80;  // KO: source-space + segment-break priority fix
+constexpr uint8_t SECTION_FILE_VERSION = 84;  // KO: flat TextBlock arena + prior segment-break fix
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 54;  // isolated upright 1-char Latin/digit → fullwidth
+constexpr uint8_t SECTION_FILE_VERSION = 55;  // Latin: flat TextBlock arena layout
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +
@@ -452,10 +452,10 @@ std::string Section::getTextFromSectionFile() {
       if (el->getTag() == TAG_PageLine) {
         const auto& line = static_cast<const PageLine&>(*el);
         if (line.getBlock()) {
-          const auto& words = line.getBlock()->getWords();
-          for (const auto& w : words) {
+          const auto& block = line.getBlock();
+          for (uint16_t i = 0; i < block->wordCount(); i++) {
             if (!fullText.empty()) fullText += " ";
-            fullText += w;
+            fullText += block->wordText(i);
           }
         }
       }
