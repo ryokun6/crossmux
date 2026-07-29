@@ -161,11 +161,13 @@ void DictionaryWordSelectActivity::performLookup() {
   requestUpdateAndWait();  // paint the page + busy popup before blocking on SD
 
   bool ok = dictOpenOk;
-  if (ok && indexing) ok = dict.buildIndex(&indexBuildYield);
+  Dictionary::IndexResult indexResult = Dictionary::IndexResult::Ok;
+  if (ok && indexing) ok = dict.buildIndex(&indexBuildYield, nullptr, &indexResult);
 
   std::string definition;
   std::string headword;
-  const bool found = ok && dict.lookup(words[selected].text, definition, headword);
+  Dictionary::LookupResult result = Dictionary::LookupResult::NotFound;
+  const bool found = ok && dict.lookup(words[selected].text, definition, headword, &result);
 
   if (found) {
     popup = Popup::None;
@@ -174,8 +176,41 @@ void DictionaryWordSelectActivity::performLookup() {
                            [this](const ActivityResult&) { requestUpdate(); });
     return;
   }
-  popup = ok ? Popup::NotFound : Popup::Error;
-  popupMsg = ok ? StrId::STR_DICT_NOT_FOUND : StrId::STR_DICT_ERROR;
+  if (!ok) {
+    popup = Popup::Error;
+    switch (indexResult) {
+      case Dictionary::IndexResult::LowMemory:
+        popupMsg = StrId::STR_DICT_LOW_MEMORY;
+        break;
+      case Dictionary::IndexResult::ReadError:
+        popupMsg = StrId::STR_DICT_READ_FAILED;
+        break;
+      case Dictionary::IndexResult::Ok:
+      default:
+        popupMsg = StrId::STR_DICT_ERROR;
+        break;
+    }
+  } else {
+    switch (result) {
+      case Dictionary::LookupResult::Decompress:
+        popup = Popup::Error;
+        popupMsg = StrId::STR_DICT_DECOMPRESS_ERROR;
+        break;
+      case Dictionary::LookupResult::LowMemory:
+        popup = Popup::Error;
+        popupMsg = StrId::STR_DICT_LOW_MEMORY;
+        break;
+      case Dictionary::LookupResult::ReadError:
+        popup = Popup::Error;
+        popupMsg = StrId::STR_DICT_READ_FAILED;
+        break;
+      case Dictionary::LookupResult::NotFound:
+      default:
+        popup = Popup::NotFound;
+        popupMsg = StrId::STR_DICT_NOT_FOUND;
+        break;
+    }
+  }
   popupTime = millis();
   requestUpdate();
 }
