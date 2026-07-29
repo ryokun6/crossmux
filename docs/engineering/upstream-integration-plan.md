@@ -208,10 +208,20 @@ flash cache, heap during WeRead download + silent restart into Reader.
 4. **OPDS stays an Apps entry** on ryOS (outside the upstream visibility catalog
    of games); include it in our kept-app visibility set if we adopt the bitmask.
 
-## 10. Immediate next actions
+## 10. Implementation status (sync PR)
 
-1. Approve §4 matrix and §9 decisions (especially WeRead SKU + version bump).
-2. Open sync branch from `main`; add permanent `upstream` remote
-   `https://github.com/0x1abin/crossmux.git`.
-3. Execute Phase 1 as the first implementation PR.
-4. Keep this file updated: tick phases, refresh SHA/conflict counts each wave.
+Branch: `cursor/upstream-sync-1.5.1-2423` — merged `upstream/main` @ 1.5.1.
+
+| Gate | Result |
+|---|---|
+| `pio run` (default / intl) | SUCCESS — Flash ~87.1% |
+| `pio run -e gh_release_sc` | SUCCESS — Flash ~94.5%, WeRead linked, GenSen kept |
+| `pio run -e gh_release_tc` | SUCCESS — Flash ~97.2%, WeRead linked, GenSen kept |
+| Native `ctest` | **225/225 passed** |
+| Version | `1.5.1` in `platformio.ini` |
+
+Deferred / stubbed (follow-ups):
+- Full SD-font inactive-OTA flash cache (`SdCardFontCache` stub; format header kept)
+- Dictionary reader activities (excluded from `build_src_filter`)
+- `DateTimeEditActivity` (excluded; DateTimeSettings uses HalClock bridge)
+- Background SNTP auto-sync on HalClock (blocking `syncNow`/`requestSync` bridge)
