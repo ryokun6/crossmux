@@ -3,13 +3,13 @@
 #include <vector>
 
 class AchievementsStore;
+class OpdsServerStore;
 class ReadingStatsStore;
 struct BookmarkEntry;
 
 namespace JsonSettingsIO {
 
 bool saveReadingStats(const ReadingStatsStore& store, const char* path);
-bool loadReadingStats(ReadingStatsStore& store, const char* json);
 bool loadReadingStatsFromFile(ReadingStatsStore& store, const char* path);
 
 bool saveAchievements(const AchievementsStore& store, const char* path);
@@ -18,5 +18,9 @@ bool loadAchievementsFromFile(AchievementsStore& store, const char* path);
 
 bool saveBookmarks(const std::vector<BookmarkEntry>& bookmarks, const char* path);
 bool loadBookmarks(std::vector<BookmarkEntry>& bookmarks, const char* json);
+
+// OpdsServerStore still uses the fork JsonSettingsIO path (ryOS seed/migrate).
+bool saveOpds(const OpdsServerStore& store, const char* path);
+bool loadOpds(OpdsServerStore& store, const char* json, bool* needsResave = nullptr);
 
 }  // namespace JsonSettingsIO
