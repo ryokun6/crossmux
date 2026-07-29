@@ -365,7 +365,7 @@ void EpubReaderActivity::loop() {
       ESP.getMaxAllocHeap() > RENDER_MIN_MAX_ALLOC && fcm && fcm->canIdlePrewarm(SETTINGS.getReaderFontId()) &&
       (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
     RenderLock lock;
-    if (section && (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
+    if (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage) {
       idlePrewarmSpine = currentSpineIndex;
       idlePrewarmPage = section->currentPage;
       const int nextPage = section->currentPage + 1;
@@ -1429,13 +1429,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // Raw built-in fonts (GenSen) render directly and skip both the scan and its
   // temporary string.
   auto* fcm = renderer.getFontCacheManager();
-  struct RawFontCacheGuard {
-    FontCacheManager* manager = nullptr;
-    ~RawFontCacheGuard() {
-      if (manager) manager->clearCache();
-    }
-  } rawFontCacheGuard;
+  struct EndClear {
+    FontCacheManager& manager;
+    ~EndClear() { manager.clearCache(); }
+  };
   std::optional<FontCacheManager::PrewarmScope> prewarmScope;
+  std::optional<EndClear> rawFontCacheClear;
   TextBlock::fakeBold = SETTINGS.fakeBold;
   if (fcm->needsPrewarmScan(fontId)) {
     prewarmScope.emplace(*fcm);
@@ -1444,7 +1443,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   } else {
     fcm->clearCache();
     fcm->resetStats();
-    rawFontCacheGuard.manager = fcm;
+    rawFontCacheClear.emplace(*fcm);
   }
   const auto tPrewarm = millis();
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
