@@ -248,7 +248,8 @@ void ActivityManager::goToBrowser() {
 }
 
 void ActivityManager::goToReader(std::string path, const bool allowFastInitialRefresh) {
-  auto activity = makeUniqueNoThrow<ReaderActivity>(renderer, mappedInput, std::move(path), allowFastInitialRefresh);
+  (void)allowFastInitialRefresh;
+  auto activity = makeUniqueNoThrow<ReaderActivity>(renderer, mappedInput, std::move(path));
   if (!activity) {
     LOG_ERR("ACT", "OOM allocating ReaderActivity");
     return;

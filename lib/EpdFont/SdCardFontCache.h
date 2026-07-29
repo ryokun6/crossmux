@@ -1,29 +1,52 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+#include <functional>
 
+// Temporary stub until the inactive-OTA SD font cache is ported onto the
+// fork SdCardFont stack. Upstream Boot/TextSettings compile against this.
 namespace SdCardFontCache {
 
-enum class Result {
-  Ok,
+enum class Result : uint8_t {
+  Ok = 0,
   AlreadyCached,
+  TooLarge,
+  Oom,
   OpenFailed,
   InvalidFont,
-  TooLarge,
-  NotSafe,
-  Oom,
-  EraseFailed,
   ReadFailed,
+  EraseFailed,
   WriteFailed,
   VerifyFailed,
+  NotSafe,
 };
 
-using ProgressCallback = void (*)(size_t completed, size_t total, void* context);
+inline const char* resultName(Result r) {
+  switch (r) {
+    case Result::Ok: return "ok";
+    case Result::AlreadyCached: return "already_cached";
+    case Result::TooLarge: return "too_large";
+    case Result::Oom: return "oom";
+    case Result::OpenFailed: return "open_failed";
+    case Result::InvalidFont: return "invalid_font";
+    case Result::ReadFailed: return "read_failed";
+    case Result::EraseFailed: return "erase_failed";
+    case Result::WriteFailed: return "write_failed";
+    case Result::VerifyFailed: return "verify_failed";
+    case Result::NotSafe: return "not_safe";
+  }
+  return "unknown";
+}
 
-size_t capacity();
-bool isValidFor(const char* sourcePath, size_t* payloadSize = nullptr);
-bool readAt(size_t offset, void* data, size_t length, size_t payloadSize);
-Result preload(const char* sourcePath, ProgressCallback progress = nullptr, void* context = nullptr);
-const char* resultName(Result result);
+inline bool isValidFor(const char* /*path*/, size_t* payloadSize = nullptr) {
+  if (payloadSize) *payloadSize = 0;
+  return false;
+}
+
+template <typename... Args>
+inline Result preload(Args&&...) {
+  return Result::NotSafe;
+}
 
 }  // namespace SdCardFontCache

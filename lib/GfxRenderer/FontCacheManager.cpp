@@ -6,19 +6,6 @@
 
 #include <cstring>
 
-#ifdef ENABLE_CHINESE_VERSION
-namespace {
-constexpr bool isDownloadableChineseCodepoint(const uint32_t cp) {
-  return (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0xF900 && cp <= 0xFAFF);
-}
-
-static_assert(isDownloadableChineseCodepoint(0x4E00));
-static_assert(isDownloadableChineseCodepoint(0xFAFF));
-static_assert(!isDownloadableChineseCodepoint(0x4DFF));
-static_assert(!isDownloadableChineseCodepoint(0xFB00));
-}  // namespace
-#endif
-
 FontCacheManager::FontCacheManager(const std::map<int, EpdFontFamily>& fontMap,
                                    const std::map<int, SdCardFont*>& sdCardFonts)
     : fontMap_(fontMap), sdCardFonts_(sdCardFonts) {}
@@ -32,11 +19,11 @@ void FontCacheManager::clearCache() {
   }
 }
 
-void FontCacheManager::prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask) {
+void FontCacheManager::prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask, bool addRegularFallback) {
   // SD card font prewarm path: prewarm all requested styles in one call
   auto it = sdCardFonts_.find(fontId);
   if (it != sdCardFonts_.end()) {
-    int missed = it->second->prewarm(utf8Text, styleMask);
+    int missed = it->second->prewarm(utf8Text, styleMask, /*metadataOnly=*/false, addRegularFallback);
     if (missed > 0) {
       LOG_DBG("FCM", "prewarmCache(SD): %d glyph(s) not found (styleMask=0x%02X)", missed, styleMask);
     }
@@ -72,52 +59,38 @@ void FontCacheManager::resetStats() {
   }
 }
 
-bool FontCacheManager::canIdlePrewarm(const int fontId) const {
-  return sdCardFonts_.find(fontId) != sdCardFonts_.end();
-}
-
-bool FontCacheManager::needsPrewarmScan(const int fontId) const {
-  if (sdCardFonts_.count(fontId) != 0) return true;
-
-  const auto familyIt = fontMap_.find(fontId);
-  if (familyIt == fontMap_.end()) return false;
-  for (uint8_t i = 0; i < 4; i++) {
-    const auto style = static_cast<EpdFontFamily::Style>(i);
-    const EpdFontData* data = familyIt->second.getData(style);
-    if (data && data->groups) return true;
-  }
-  return false;
-}
-
 bool FontCacheManager::isScanning() const { return scanMode_ == ScanMode::Scanning; }
 
-void FontCacheManager::recordText(const char* text, const int fontId, EpdFontFamily::Style style) {
+void FontCacheManager::resolveScanStyleFaces(int fontId) {
+  scanStyleFace_[0] = 0;
+  for (uint8_t i = 1; i < 4; i++) scanStyleFace_[i] = i;
+  auto it = fontMap_.find(fontId);
+  if (it == fontMap_.end()) return;
+  for (uint8_t i = 1; i < 4; i++) {
+    scanStyleFace_[i] = static_cast<uint8_t>(it->second.resolveStyle(static_cast<EpdFontFamily::Style>(i)));
+  }
+}
+
+void FontCacheManager::recordText(const char* text, int fontId, EpdFontFamily::Style style) {
   scanText_ += text;
-  if (scanFontId_ < 0) scanFontId_ = fontId;
-  const uint8_t baseStyle = static_cast<uint8_t>(style) & 0x03;
+  if (scanFontId_ < 0) {
+    scanFontId_ = fontId;
+    resolveScanStyleFaces(fontId);
+  }
+  // Bucket by the face that will draw this run, not by the requested style. A
+  // font without a bold-italic face draws bold-italic through the bold face; if
+  // both bucketed separately, the bold-italic prewarm pass would rebuild the bold
+  // face from its own runs alone and drop every plain-bold glyph on the page.
+  const uint8_t face = scanStyleFace_[static_cast<uint8_t>(style) & 0x03];
+  if (face != 0) scanStyledText_[face] += text;
   const unsigned char* p = reinterpret_cast<const unsigned char*>(text);
   uint32_t cpCount = 0;
   while (*p) {
     if ((*p & 0xC0) != 0x80) cpCount++;
     p++;
   }
-  scanStyleCounts_[baseStyle] += cpCount;
+  scanStyleCounts_[face] += cpCount;
 }
-
-#ifdef ENABLE_CHINESE_VERSION
-void FontCacheManager::reportMissingChineseCodepoint(const int fontId, const uint32_t codepoint) {
-  if (missingChineseCodepoint_ != 0 || sdCardFonts_.count(fontId) != 0 || !isDownloadableChineseCodepoint(codepoint)) {
-    return;
-  }
-  missingChineseCodepoint_ = codepoint;
-}
-
-uint32_t FontCacheManager::consumeMissingChineseCodepoint() {
-  const uint32_t codepoint = missingChineseCodepoint_;
-  missingChineseCodepoint_ = 0;
-  return codepoint;
-}
-#endif
 
 // --- PrewarmScope implementation ---
 
@@ -127,29 +100,44 @@ FontCacheManager::PrewarmScope::PrewarmScope(FontCacheManager& manager) : manage
   manager_->resetStats();
   manager_->scanText_.clear();
   manager_->scanText_.reserve(2048);  // Pre-allocate to avoid heap fragmentation from repeated concat
+  for (auto& styled : manager_->scanStyledText_) {
+    styled.clear();
+  }
   memset(manager_->scanStyleCounts_, 0, sizeof(manager_->scanStyleCounts_));
+  for (uint8_t i = 0; i < 4; i++) manager_->scanStyleFace_[i] = i;
   manager_->scanFontId_ = -1;
-#ifdef ENABLE_CHINESE_VERSION
-  manager_->missingChineseCodepoint_ = 0;
-#endif
 }
 
 void FontCacheManager::PrewarmScope::endScanAndPrewarm() {
   manager_->scanMode_ = ScanMode::None;
   if (manager_->scanText_.empty()) return;
 
-  // Build style bitmask from all styles that appeared during the scan
-  uint8_t styleMask = 0;
-  for (uint8_t i = 0; i < 4; i++) {
-    if (manager_->scanStyleCounts_[i] > 0) styleMask |= (1 << i);
+  // Prewarm each face with only the text drawn through it. A mini glyph bitmap is
+  // one contiguous block sized by the codepoints it covers, so prewarming every
+  // style from the whole page made bold cost as much as body text even when only a
+  // heading was bold — that block (~28KB on a dense CJK page) is the first thing to
+  // fail once MaxAlloc drops, and a failed style falls back to the stub face.
+  //
+  // Regular still takes the whole page. A styled face is not required to cover
+  // everything drawn through it: EBGaramondSHS ships a Latin-only italic face, so
+  // italic Han resolves to regular's glyph (EpdFontFamily::getGlyphNoReplacement).
+  // Narrowing regular to its own runs would push that Han into the 8-entry overflow
+  // ring, which reopens the .cpfont per glyph. The cost of the conservative rule is
+  // small — the extra codepoints are the ones a heading uses and the body does not.
+  manager_->prewarmCache(manager_->scanFontId_, manager_->scanText_.c_str(), 0x01);
+  for (uint8_t i = 1; i < 4; i++) {
+    if (manager_->scanStyleCounts_[i] == 0 || manager_->scanStyledText_[i].empty()) continue;
+    manager_->prewarmCache(manager_->scanFontId_, manager_->scanStyledText_[i].c_str(), static_cast<uint8_t>(1u << i),
+                           /*addRegularFallback=*/false);
   }
-  if (styleMask == 0) styleMask = 1;  // default to regular
-
-  manager_->prewarmCache(manager_->scanFontId_, manager_->scanText_.c_str(), styleMask);
 
   // Free scan string memory
   manager_->scanText_.clear();
   manager_->scanText_.shrink_to_fit();
+  for (auto& styled : manager_->scanStyledText_) {
+    styled.clear();
+    styled.shrink_to_fit();
+  }
 }
 
 FontCacheManager::PrewarmScope::~PrewarmScope() {

@@ -19,16 +19,10 @@ class FontCacheManager {
   void prewarmCache(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F, bool addRegularFallback = true);
   void logStats(const char* label = "render");
   void resetStats();
-  bool canIdlePrewarm(int fontId) const;
-  bool needsPrewarmScan(int fontId) const;
 
   // Scan-mode API: called by GfxRenderer::drawText() during scan pass
   bool isScanning() const;
   void recordText(const char* text, int fontId, EpdFontFamily::Style style);
-#ifdef ENABLE_CHINESE_VERSION
-  void reportMissingChineseCodepoint(int fontId, uint32_t codepoint);
-  uint32_t consumeMissingChineseCodepoint();
-#endif
 
   // The FontDecompressor pointer, needed by GfxRenderer::getGlyphBitmap()
   FontDecompressor* getDecompressor() const { return fontDecompressor_; }
@@ -71,7 +65,4 @@ class FontCacheManager {
   // bold-italic face, so both runs land in one bucket and get prewarmed together.
   uint8_t scanStyleFace_[4] = {0, 1, 2, 3};
   int scanFontId_ = -1;
-#ifdef ENABLE_CHINESE_VERSION
-  uint32_t missingChineseCodepoint_ = 0;
-#endif
 };

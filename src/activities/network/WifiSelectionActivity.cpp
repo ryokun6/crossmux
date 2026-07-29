@@ -1,4 +1,5 @@
 #include "WifiSelectionActivity.h"
+#include <HalClock.h>
 
 #include <GfxRenderer.h>
 #include <I18n.h>
@@ -398,14 +399,8 @@ void WifiSelectionActivity::checkConnectionStatus() {
     connectedIP = ipStr;
     autoConnecting = false;
 
-    // Sync from NTP on the first successful WiFi connection only. X3 also writes
-    // the DS3231; X4 only updates the system epoch until power-off.
-    if (!SETTINGS.clockHasBeenSynced) {
-      if (halClock.syncFromNTP()) {
-        halClock.applySavedTimezone(SETTINGS.clockUtcOffsetQ);
-        SETTINGS.clockHasBeenSynced = 1;
-        SETTINGS.saveToFile();
-      }
+    if (SETTINGS.clockAutoSync) {
+      (void)halClock.syncNow();
     }
 #if defined(ENABLE_SERIAL_LOG) && LOG_LEVEL >= 2
     uint8_t connectedBssid[6] = {};

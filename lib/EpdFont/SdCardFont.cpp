@@ -2,8 +2,6 @@
 
 #include <HalStorage.h>
 #include <Logging.h>
-#include <Memory.h>
-#include <SdCardFontCache.h>
 #include <Utf8.h>
 
 #include <algorithm>
@@ -12,6 +10,14 @@
 #include <memory>
 
 #include "EpdFontFamily.h"
+
+#ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+#include "TcToScRemap.h"
+#else
+#include "ScToTcRemap.h"
+#endif
+#endif
 
 static_assert(sizeof(EpdGlyph) == 16, "EpdGlyph must be 16 bytes to match .cpfont file layout");
 static_assert(sizeof(EpdUnicodeInterval) == 12, "EpdUnicodeInterval must be 12 bytes to match .cpfont file layout");
@@ -44,6 +50,20 @@ inline uint16_t readU16(const uint8_t* p) { return p[0] | (p[1] << 8); }
 inline int16_t readI16(const uint8_t* p) { return static_cast<int16_t>(p[0] | (p[1] << 8)); }
 inline uint32_t readU32(const uint8_t* p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
 
+uint32_t resolveCnCodepointForLookup(uint32_t cp) {
+#ifdef ENABLE_CHINESE_VERSION
+#ifdef CHINESE_UI_SIMPLIFIED
+  // SC SD fonts store Simplified glyphs; Traditional EPUB codepoints remap here.
+  return mapTraditionalToSimplified(cp);
+#else
+  // SD CJK subsets store Traditional glyphs; EPUB/UI may pass Simplified codepoints.
+  return mapSimplifiedToTraditional(cp);
+#endif
+#else
+  return cp;
+#endif
+}
+
 // Walks a null-terminated UTF-8 string and appends each unique codepoint to
 // codepoints[0..cpCount-1] via O(n²) dedup.  Returns true if the buffer
 // reached maxCount (cap hit), false if all codepoints fit.
@@ -70,79 +90,6 @@ bool collectUniqueCodepoints(const char* text, uint32_t* codepoints, uint32_t& c
 const char* asCStr(const std::string& s) { return s.c_str(); }
 const char* asCStr(const char* s) { return s; }
 
-// resetStyleMiniData retention bounds (see the PerStyle comment in the header).
-constexpr size_t MINI_RETAIN_MIN_FREE_HEAP = 40 * 1024;
-constexpr size_t MINI_RETAIN_MIN_MAX_ALLOC = 24 * 1024;
-constexpr uint8_t MINI_UNDERUSE_RUNS_BEFORE_FREE = 3;
-
-// One concrete file cursor keeps every parser and hot-path read identical for
-// SD and the internal Flash cache. A failed Flash read switches the owning font
-// back to SD for this and all subsequent cursors.
-class FontFile {
- public:
-  FontFile(const char* path, bool* useFlash, size_t flashPayloadSize)
-      : path_(path), useFlash_(useFlash), flashPayloadSize_(flashPayloadSize), flash_(useFlash && *useFlash) {
-    if (!flash_) openSd();
-  }
-
-  explicit operator bool() const { return flash_ || static_cast<bool>(sd_); }
-
-  bool seekSet(size_t offset) {
-    position_ = offset;
-    return flash_ || sd_.seekSet(offset);
-  }
-
-  int read(void* data, size_t length) {
-    if (flash_) {
-      if (SdCardFontCache::readAt(position_, data, length, flashPayloadSize_)) {
-        position_ += length;
-        return static_cast<int>(length);
-      }
-      LOG_ERR("SDCF", "Flash font cache read failed at %u; falling back to SD", static_cast<unsigned>(position_));
-      flash_ = false;
-      *useFlash_ = false;
-      if (!openSd() || !sd_.seekSet(position_)) return -1;
-    }
-    const int read = sd_.read(data, length);
-    if (read > 0) position_ += static_cast<size_t>(read);
-    return read;
-  }
-
-  bool close() {
-    flash_ = false;
-    return sd_ ? sd_.close() : true;
-  }
-
- private:
-  bool openSd() {
-    if (sd_) return true;
-    return Storage.openFileForRead("SDCF", path_, sd_);
-  }
-
-  const char* path_;
-  bool* useFlash_;
-  size_t flashPayloadSize_;
-  HalFile sd_;
-  size_t position_ = 0;
-  bool flash_ = false;
-};
-
-// Keep-if-fits buffer reuse: only reallocate when the needed size exceeds the
-// current capacity. Freeing + reallocating slightly different sizes every page
-// turn punches non-coalescing holes in the heap (the freed block rarely fits the
-// next page's need), eroding the largest contiguous block all session. With
-// reuse, capacities converge on the book's max page after a few turns and page
-// turns stop touching the allocator. Only three small instantiations exist
-// (interval/glyph/byte arrays), so template bloat is negligible.
-template <typename T, typename CapT>
-bool ensureArrayCapacity(T*& buf, CapT& capacity, const uint32_t needed) {
-  if (buf && capacity >= needed) return true;
-  delete[] buf;
-  buf = new (std::nothrow) T[needed > 0 ? needed : 1];
-  capacity = buf ? static_cast<CapT>(needed) : 0;
-  return buf != nullptr;
-}
-
 }  // namespace
 
 SdCardFont::~SdCardFont() { freeAll(); }
@@ -158,47 +105,9 @@ void SdCardFont::freeStyleMiniData(PerStyle& s) {
   s.miniBitmap = nullptr;
   s.miniIntervalCount = 0;
   s.miniGlyphCount = 0;
-  s.miniIntervalCapacity = 0;
-  s.miniGlyphCapacity = 0;
-  s.miniBitmapCapacity = 0;
-  s.miniBitmapUsed = 0;
-  s.miniUnderuseRuns = 0;
   freeStyleMiniKern(s);
   memset(&s.miniData, 0, sizeof(s.miniData));
   s.epdFont.data = &s.stubData;
-}
-
-void SdCardFont::resetStyleMiniData(PerStyle& s) {
-  // Retention is a bet that the next scope needs similar data. Don't hold it
-  // when the heap is tight: the arenas are rebuildable for one page's worth of
-  // allocations, and this floor keeps retained fonts out of the way of section
-  // builds and the render path's own floors.
-  if (ESP.getFreeHeap() < MINI_RETAIN_MIN_FREE_HEAP || ESP.getMaxAllocHeap() < MINI_RETAIN_MIN_MAX_ALLOC) {
-    freeStyleMiniData(s);
-    return;
-  }
-  // Underuse hysteresis, on the bitmap arena (the dominant allocation): an
-  // outlier page (e.g. three styles cramped together) would otherwise pin its
-  // high-water arena for the rest of the book. Keep while the page used at
-  // least 3/4 of capacity; release only after several consecutive rebuilds
-  // below that, so alternating dense/sparse pages never thrash. Evaluated at
-  // most once per rebuild (a scope both constructs and destructs through here,
-  // and subset hits load nothing new to judge).
-  if (s.miniHysteresisPending && s.miniBitmapCapacity > 0 && s.miniBitmapUsed > 0) {
-    s.miniHysteresisPending = false;
-    if (s.miniBitmapUsed < s.miniBitmapCapacity - s.miniBitmapCapacity / 4) {
-      if (++s.miniUnderuseRuns >= MINI_UNDERUSE_RUNS_BEFORE_FREE) {
-        LOG_DBG("SDCF", "mini release (underuse): used=%u cap=%u", s.miniBitmapUsed, s.miniBitmapCapacity);
-        freeStyleMiniData(s);
-        return;
-      }
-    } else {
-      s.miniUnderuseRuns = 0;
-    }
-  }
-  // Data (intervals/glyphs/bitmaps/kern) deliberately survives the scope: the
-  // next prewarm subset-checks against it, which is what lets the idle prewarm
-  // of page N+1 serve the actual page turn with zero SD reads.
 }
 
 void SdCardFont::freeStyleKernLigatureData(PerStyle& s) {
@@ -222,20 +131,47 @@ void SdCardFont::freeStyleMiniKern(PerStyle& s) {
   s.miniKernRightEntryCount = 0;
   s.miniKernLeftClassCount = 0;
   s.miniKernRightClassCount = 0;
-  s.miniKernLeftCapacity = 0;
-  s.miniKernRightCapacity = 0;
-  s.miniKernMatrixCapacity = 0;
 }
 
-void SdCardFont::freeStyleAll(PerStyle& s) {
-  freeStyleMiniData(s);
+void SdCardFont::freeStyleIntervals(PerStyle& s) {
   delete[] s.fullIntervals;
   s.fullIntervals = nullptr;
   delete[] s.bmpIntervals;
   s.bmpIntervals = nullptr;
   s.intervalsAreBmp16 = false;
+}
+
+bool SdCardFont::styleIntervalsLoaded(const PerStyle& s) const {
+  return s.bmpIntervals != nullptr || s.fullIntervals != nullptr;
+}
+
+void SdCardFont::freeStyleAll(PerStyle& s) {
+  freeStyleMiniData(s);
+  freeStyleIntervals(s);
   freeStyleKernLigatureData(s);
   s.present = false;
+}
+
+void SdCardFont::unloadNonRegularStyles() {
+  if (!loaded_) return;
+  for (uint8_t i = 1; i < MAX_STYLES; i++) {
+    if (!styles_[i].present) continue;
+    freeStyleMiniData(styles_[i]);
+    freeStyleIntervals(styles_[i]);
+    freeStyleKernLigatureData(styles_[i]);
+    applyGlyphMissCallback(i);
+  }
+  clearOverflow();
+  LOG_DBG("SDCF", "Unloaded non-regular style intervals (Free=%u MaxAlloc=%u)",
+          static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
+}
+
+bool SdCardFont::ensureStyleIntervalsLoaded(uint8_t styleIdx) {
+  styleIdx &= (MAX_STYLES - 1);
+  auto& s = styles_[styleIdx];
+  if (!s.present) return false;
+  if (styleIntervalsLoaded(s)) return true;
+  return loadStyleIntervalsFromFile(s, nullptr);
 }
 
 // --- Global free/cleanup ---
@@ -287,8 +223,8 @@ bool SdCardFont::loadStyleKernLigatureData(PerStyle& s) {
     return true;
   }
 
-  FontFile file(filePath_, &useFlash_, flashPayloadSize_);
-  if (!file) {
+  HalFile file;
+  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
     LOG_ERR("SDCF", "Failed to open .cpfont for kern/lig: %s", filePath_);
     return false;
   }
@@ -379,22 +315,9 @@ static uint8_t miniLookupKernClass(const EpdKernClassEntry* entries, uint16_t co
 // on this page simply returns class 0 (no kerning), which was the pre-existing
 // behavior for any codepoint outside the kern classes.
 bool SdCardFont::buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, uint32_t cpCount) {
-  // No freeStyleMiniKern here: it zeroed the capacities, which forced the
-  // ensureArrayCapacity calls below to reallocate every page and defeated the
-  // buffer reuse. prewarmStyle is the only caller and the success path
-  // overwrites the contents and all four counts, so keeping the buffers is
-  // safe. The early returns zero the counts (buffers kept) so a page with no
-  // applicable kern pairs kerns as none instead of through the previous
-  // page's tables.
-  const auto resetMiniKernCounts = [&s]() {
-    s.miniKernLeftEntryCount = 0;
-    s.miniKernRightEntryCount = 0;
-    s.miniKernLeftClassCount = 0;
-    s.miniKernRightClassCount = 0;
-  };
+  freeStyleMiniKern(s);
   if (!s.kernLeftClasses || !s.kernRightClasses || s.header.kernLeftEntryCount == 0 ||
       s.header.kernRightEntryCount == 0) {
-    resetMiniKernCounts();
     return true;  // font has no kern classes — nothing to build
   }
 
@@ -428,7 +351,6 @@ bool SdCardFont::buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, ui
     }
   }
   if (numLeft == 0 || numRight == 0) {
-    resetMiniKernCounts();
     return true;  // no kern pairs applicable on this page
   }
 
@@ -441,13 +363,13 @@ bool SdCardFont::buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, ui
     if (miniLookupKernClass(s.kernRightClasses, s.header.kernRightEntryCount, codepoints[i]) != 0) miniRightCount++;
   }
 
-  // Step 4: size the three mini buffers (reused across pages when they fit; the
-  // per-page sizes vary by a few entries, which as free+realloc churn was punching
-  // non-coalescing holes in the heap every page turn).
+  // Step 4: allocate the three mini buffers. The matrix is <1KB in practice
+  // (<30 × <30 × 1 byte) so fragmentation is a non-issue.
   const uint32_t matrixBytes = static_cast<uint32_t>(numLeft) * numRight;
-  if (!ensureArrayCapacity(s.miniKernLeftClasses, s.miniKernLeftCapacity, miniLeftCount) ||
-      !ensureArrayCapacity(s.miniKernRightClasses, s.miniKernRightCapacity, miniRightCount) ||
-      !ensureArrayCapacity(s.miniKernMatrix, s.miniKernMatrixCapacity, matrixBytes)) {
+  s.miniKernLeftClasses = new (std::nothrow) EpdKernClassEntry[miniLeftCount];
+  s.miniKernRightClasses = new (std::nothrow) EpdKernClassEntry[miniRightCount];
+  s.miniKernMatrix = new (std::nothrow) int8_t[matrixBytes];
+  if (!s.miniKernLeftClasses || !s.miniKernRightClasses || !s.miniKernMatrix) {
     LOG_ERR("SDCF", "Failed to allocate mini kern (%u+%u+%u bytes)", miniLeftCount * 3u, miniRightCount * 3u,
             matrixBytes);
     freeStyleMiniKern(s);
@@ -478,8 +400,8 @@ bool SdCardFont::buildMiniKernMatrix(PerStyle& s, const uint32_t* codepoints, ui
   // Step 6: read the full matrix's rows for each used left class, keep only
   // columns for used right classes. One SD seek + one read per used left class;
   // a row is kernRightClassCount bytes (~200 for Literata).
-  FontFile file(filePath_, &useFlash_, flashPayloadSize_);
-  if (!file) {
+  HalFile file;
+  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
     LOG_ERR("SDCF", "Failed to open .cpfont for mini kern: %s", filePath_);
     freeStyleMiniKern(s);
     return false;
@@ -532,14 +454,6 @@ void SdCardFont::applyGlyphMissCallback(uint8_t styleIdx) {
   auto& s = styles_[styleIdx];
   s.stubData.glyphMissHandler = &SdCardFont::onGlyphMiss;
   s.stubData.glyphMissCtx = &overflowCtx_[styleIdx];
-  s.stubData.coverageHandler = &SdCardFont::onCoverageQuery;
-}
-
-bool SdCardFont::onCoverageQuery(void* ctx, const uint32_t codepoint) {
-  const auto* octx = static_cast<OverflowContext*>(ctx);
-  const PerStyle& s = octx->self->styles_[octx->styleIdx];
-  if (!s.fullIntervals && !s.bmpIntervals) return false;  // coverage index freed/never loaded
-  return octx->self->findGlobalGlyphIndex(s, codepoint) >= 0;
 }
 
 // --- Compute per-style file offsets from a base data offset ---
@@ -557,7 +471,7 @@ void SdCardFont::computeStyleFileOffsets(PerStyle& s, uint32_t baseOffset) {
 
 // --- Load ---
 
-bool SdCardFont::load(const char* path, bool preferFlash) {
+bool SdCardFont::load(const char* path) {
   freeAll();
   if (strlen(path) >= sizeof(filePath_)) {
     LOG_ERR("SDCF", "Path too long (%zu bytes, max %zu)", strlen(path), sizeof(filePath_) - 1);
@@ -566,30 +480,9 @@ bool SdCardFont::load(const char* path, bool preferFlash) {
   strncpy(filePath_, path, sizeof(filePath_) - 1);
   filePath_[sizeof(filePath_) - 1] = '\0';
 
-  const unsigned long start = millis();
-  flashPayloadSize_ = 0;
-  useFlash_ = preferFlash && SdCardFontCache::isValidFor(path, &flashPayloadSize_);
-  if (loadSelectedSource()) {
-    LOG_DBG("SDCF", "Initial load source=%s load_ms=%lu", useFlash_ ? "flash" : "sd", millis() - start);
-    return true;
-  }
-  if (!useFlash_) return false;
-
-  LOG_ERR("SDCF", "Cached font is unreadable; retrying from SD");
-  freeAll();
-  useFlash_ = false;
-  flashPayloadSize_ = 0;
-  const bool loaded = loadSelectedSource();
-  if (loaded) {
-    LOG_DBG("SDCF", "Initial load source=sd load_ms=%lu", millis() - start);
-  }
-  return loaded;
-}
-
-bool SdCardFont::loadSelectedSource() {
-  FontFile file(filePath_, &useFlash_, flashPayloadSize_);
-  if (!file) {
-    LOG_ERR("SDCF", "Failed to open .cpfont: %s", filePath_);
+  HalFile file;
+  if (!Storage.openFileForRead("SDCF", path, file)) {
+    LOG_ERR("SDCF", "Failed to open .cpfont: %s", path);
     return false;
   }
 
@@ -659,7 +552,11 @@ bool SdCardFont::loadSelectedSource() {
     // Sanity-check counts to reject malformed files before allocating.
     // Kern class counts are uint8 (bounded by type). Entry counts are uint16
     // but in practice a sane font has far fewer than 4096 per-side kern entries.
-    static constexpr uint32_t MAX_INTERVALS = 4096;
+    // Interval cap: CJK frequency subsets (~7000 通用汉字) are sparse in BMP and
+    // commonly produce ~4.3k intervals after gap-splitting (builtin CN 14pt is
+    // 4365). 4096 rejected those SD fonts; 8192 leaves headroom while BMP16
+    // packing keeps resident cost ~6 bytes/interval.
+    static constexpr uint32_t MAX_INTERVALS = 8192;
     static constexpr uint32_t MAX_GLYPHS = 65536;
     static constexpr uint32_t MAX_KERN_ENTRIES = 4096;
     if (s.header.intervalCount > MAX_INTERVALS || s.header.glyphCount > MAX_GLYPHS ||
@@ -682,92 +579,13 @@ bool SdCardFont::loadSelectedSource() {
   // fewer than 65536 glyphs use a compact 6-byte interval table instead of the
   // on-disk 12-byte table; large sparse CJK subsets otherwise keep tens of KB
   // of always-resident heap just for lookup metadata.
+  //
+  // Only REGULAR is loaded eagerly (~19 KB on TC). Bold / italic / bolditalic
+  // reload via ensureStyleIntervalsLoaded when a paragraph's styleMask needs
+  // them — reclaim ~38 KB for chapter-parse peaks via unloadNonRegularStyles().
   for (uint8_t i = 0; i < MAX_STYLES; i++) {
     auto& s = styles_[i];
     if (!s.present) continue;
-
-    if (!file.seekSet(s.intervalsFileOffset)) {
-      LOG_ERR("SDCF", "Failed to seek to intervals for style %u", i);
-      freeAll();
-      return false;
-    }
-
-    // Validate interval contents before any later code (findGlobalGlyphIndex,
-    // glyph reads) trusts them. A malformed file could otherwise drive
-    // out-of-range glyph indices into bogus on-disk reads.
-    bool canUseBmp16 = s.header.glyphCount <= UINT16_MAX;
-    uint32_t expectedOffset = 0;
-    uint32_t prevLast = 0;
-    EpdUnicodeInterval iv{};
-    for (uint32_t j = 0; j < s.header.intervalCount; ++j) {
-      if (file.read(reinterpret_cast<uint8_t*>(&iv), sizeof(iv)) != sizeof(iv)) {
-        LOG_ERR("SDCF", "Failed to read interval %u for style %u", j, i);
-        freeAll();
-        return false;
-      }
-      if (iv.first > iv.last) {
-        LOG_ERR("SDCF", "Style %u: invalid interval %u (first 0x%lX > last 0x%lX)", i, j,
-                static_cast<unsigned long>(iv.first), static_cast<unsigned long>(iv.last));
-        file.close();
-        freeAll();
-        return false;
-      }
-      const uint32_t span = iv.last - iv.first + 1;
-      const bool overlapsPrev = (j > 0 && iv.first <= prevLast);
-      const bool spanTooBig = (span > s.header.glyphCount);
-      const bool offsetMismatch = (iv.offset != expectedOffset);
-      const bool offsetOverruns = (iv.offset > s.header.glyphCount - span);
-      if (overlapsPrev || spanTooBig || offsetMismatch || offsetOverruns) {
-        LOG_ERR("SDCF", "Style %u: invalid interval layout at %u (overlap=%d span=%u offMis=%d offOver=%d)", i, j,
-                overlapsPrev, span, offsetMismatch, offsetOverruns);
-        file.close();
-        freeAll();
-        return false;
-      }
-      if (iv.first > UINT16_MAX || iv.last > UINT16_MAX || iv.offset > UINT16_MAX) {
-        canUseBmp16 = false;
-      }
-      expectedOffset += span;
-      prevLast = iv.last;
-    }
-
-    if (!file.seekSet(s.intervalsFileOffset)) {
-      LOG_ERR("SDCF", "Failed to seek back to intervals for style %u", i);
-      freeAll();
-      return false;
-    }
-
-    if (canUseBmp16) {
-      s.bmpIntervals = new (std::nothrow) PerStyle::BmpInterval16[s.header.intervalCount];
-      if (!s.bmpIntervals) {
-        LOG_ERR("SDCF", "Failed to allocate compact intervals for style %u", i);
-        freeAll();
-        return false;
-      }
-      for (uint32_t j = 0; j < s.header.intervalCount; ++j) {
-        if (file.read(reinterpret_cast<uint8_t*>(&iv), sizeof(iv)) != sizeof(iv)) {
-          LOG_ERR("SDCF", "Failed to read compact interval %u for style %u", j, i);
-          freeAll();
-          return false;
-        }
-        s.bmpIntervals[j] = {static_cast<uint16_t>(iv.first), static_cast<uint16_t>(iv.last),
-                             static_cast<uint16_t>(iv.offset)};
-      }
-      s.intervalsAreBmp16 = true;
-    } else {
-      s.fullIntervals = new (std::nothrow) EpdUnicodeInterval[s.header.intervalCount];
-      if (!s.fullIntervals) {
-        LOG_ERR("SDCF", "Failed to allocate %u intervals for style %u", s.header.intervalCount, i);
-        freeAll();
-        return false;
-      }
-      size_t intervalsBytes = s.header.intervalCount * sizeof(EpdUnicodeInterval);
-      if (file.read(reinterpret_cast<uint8_t*>(s.fullIntervals), intervalsBytes) != static_cast<int>(intervalsBytes)) {
-        LOG_ERR("SDCF", "Failed to read intervals for style %u", i);
-        freeAll();
-        return false;
-      }
-    }
 
     // Initialize stub data
     memset(&s.stubData, 0, sizeof(s.stubData));
@@ -778,17 +596,147 @@ bool SdCardFont::loadSelectedSource() {
 
     s.epdFont.data = &s.stubData;
     applyGlyphMissCallback(i);
+
+    if (i == 0) {
+      if (!loadStyleIntervalsFromFile(s, &file)) {
+        freeAll();
+        return false;
+      }
+    }
   }
 
   loaded_ = true;
 
-  LOG_DBG("SDCF", "Loaded: %s (v%u, %u styles)", filePath_, CPFONT_VERSION, styleCount_);
+  LOG_DBG("SDCF", "Loaded: %s (v%u, %u styles, regular intervals only)", path, CPFONT_VERSION, styleCount_);
   for (uint8_t i = 0; i < MAX_STYLES; i++) {
     if (!styles_[i].present) continue;
     const auto& h = styles_[i].header;
-    LOG_DBG("SDCF", "  style[%u]: %u intervals, %u glyphs, advY=%u, asc=%d, desc=%d, kernL=%u, kernR=%u, ligs=%u", i,
+    LOG_DBG("SDCF", "  style[%u]: %u intervals, %u glyphs, advY=%u, asc=%d, desc=%d, kernL=%u, kernR=%u, ligs=%u%s", i,
             h.intervalCount, h.glyphCount, h.advanceY, h.ascender, h.descender, h.kernLeftEntryCount,
-            h.kernRightEntryCount, h.ligaturePairCount);
+            h.kernRightEntryCount, h.ligaturePairCount, styleIntervalsLoaded(styles_[i]) ? "" : " (lazy)");
+  }
+  return true;
+}
+
+bool SdCardFont::loadStyleIntervalsFromFile(PerStyle& s, HalFile* alreadyOpen) {
+  if (styleIntervalsLoaded(s)) return true;
+  if (s.header.intervalCount == 0) return true;
+
+  HalFile ownedFile;
+  HalFile* file = alreadyOpen;
+  if (!file) {
+    if (!Storage.openFileForRead("SDCF", filePath_, ownedFile)) {
+      LOG_ERR("SDCF", "Failed to open .cpfont to load intervals");
+      return false;
+    }
+    file = &ownedFile;
+  }
+
+  if (!file->seekSet(s.intervalsFileOffset)) {
+    LOG_ERR("SDCF", "Failed to seek to intervals");
+    return false;
+  }
+
+  const uint32_t intervalCount = s.header.intervalCount;
+  // Batch-read intervals. A sparse CJK subset has ~4k intervals; reading them
+  // 12 bytes at a time on SPI SD stalls for tens of seconds and looks like a
+  // hang on INDEXING. Chunked reads keep peak scratch ~6 KB.
+  static constexpr uint32_t kIntervalChunk = 512;
+  std::unique_ptr<EpdUnicodeInterval[]> chunk(new (std::nothrow)
+                                                  EpdUnicodeInterval[std::min(intervalCount, kIntervalChunk)]);
+  if (!chunk) {
+    LOG_ERR("SDCF", "Failed to allocate interval scratch");
+    return false;
+  }
+
+  bool canUseBmp16 = s.header.glyphCount <= UINT16_MAX;
+  // First pass: validate + decide BMP16. Prefer allocating the final table up
+  // front when BMP16 is likely so we avoid a second full-size allocation.
+  std::unique_ptr<EpdUnicodeInterval[]> fullScratch;
+  if (!canUseBmp16) {
+    fullScratch.reset(new (std::nothrow) EpdUnicodeInterval[intervalCount]);
+    if (!fullScratch) {
+      LOG_ERR("SDCF", "Failed to allocate %u intervals", intervalCount);
+      return false;
+    }
+  } else {
+    s.bmpIntervals = new (std::nothrow) PerStyle::BmpInterval16[intervalCount];
+    if (!s.bmpIntervals) {
+      LOG_ERR("SDCF", "Failed to allocate compact intervals");
+      return false;
+    }
+  }
+
+  uint32_t expectedOffset = 0;
+  uint32_t prevLast = 0;
+  for (uint32_t base = 0; base < intervalCount;) {
+    const uint32_t n = std::min(kIntervalChunk, intervalCount - base);
+    const size_t bytes = n * sizeof(EpdUnicodeInterval);
+    if (file->read(reinterpret_cast<uint8_t*>(chunk.get()), bytes) != static_cast<int>(bytes)) {
+      LOG_ERR("SDCF", "Failed to read intervals at %u", base);
+      freeStyleIntervals(s);
+      return false;
+    }
+    for (uint32_t j = 0; j < n; ++j) {
+      const EpdUnicodeInterval& iv = chunk[j];
+      if (iv.first > iv.last) {
+        LOG_ERR("SDCF", "Invalid interval %u (first 0x%lX > last 0x%lX)", base + j,
+                static_cast<unsigned long>(iv.first), static_cast<unsigned long>(iv.last));
+        freeStyleIntervals(s);
+        return false;
+      }
+      const uint32_t span = iv.last - iv.first + 1;
+      const bool overlapsPrev = (base + j > 0 && iv.first <= prevLast);
+      const bool spanTooBig = (span > s.header.glyphCount);
+      const bool offsetMismatch = (iv.offset != expectedOffset);
+      const bool offsetOverruns = (iv.offset > s.header.glyphCount - span);
+      if (overlapsPrev || spanTooBig || offsetMismatch || offsetOverruns) {
+        LOG_ERR("SDCF", "Invalid interval layout at %u (overlap=%d span=%u offMis=%d offOver=%d)", base + j,
+                overlapsPrev, span, offsetMismatch, offsetOverruns);
+        freeStyleIntervals(s);
+        return false;
+      }
+      if (iv.first > UINT16_MAX || iv.last > UINT16_MAX || iv.offset > UINT16_MAX) {
+        canUseBmp16 = false;
+      }
+      if (s.bmpIntervals && canUseBmp16) {
+        s.bmpIntervals[base + j] = {static_cast<uint16_t>(iv.first), static_cast<uint16_t>(iv.last),
+                                    static_cast<uint16_t>(iv.offset)};
+      } else if (fullScratch) {
+        fullScratch[base + j] = iv;
+      }
+      expectedOffset += span;
+      prevLast = iv.last;
+    }
+    base += n;
+  }
+
+  // If we discovered a non-BMP codepoint mid-pass after allocating bmpIntervals,
+  // re-read into fullIntervals (rare for our CJK subsets).
+  if (s.bmpIntervals && !canUseBmp16) {
+    delete[] s.bmpIntervals;
+    s.bmpIntervals = nullptr;
+    fullScratch.reset(new (std::nothrow) EpdUnicodeInterval[intervalCount]);
+    if (!fullScratch) {
+      LOG_ERR("SDCF", "Failed to allocate %u intervals", intervalCount);
+      return false;
+    }
+    if (!file->seekSet(s.intervalsFileOffset)) {
+      LOG_ERR("SDCF", "Failed to seek back to intervals");
+      return false;
+    }
+    const size_t intervalsBytes = intervalCount * sizeof(EpdUnicodeInterval);
+    if (file->read(reinterpret_cast<uint8_t*>(fullScratch.get()), intervalsBytes) != static_cast<int>(intervalsBytes)) {
+      LOG_ERR("SDCF", "Failed to read intervals");
+      return false;
+    }
+  }
+
+  if (s.bmpIntervals) {
+    s.intervalsAreBmp16 = true;
+  } else {
+    s.fullIntervals = fullScratch.release();
+    s.intervalsAreBmp16 = false;
   }
   return true;
 }
@@ -796,6 +744,8 @@ bool SdCardFont::loadSelectedSource() {
 // --- Codepoint lookup ---
 
 int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) const {
+  if (!s.bmpIntervals && !s.fullIntervals) return -1;
+  codepoint = resolveCnCodepointForLookup(codepoint);
   int left = 0;
   int right = static_cast<int>(s.header.intervalCount) - 1;
   while (left <= right) {
@@ -816,9 +766,22 @@ int32_t SdCardFont::findGlobalGlyphIndex(const PerStyle& s, uint32_t codepoint) 
 
 // --- Prewarm ---
 
-int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly) {
+int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOnly, bool addRegularFallback) {
   if (!loaded_) return -1;
   styleMask = resolveStyleMask(styleMask);
+  if (addRegularFallback) {
+    // A styled face need not cover everything drawn through it: the EBGaramondSHS
+    // composites ship a Latin-only italic face, so italic Han falls through to
+    // regular's glyph (see docs/sd-card-fonts.md). Keep regular resident alongside
+    // any styled face so those fallback bitmaps are there.
+    if (styleMask & ~0x01u) styleMask |= 0x01u;
+  } else {
+    // The caller prewarms regular itself from the full page, so never rebuild it
+    // from a styled subset here. An absent styled face resolves to regular, which
+    // would otherwise empty regular's coverage down to just the styled runs; the
+    // mask going empty is the correct outcome, since regular already covers them.
+    styleMask &= ~0x01u;
+  }
   if (styleMask == 0) return 0;
 
   unsigned long startMs = millis();
@@ -840,6 +803,10 @@ int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOn
   while (*p && cpCount < MAX_PAGE_GLYPHS) {
     uint32_t cp = utf8NextCodepoint(&p);
     if (cp == 0) break;
+    // Mini intervals must use the same resolved key that EpdFont uses at render
+    // time. Otherwise Simplified EPUB text prewarms Simplified keys, then
+    // getGlyphNoReplacement() remaps to Traditional and misses every resident glyph.
+    cp = resolveCnCodepointForLookup(cp);
 
     bool found = false;
     for (uint32_t i = 0; i < cpCount; i++) {
@@ -922,35 +889,9 @@ int SdCardFont::prewarm(const char* utf8Text, uint8_t styleMask, bool metadataOn
 
 int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint32_t cpCount, bool metadataOnly) {
   auto& s = styles_[styleIdx];
-
-  // Idle-prewarm hit: mini data persists across PrewarmScopes (resetStyleMiniData
-  // keeps it), so when the previous scope -- typically the idle prewarm of this
-  // exact page -- already loaded every requested codepoint the font covers, this
-  // page needs zero SD reads. A mini built metadata-only cannot serve a full
-  // request (no bitmaps). Any uncovered codepoint falls through to the rebuild.
-  if (s.miniGlyphCount > 0 && !(s.miniMetadataOnly && !metadataOnly)) {
-    bool covered = true;
-    int missedInMini = 0;
-    for (uint32_t i = 0; i < cpCount && covered; i++) {
-      const uint32_t cp = codepoints[i];
-      bool inMini = false;
-      for (uint32_t iv = 0; iv < s.miniIntervalCount; iv++) {
-        if (cp < s.miniIntervals[iv].first) break;  // intervals sorted ascending
-        if (cp <= s.miniIntervals[iv].last) {
-          inMini = true;
-          break;
-        }
-      }
-      if (inMini) continue;
-      if (findGlobalGlyphIndex(s, cp) < 0) {
-        missedInMini++;  // not in font coverage: the rebuild couldn't load it either
-      } else {
-        covered = false;
-      }
-    }
-    if (covered) {
-      return missedInMini;
-    }
+  if (!ensureStyleIntervalsLoaded(styleIdx)) {
+    LOG_ERR("SDCF", "Failed to load intervals for style %u before prewarm", styleIdx);
+    return static_cast<int>(cpCount);
   }
 
   // Map codepoints to global glyph indices for this style
@@ -982,19 +923,12 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
     return missed;
   }
 
-  // Build mini intervals from sorted codepoints. Reset counts and fall back to the
-  // stub until the rebuild completes, but KEEP the existing buffers (keep-if-fits
-  // reuse) — the free-and-realloc-per-page pattern here was a primary fragmenter.
-  s.miniIntervalCount = 0;
-  s.miniGlyphCount = 0;
-  s.miniKernLeftEntryCount = 0;
-  s.miniKernRightEntryCount = 0;
-  s.miniKernLeftClassCount = 0;
-  s.miniKernRightClassCount = 0;
-  memset(&s.miniData, 0, sizeof(s.miniData));
-  s.epdFont.data = &s.stubData;
+  // Build mini intervals from sorted codepoints
+  freeStyleMiniData(s);
 
-  if (!ensureArrayCapacity(s.miniIntervals, s.miniIntervalCapacity, validCount)) {
+  uint32_t intervalCapacity = validCount;
+  s.miniIntervals = new (std::nothrow) EpdUnicodeInterval[intervalCapacity];
+  if (!s.miniIntervals) {
     LOG_ERR("SDCF", "Failed to allocate mini intervals for style %u", styleIdx);
     delete[] mappings;
     return static_cast<int>(cpCount);
@@ -1012,14 +946,15 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
     }
   }
 
-  // Mini glyph array (reused across pages when it fits)
-  if (!ensureArrayCapacity(s.miniGlyphs, s.miniGlyphCapacity, validCount)) {
+  // Allocate mini glyph array
+  s.miniGlyphCount = validCount;
+  s.miniGlyphs = new (std::nothrow) EpdGlyph[s.miniGlyphCount];
+  if (!s.miniGlyphs) {
     LOG_ERR("SDCF", "Failed to allocate mini glyphs for style %u", styleIdx);
     delete[] mappings;
     freeStyleMiniData(s);
     return static_cast<int>(cpCount);
   }
-  s.miniGlyphCount = validCount;
 
   // Build sorted read order for sequential I/O
   uint32_t* readOrder = new (std::nothrow) uint32_t[validCount];
@@ -1033,8 +968,8 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
   std::sort(readOrder, readOrder + validCount,
             [&](uint32_t a, uint32_t b) { return mappings[a].globalIndex < mappings[b].globalIndex; });
 
-  FontFile file(filePath_, &useFlash_, flashPayloadSize_);
-  if (!file) {
+  HalFile file;
+  if (!Storage.openFileForRead("SDCF", filePath_, file)) {
     LOG_ERR("SDCF", "Failed to reopen .cpfont for prewarm (style %u)", styleIdx);
     delete[] readOrder;
     delete[] mappings;
@@ -1086,14 +1021,152 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
       totalBitmapSize += s.miniGlyphs[i].dataLength;
     }
 
-    if (!ensureArrayCapacity(s.miniBitmap, s.miniBitmapCapacity, totalBitmapSize)) {
-      LOG_ERR("SDCF", "Failed to allocate mini bitmap (%u bytes) for style %u", totalBitmapSize, styleIdx);
+    s.miniBitmap = new (std::nothrow) uint8_t[totalBitmapSize > 0 ? totalBitmapSize : 1];
+    if (!s.miniBitmap && totalBitmapSize > 0) {
+      // Full-page CJK bitmaps are ~28–34KB contiguous. When MaxAlloc is smaller,
+      // keep as many glyphs as fit (smallest first → more coverage) and let the
+      // rest take onGlyphMiss overflow. Abandoning the whole style forces EVERY
+      // glyph through SD and makes page flips crawl.
+      uint32_t budget = 0;
+#if defined(ESP32) || defined(ARDUINO)
+      budget = ESP.getMaxAllocHeap();
+#endif
+      if (budget > 512) {
+        budget -= 256;  // leave slack for the allocator's bookkeeping
+      } else {
+        budget = 0;
+      }
+
+      struct GlyphCost {
+        uint32_t mapIdx;
+        uint16_t dataLength;
+      };
+      auto* costs = new (std::nothrow) GlyphCost[validCount];
+      if (!costs || budget == 0) {
+        LOG_ERR("SDCF", "Failed to allocate mini bitmap (%u bytes) for style %u", totalBitmapSize, styleIdx);
+        delete[] costs;
+        delete[] readOrder;
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
+      for (uint32_t i = 0; i < validCount; i++) {
+        costs[i] = {i, s.miniGlyphs[i].dataLength};
+      }
+      std::sort(costs, costs + validCount, [](const GlyphCost& a, const GlyphCost& b) {
+        if (a.dataLength != b.dataLength) return a.dataLength < b.dataLength;
+        return a.mapIdx < b.mapIdx;
+      });
+
+      uint32_t keepCount = 0;
+      uint32_t keepBytes = 0;
+      for (uint32_t i = 0; i < validCount; i++) {
+        const uint32_t len = costs[i].dataLength;
+        if (keepBytes + len > budget) break;
+        keepBytes += len;
+        keepCount++;
+      }
+
+      if (keepCount == 0) {
+        LOG_ERR("SDCF", "Failed to allocate mini bitmap (%u bytes) for style %u (budget %u)", totalBitmapSize, styleIdx,
+                budget);
+        delete[] costs;
+        delete[] readOrder;
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
+
+      // Compact to kept subset sorted by codepoint (required by mini interval layout).
+      auto* keptGlyphs = new (std::nothrow) EpdGlyph[keepCount];
+      auto* keptMap = new (std::nothrow) CpGlyphMapping[keepCount];
+      if (!keptGlyphs || !keptMap) {
+        LOG_ERR("SDCF", "Partial prewarm OOM for style %u (keep=%u)", styleIdx, keepCount);
+        delete[] keptGlyphs;
+        delete[] keptMap;
+        delete[] costs;
+        delete[] readOrder;
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
+      for (uint32_t i = 0; i < keepCount; i++) {
+        keptMap[i] = mappings[costs[i].mapIdx];
+      }
+      std::sort(keptMap, keptMap + keepCount,
+                [](const CpGlyphMapping& a, const CpGlyphMapping& b) { return a.codepoint < b.codepoint; });
+      for (uint32_t i = 0; i < keepCount; i++) {
+        // Match glyph metadata to the sorted codepoint list.
+        for (uint32_t j = 0; j < keepCount; j++) {
+          if (mappings[costs[j].mapIdx].codepoint == keptMap[i].codepoint) {
+            keptGlyphs[i] = s.miniGlyphs[costs[j].mapIdx];
+            break;
+          }
+        }
+      }
+
+      delete[] s.miniGlyphs;
+      s.miniGlyphs = keptGlyphs;
+      s.miniGlyphCount = keepCount;
+      delete[] s.miniIntervals;
+      s.miniIntervals = new (std::nothrow) EpdUnicodeInterval[keepCount];
+      if (!s.miniIntervals) {
+        LOG_ERR("SDCF", "Partial prewarm: mini interval OOM style %u", styleIdx);
+        delete[] keptMap;
+        delete[] costs;
+        delete[] readOrder;
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
+      s.miniIntervalCount = 0;
+      uint32_t rangeStart = 0;
+      for (uint32_t i = 1; i <= keepCount; i++) {
+        if (i == keepCount || keptMap[i].codepoint != keptMap[i - 1].codepoint + 1) {
+          s.miniIntervals[s.miniIntervalCount].first = keptMap[rangeStart].codepoint;
+          s.miniIntervals[s.miniIntervalCount].last = keptMap[i - 1].codepoint;
+          s.miniIntervals[s.miniIntervalCount].offset = rangeStart;
+          s.miniIntervalCount++;
+          rangeStart = i;
+        }
+      }
+      delete[] keptMap;
+      delete[] costs;
+
       delete[] readOrder;
-      delete[] mappings;
-      freeStyleMiniData(s);
-      return static_cast<int>(cpCount);
+      readOrder = new (std::nothrow) uint32_t[keepCount];
+      if (!readOrder) {
+        LOG_ERR("SDCF", "Partial prewarm: readOrder OOM style %u", styleIdx);
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
+      for (uint32_t i = 0; i < keepCount; i++) readOrder[i] = i;
+
+      missed += static_cast<int>(validCount - keepCount);
+      validCount = keepCount;
+      totalBitmapSize = keepBytes;
+
+      s.miniBitmap = new (std::nothrow) uint8_t[totalBitmapSize > 0 ? totalBitmapSize : 1];
+      if (!s.miniBitmap) {
+        LOG_ERR("SDCF", "Partial mini bitmap still OOM (%u bytes) for style %u", totalBitmapSize, styleIdx);
+        delete[] readOrder;
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
+      LOG_DBG("SDCF", "Partial prewarm style %u: kept %u glyphs (%u bytes, budget %u)", styleIdx, keepCount,
+              totalBitmapSize, budget);
+    } else if (!s.miniBitmap) {
+      // totalBitmapSize == 0: 1-byte placeholder so miniData.bitmap is non-null.
+      s.miniBitmap = new (std::nothrow) uint8_t[1];
+      if (!s.miniBitmap) {
+        delete[] readOrder;
+        delete[] mappings;
+        freeStyleMiniData(s);
+        return static_cast<int>(cpCount);
+      }
     }
-    s.miniBitmapUsed = totalBitmapSize;  // underuse-hysteresis signal for resetStyleMiniData
 
     // Read bitmap data sorted by file offset
     std::sort(readOrder, readOrder + validCount,
@@ -1153,8 +1226,6 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
   }
 
   // Populate miniData and swap
-  s.miniMetadataOnly = metadataOnly;
-  s.miniHysteresisPending = !metadataOnly;  // one hysteresis evaluation per rebuild
   memset(&s.miniData, 0, sizeof(s.miniData));
   s.miniData.bitmap = s.miniBitmap;
   s.miniData.glyph = s.miniGlyphs;
@@ -1169,7 +1240,6 @@ int SdCardFont::prewarmStyle(uint8_t styleIdx, const uint32_t* codepoints, uint3
   }
   s.miniData.glyphMissHandler = &SdCardFont::onGlyphMiss;
   s.miniData.glyphMissCtx = &overflowCtx_[styleIdx];
-  s.miniData.coverageHandler = &SdCardFont::onCoverageQuery;
 
   s.epdFont.data = &s.miniData;
 
@@ -1191,7 +1261,7 @@ void SdCardFont::clearCache() {
   // clearPersistentCache() to wipe it.
   for (uint8_t i = 0; i < MAX_STYLES; i++) {
     if (!styles_[i].present) continue;
-    resetStyleMiniData(styles_[i]);
+    freeStyleMiniData(styles_[i]);
     applyGlyphMissCallback(i);
   }
 }
@@ -1204,6 +1274,7 @@ void SdCardFont::clearPersistentCache() {
     advanceTable_[i] = nullptr;
     advanceTableSize_[i] = 0;
   }
+  cachedCjkAdvance_ = 0;
 }
 
 bool SdCardFont::advanceTableLookup(uint8_t styleIdx, uint32_t codepoint, uint16_t* outAdvance) const {
@@ -1239,7 +1310,10 @@ void SdCardFont::mergeIntoAdvanceTable(uint8_t styleIdx, const AdvanceEntry* sor
 
   AdvanceEntry* merged = new (std::nothrow) AdvanceEntry[mergedCap];
   if (!merged) {
-    LOG_ERR("SDCF", "mergeIntoAdvanceTable: alloc failed (%u entries) style %u", mergedCap, styleIdx);
+    LOG_ERR("SDCF", "mergeIntoAdvanceTable: alloc failed (%u entries) style %u — keeping existing %u", mergedCap,
+            styleIdx, oldSize);
+    // Keep the existing table. Deleting it forces every subsequent miss through
+    // per-glyph SD open/close and makes indexing appear hung on CJK chapters.
     return;
   }
 
@@ -1268,65 +1342,168 @@ bool SdCardFont::hasAdvanceTable() const {
 
 uint16_t SdCardFont::getAdvance(uint32_t codepoint, uint8_t style) const {
   style &= (MAX_STYLES - 1);
-  if (!advanceTable_[style]) return 0;
-  const AdvanceEntry* table = advanceTable_[style];
-  const uint32_t size = advanceTableSize_[style];
-  // Binary search sorted by codepoint
-  uint32_t lo = 0, hi = size;
-  while (lo < hi) {
-    uint32_t mid = lo + (hi - lo) / 2;
-    if (table[mid].codepoint < codepoint) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
+  if (cachedCjkAdvance_ != 0 && codepoint >= 0x4E00 && codepoint <= 0x9FFF) {
+    return cachedCjkAdvance_;
   }
-  if (lo < size && table[lo].codepoint == codepoint) {
-    return table[lo].advanceX;
-  }
+  uint16_t cached = 0;
+  if (advanceTableLookup(style, codepoint, &cached)) return cached;
+  // Hybrid fonts: CJK lives on regular only; styled tables intentionally omit it.
+  if (style != 0 && advanceTableLookup(0, codepoint, &cached)) return cached;
   return 0;
 }
 
-uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
+uint16_t SdCardFont::readAdvanceFromOpenFile(HalFile& file, uint8_t styleIdx, int32_t glyphIndex) const {
+  const auto& s = styles_[styleIdx];
+  EpdGlyph glyph;
+  const uint32_t fileOff = s.glyphsFileOffset + static_cast<uint32_t>(glyphIndex) * sizeof(EpdGlyph);
+  if (file.seekSet(fileOff) && file.read(reinterpret_cast<uint8_t*>(&glyph), sizeof(EpdGlyph)) == sizeof(EpdGlyph)) {
+    return glyph.advanceX;
+  }
+  LOG_ERR("SDCF", "getAdvanceOrLoad: short glyph read for glyph %d style %u", glyphIndex, styleIdx);
+  return 0;
+}
+
+uint16_t SdCardFont::getAdvanceOrLoadWithFile(uint32_t codepoint, uint8_t style, HalFile* openFile) const {
   uint8_t styleIdx = style & (MAX_STYLES - 1);
   if (!styles_[styleIdx].present) styleIdx = resolveStyle(styleIdx);
+
+  // Source Han–family CJK faces share one advance across U+4E00–U+9FFF. After the
+  // first ideograph load, skip SD entirely for Han — without this, chapter indexing
+  // opens the .cpfont once per unique character past the advance-table cap.
+  if (cachedCjkAdvance_ != 0 && codepoint >= 0x4E00 && codepoint <= 0x9FFF) {
+    return cachedCjkAdvance_;
+  }
 
   // Fast path: resident advance cache (no I/O).
   uint16_t cached = 0;
   if (advanceTableLookup(styleIdx, codepoint, &cached)) return cached;
+  if (styleIdx != 0 && advanceTableLookup(0, codepoint, &cached)) return cached;
 
   // Miss: read the glyph's advanceX straight from the .cpfont. The advance table
   // is built only from on-page text (and capped at ADVANCE_CACHE_LIMIT), so off-page
   // probes (e.g. the Han-column reference ideograph) legitimately miss here.
+  auto* self = const_cast<SdCardFont*>(this);
+  if (!self->ensureStyleIntervalsLoaded(styleIdx)) return 0;
   const auto& s = styles_[styleIdx];
   if (!s.present) return 0;
   const int32_t gIdx = findGlobalGlyphIndex(s, codepoint);
-  if (gIdx < 0) return 0;  // font genuinely lacks this glyph
+  if (gIdx < 0) {
+    // CJK may live only on the regular style; retry before giving up.
+    if (styleIdx != 0 && styles_[0].present) {
+      return getAdvanceOrLoadWithFile(codepoint, 0, openFile);
+    }
+    return 0;  // font genuinely lacks this glyph
+  }
 
-  FontFile file(filePath_, &useFlash_, flashPayloadSize_);
-  if (!file) {
-    LOG_ERR("SDCF", "getAdvanceOrLoad: failed to open .cpfont for U+%04X", codepoint);
-    return 0;
-  }
-  EpdGlyph glyph;
-  const uint32_t fileOff = s.glyphsFileOffset + static_cast<uint32_t>(gIdx) * sizeof(EpdGlyph);
   uint16_t advance = 0;
-  if (file.seekSet(fileOff) && file.read(reinterpret_cast<uint8_t*>(&glyph), sizeof(EpdGlyph)) == sizeof(EpdGlyph)) {
-    advance = glyph.advanceX;
+  if (openFile) {
+    advance = readAdvanceFromOpenFile(*openFile, styleIdx, gIdx);
   } else {
-    LOG_ERR("SDCF", "getAdvanceOrLoad: short glyph read for U+%04X (glyph %d)", codepoint, gIdx);
+    HalFile file;
+    if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+      LOG_ERR("SDCF", "getAdvanceOrLoad: failed to open .cpfont for U+%04X", codepoint);
+      return 0;
+    }
+    advance = readAdvanceFromOpenFile(file, styleIdx, gIdx);
   }
-  file.close();
+
+  if (advance != 0 && codepoint >= 0x4E00 && codepoint <= 0x9FFF) {
+    cachedCjkAdvance_ = advance;
+  }
   return advance;
+}
+
+uint16_t SdCardFont::getAdvanceOrLoad(uint32_t codepoint, uint8_t style) const {
+  return getAdvanceOrLoadWithFile(codepoint, style, nullptr);
+}
+
+int SdCardFont::measureUtf8AdvancePx(const char* utf8, uint8_t style, bool halfSupSub,
+                                     const EpdFontFamily* glyphFallback) const {
+  if (!utf8 || !*utf8) return 0;
+
+  // Open the .cpfont at most once for this string — but ONLY when a codepoint
+  // is actually present in the font. Evaluating fileForMiss() as a call
+  // argument used to open SD on every cache miss, including absent CJK in a
+  // Latin-only .cpfont, which stalls chapter indexing (open/close per word).
+  HalFile file;
+  HalFile* sticky = nullptr;
+  auto fileForMiss = [&]() -> HalFile* {
+    if (sticky) return sticky;
+    if (!Storage.openFileForRead("SDCF", filePath_, file)) {
+      LOG_ERR("SDCF", "measureUtf8AdvancePx: failed to open .cpfont");
+      return nullptr;
+    }
+    sticky = &file;
+    return sticky;
+  };
+
+  uint8_t styleIdx = style & (MAX_STYLES - 1);
+  if (!styles_[styleIdx].present) styleIdx = resolveStyle(styleIdx);
+  auto* self = const_cast<SdCardFont*>(this);
+  if (!self->ensureStyleIntervalsLoaded(styleIdx)) return 0;
+  if (styleIdx != 0 && styles_[0].present) {
+    (void)self->ensureStyleIntervalsLoaded(0);
+  }
+
+  int widthPx = 0;
+  int32_t prevAdvanceFP = 0;
+  bool havePrev = false;
+  const unsigned char* p = reinterpret_cast<const unsigned char*>(utf8);
+  const auto fallbackStyle = static_cast<EpdFontFamily::Style>(style);
+  while (uint32_t cp = utf8NextCodepoint(&p)) {
+    if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+
+    // Prefer RAM paths (advance table + uniform Han).
+    uint16_t adv = getAdvance(cp, style);
+    if (adv == 0) {
+      // Presence check is RAM-only (interval binary search). Skip SD entirely
+      // for codepoints the font does not contain — use builtin fallback.
+      int32_t gIdx = styles_[styleIdx].present ? findGlobalGlyphIndex(styles_[styleIdx], cp) : -1;
+      if (gIdx < 0 && styleIdx != 0 && styles_[0].present) {
+        gIdx = findGlobalGlyphIndex(styles_[0], cp);
+      }
+      if (gIdx >= 0) {
+        adv = getAdvanceOrLoadWithFile(cp, style, fileForMiss());
+      } else if (glyphFallback) {
+        const EpdGlyph* fbGlyph = glyphFallback->getGlyphNoReplacement(cp, fallbackStyle);
+        if (fbGlyph) adv = fbGlyph->advanceX;
+      }
+    }
+    prevAdvanceFP = static_cast<int32_t>(adv);
+    if (halfSupSub) prevAdvanceFP = (prevAdvanceFP + 1) / 2;
+    havePrev = true;
+  }
+  if (havePrev) widthPx += fp4::toPixel(prevAdvanceFP);
+  return widthPx;
 }
 
 // Given a sorted array of unique codepoints, resolve glyph indices per style,
 // batch-read advanceX from SD, and merge into the persistent advance table.
 // Caller owns the codepoints buffer.
 int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCount, uint8_t styleMask) {
+  // Seed uniform Han advance from 我 before scanning the chapter's unique set.
+  // Without this, the first buildAdvanceTable pass sequentially reads every
+  // ideograph's metrics from SD just to fill a table we then skip for Han.
+  if (cachedCjkAdvance_ == 0 && styles_[0].present) {
+    static constexpr uint32_t kCjkReferenceCp = 0x6211;  // 我
+    const int32_t refIdx = findGlobalGlyphIndex(styles_[0], kCjkReferenceCp);
+    if (refIdx >= 0) {
+      HalFile file;
+      if (Storage.openFileForRead("SDCF", filePath_, file)) {
+        const uint16_t adv = readAdvanceFromOpenFile(file, 0, refIdx);
+        if (adv != 0) cachedCjkAdvance_ = adv;
+      }
+    }
+  }
+
   int totalMissed = 0;
   for (uint8_t si = 0; si < MAX_STYLES; si++) {
     if (!(styleMask & (1 << si)) || !styles_[si].present) continue;
+    if (!ensureStyleIntervalsLoaded(si)) {
+      LOG_ERR("SDCF", "Failed to load intervals for style %u before advance fetch", si);
+      totalMissed += static_cast<int>(cpCount);
+      continue;
+    }
     const auto& s = styles_[si];
 
     // Stop fetching once the cache is full — further inserts would be dropped
@@ -1336,7 +1513,8 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
 
     // For each codepoint in `codepoints`, skip those already cached, then
     // resolve to a glyph index. Build a parallel array sorted by glyph index
-    // for sequential SD reads.
+    // for sequential SD reads. Styled faces only cache glyphs they own;
+    // regular-only CJK is left for the regular table (see getAdvance fallback).
     struct CpIdx {
       uint32_t codepoint;
       int32_t glyphIndex;
@@ -1350,17 +1528,26 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
 
     uint32_t needCount = 0;
     uint32_t missedThisStyle = 0;
-    const int32_t replacementIdx = findGlobalGlyphIndex(s, REPLACEMENT_GLYPH);
     for (uint32_t i = 0; i < cpCount; i++) {
       const uint32_t cp = codepoints[i];
       if (advanceTableLookup(si, cp, nullptr)) continue;  // already cached
+      // Once we know the uniform Han advance, skip filling the table with thousands
+      // of ideographs — frees slots for punctuation/Latin and skips sequential SD
+      // reads for every unique CJK character in the chapter.
+      if (si == 0 && cachedCjkAdvance_ != 0 && cp >= 0x4E00 && cp <= 0x9FFF) continue;
       int32_t idx = findGlobalGlyphIndex(s, cp);
       if (idx < 0) {
-        if (replacementIdx < 0) {
-          missedThisStyle++;
+        // Present on regular only — do not duplicate into this style's table.
+        if (si != 0 && styles_[0].present && findGlobalGlyphIndex(styles_[0], cp) >= 0) {
           continue;
         }
-        idx = replacementIdx;
+        // Genuinely absent (e.g. Latin-only SD font + CJK book). Do NOT map
+        // every miss onto U+FFFD: that forces a seek+read per unique codepoint
+        // (same glyph index defeats the sequential-read optimization) and
+        // stalls indexing for tens of seconds. Layout/render fall back to the
+        // builtin system font via EpdFontFamily::glyphFallback_ instead.
+        missedThisStyle++;
+        continue;
       }
       mappings[needCount].codepoint = cp;
       mappings[needCount].glyphIndex = idx;
@@ -1375,8 +1562,8 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
               [](const CpIdx& a, const CpIdx& b) { return a.glyphIndex < b.glyphIndex; });
 
     // Open file once and read advanceX for each needed glyph.
-    FontFile file(filePath_, &useFlash_, flashPayloadSize_);
-    if (!file) {
+    HalFile file;
+    if (!Storage.openFileForRead("SDCF", filePath_, file)) {
       LOG_ERR("SDCF", "buildAdvanceTable: failed to open .cpfont for style %u", si);
       continue;
     }
@@ -1407,6 +1594,10 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
       lastReadIndex = gIdx;
       staged[fetched].codepoint = mappings[i].codepoint;
       staged[fetched].advanceX = tempGlyph.advanceX;
+      if (cachedCjkAdvance_ == 0 && mappings[i].codepoint >= 0x4E00 && mappings[i].codepoint <= 0x9FFF &&
+          tempGlyph.advanceX != 0) {
+        cachedCjkAdvance_ = tempGlyph.advanceX;
+      }
       fetched++;
     }
     file.close();
@@ -1426,34 +1617,60 @@ int SdCardFont::fetchAdvancesForCodepoints(uint32_t* codepoints, uint32_t cpCoun
 }
 
 template <typename Iter>
-int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, bool includeHyphen, uint8_t styleMask,
-                                       const char* extraText) {
+int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, bool includeHyphen, uint8_t styleMask) {
   if (!loaded_) return -1;
   styleMask = resolveStyleMask(styleMask);
   if (styleMask == 0) return 0;
+  // CJK-only-in-regular SD fonts: always pull regular advances when any styled
+  // face is requested so bold/italic paragraphs still measure Han correctly.
+  if (styleMask & ~0x01u) styleMask |= 0x01u;
 
   unsigned long startMs = millis();
 
-  // The persistent table can retain at most ADVANCE_CACHE_LIMIT entries, so a
-  // larger collection buffer only increases the cold-layout heap peak. Misses
-  // beyond the cap remain correct through getAdvanceOrLoad().
-  static constexpr uint32_t MAX_UNIQUE_CODEPOINTS = ADVANCE_CACHE_LIMIT;
-  // ~3 KB at the current limit: too large for the task stack, short-lived, and
-  // released automatically on every return path.
-  auto codepoints = makeUniqueNoThrow<uint32_t[]>(MAX_UNIQUE_CODEPOINTS + 3);
+  // +3 reserved slots for space, hyphen, and the CJK column-reference ideograph,
+  // injected after the main scan. Match ADVANCE_CACHE_LIMIT so one build pass can
+  // fill the table without immediately falling back to per-glyph SD opens.
+  static constexpr uint32_t MAX_UNIQUE_CODEPOINTS = 4096;
+  static constexpr uint32_t RESERVED_SLOTS = 3;
+  // Grown on demand instead of allocated straight at the cap. 4096 entries is a
+  // 16KB contiguous request, and MaxAlloc drops to ~18KB while reading, so the
+  // flat allocation failed on device and took the whole advance table with it —
+  // every later measurement then pays an SD open. Most paragraphs need a few
+  // hundred codepoints.
+  uint32_t capacity = 256;
+  std::unique_ptr<uint32_t[]> codepoints(new (std::nothrow) uint32_t[capacity + RESERVED_SLOTS]);
   if (!codepoints) {
     LOG_ERR("SDCF", "buildAdvanceTable: failed to allocate codepoint buffer (%u bytes)",
-            (MAX_UNIQUE_CODEPOINTS + 3) * sizeof(uint32_t));
+            (capacity + RESERVED_SLOTS) * 4);
+    // Do not clearPersistentCache() here — wiping a warm table forces every later
+    // measure through SD open/close and makes indexing look hung.
     return -1;
   }
   uint32_t cpCount = 0;
   bool hitCap = false;
 
   for (auto it = begin; it != end && !hitCap; ++it) {
-    hitCap = collectUniqueCodepoints(asCStr(*it), codepoints.get(), cpCount, MAX_UNIQUE_CODEPOINTS);
-  }
-  if (extraText && !hitCap) {
-    hitCap = collectUniqueCodepoints(extraText, codepoints.get(), cpCount, MAX_UNIQUE_CODEPOINTS);
+    const char* text = asCStr(*it);
+    // Re-scanning the same item after a grow is idempotent: collectUniqueCodepoints
+    // dedups against what has already been collected.
+    while (collectUniqueCodepoints(text, codepoints.get(), cpCount, capacity)) {
+      if (capacity >= MAX_UNIQUE_CODEPOINTS) {
+        hitCap = true;
+        break;
+      }
+      const uint32_t grown = std::min(capacity * 2, MAX_UNIQUE_CODEPOINTS);
+      std::unique_ptr<uint32_t[]> bigger(new (std::nothrow) uint32_t[grown + RESERVED_SLOTS]);
+      if (!bigger) {
+        // Keep what we have: a partial table still beats abandoning the pass.
+        LOG_ERR("SDCF", "buildAdvanceTable: grow to %u bytes failed, measuring with %u codepoints",
+                (grown + RESERVED_SLOTS) * 4, cpCount);
+        hitCap = true;
+        break;
+      }
+      memcpy(bigger.get(), codepoints.get(), cpCount * sizeof(uint32_t));
+      codepoints = std::move(bigger);
+      capacity = grown;
+    }
   }
 
   if (includeSpace && std::none_of(codepoints.get(), codepoints.get() + cpCount, [](uint32_t c) { return c == ' '; }))
@@ -1476,7 +1693,8 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
 #endif
 
   if (hitCap) {
-    LOG_DBG("SDCF", "Advance cache collection cap (%u) hit; remaining glyphs load on demand", MAX_UNIQUE_CODEPOINTS);
+    LOG_ERR("SDCF", "buildAdvanceTable: stopped at %u unique codepoints (cap %u), layout may be approximate", cpCount,
+            MAX_UNIQUE_CODEPOINTS);
   }
   std::sort(codepoints.get(), codepoints.get() + cpCount);
   int totalMissed = fetchAdvancesForCodepoints(codepoints.get(), cpCount, styleMask);
@@ -1484,21 +1702,19 @@ int SdCardFont::buildAdvanceTableRange(Iter begin, Iter end, bool includeSpace, 
   return totalMissed;
 }
 
-int SdCardFont::buildAdvanceTable(const char* utf8Text, uint8_t styleMask, const char* extraText) {
-  return buildAdvanceTableRange(&utf8Text, &utf8Text + 1, false, false, styleMask, extraText);
+int SdCardFont::buildAdvanceTable(const char* utf8Text, uint8_t styleMask) {
+  return buildAdvanceTableRange(&utf8Text, &utf8Text + 1, false, false, styleMask);
 }
 
-int SdCardFont::buildAdvanceTable(const std::deque<std::string>& words, bool includeHyphen, uint8_t styleMask,
-                                  const char* extraText) {
-  return buildAdvanceTableRange(words.begin(), words.end(), words.size() > 1, includeHyphen, styleMask, extraText);
+int SdCardFont::buildAdvanceTable(const WordListView& words, bool includeHyphen, uint8_t styleMask) {
+  return buildAdvanceTableRange(words.begin(), words.end(), words.size() > 1, includeHyphen, styleMask);
 }
 
 // --- Stats ---
 
 void SdCardFont::logStats(const char* label) {
-  LOG_DBG("SDCF", "[%s] source=%s total=%ums read_ms=%ums seeks=%u glyphs=%u bitmap=%u bytes", label,
-          useFlash_ ? "flash" : "sd", stats_.prewarmTotalMs, stats_.sdReadTimeMs, stats_.seekCount, stats_.uniqueGlyphs,
-          stats_.bitmapBytes);
+  LOG_DBG("SDCF", "[%s] total=%ums sd_read=%ums seeks=%u glyphs=%u bitmap=%u bytes", label, stats_.prewarmTotalMs,
+          stats_.sdReadTimeMs, stats_.seekCount, stats_.uniqueGlyphs, stats_.bitmapBytes);
 }
 
 void SdCardFont::resetStats() { stats_ = Stats{}; }
@@ -1550,6 +1766,7 @@ const EpdGlyph* SdCardFont::onGlyphMiss(void* ctx, uint32_t codepoint) {
   uint8_t styleIdx = oc->styleIdx;
 
   if (!self->loaded_ || styleIdx >= MAX_STYLES || !self->styles_[styleIdx].present) return nullptr;
+  if (!self->ensureStyleIntervalsLoaded(styleIdx)) return nullptr;
   const auto& s = self->styles_[styleIdx];
   if (!s.fullIntervals && !s.bmpIntervals) return nullptr;
 
@@ -1571,8 +1788,8 @@ const EpdGlyph* SdCardFont::onGlyphMiss(void* ctx, uint32_t codepoint) {
   bool wasAtCapacity = (self->overflowCount_ == OVERFLOW_CAPACITY);
 
   // Read glyph metadata into temporary
-  FontFile file(self->filePath_, &self->useFlash_, self->flashPayloadSize_);
-  if (!file) {
+  HalFile file;
+  if (!Storage.openFileForRead("SDCF", self->filePath_, file)) {
     LOG_ERR("SDCF", "Overflow: failed to open .cpfont");
     return nullptr;
   }

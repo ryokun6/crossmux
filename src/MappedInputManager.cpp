@@ -17,11 +17,13 @@ bool MappedInputManager::isNavDirectionSwapped() const {
          (orientation == GfxRenderer::PortraitInverted || orientation == GfxRenderer::LandscapeCounterClockwise);
 }
 
-bool MappedInputManager::isPageTurnDirectionReversed() const { return pageProgressionRtl || verticalWritingRtl; }
+bool MappedInputManager::isPageTurnDirectionReversed() const {
+  // Spine RTL and vertical-rl both reverse page-turn mapping.
+  return pageProgressionRtl || verticalWritingRtl;
+}
 
 bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
   const auto sideLayout = SETTINGS.sideButtonLayout;
-  const bool reversePageTurns = isPageTurnDirectionReversed();
 
   switch (button) {
     case Button::Back:
@@ -46,23 +48,23 @@ bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint
       // Power button bypasses remapping.
       return (gpio.*fn)(HalGPIO::BTN_POWER);
     case Button::PageBack:
-      // Reverse physical page controls for RTL publications and vertical-rl columns.
+      // Reader page navigation uses side buttons and can be swapped via settings.
       switch (sideLayout) {
         case CrossPointSettings::PREV_NEXT:
-          return (gpio.*fn)(reversePageTurns ? HalGPIO::BTN_DOWN : HalGPIO::BTN_UP);
+          return (gpio.*fn)(HalGPIO::BTN_UP);
         case CrossPointSettings::NEXT_PREV:
-          return (gpio.*fn)(reversePageTurns ? HalGPIO::BTN_UP : HalGPIO::BTN_DOWN);
+          return (gpio.*fn)(HalGPIO::BTN_DOWN);
         case CrossPointSettings::SIDE_BUTTONS_DISABLED:
         default:
           return false;
       }
     case Button::PageForward:
-      // Keep forward/back symmetric with PageBack above.
+      // Reader page navigation uses side buttons and can be swapped via settings.
       switch (sideLayout) {
         case CrossPointSettings::PREV_NEXT:
-          return (gpio.*fn)(reversePageTurns ? HalGPIO::BTN_UP : HalGPIO::BTN_DOWN);
+          return (gpio.*fn)(HalGPIO::BTN_DOWN);
         case CrossPointSettings::NEXT_PREV:
-          return (gpio.*fn)(reversePageTurns ? HalGPIO::BTN_DOWN : HalGPIO::BTN_UP);
+          return (gpio.*fn)(HalGPIO::BTN_UP);
         case CrossPointSettings::SIDE_BUTTONS_DISABLED:
         default:
           return false;

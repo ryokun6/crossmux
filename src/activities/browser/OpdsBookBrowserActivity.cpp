@@ -12,7 +12,6 @@
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
-#include "activities/settings/OpdsSettingsActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
 #include "components/UITheme.h"
 #include "components/icons/search24.h"
@@ -46,15 +45,6 @@ bool contains(const Rect& rect, const int x, const int y) {
 void OpdsBookBrowserActivity::onEnter() {
   Activity::onEnter();
 
-  // Every state on this screen ends in an HTTP(S) request: the default catalog is
-  // https://os.ryo.lu/api/opds (OpdsServerStore.cpp:16), and downloadBook streams
-  // a multi-MB EPUB. A resident SD reader font pins ~75KB of the ~224KB heap,
-  // which leaves too little contiguous DRAM for the mbedTLS record buffer — the
-  // same reason OTA, font download and the web server drop it
-  // (OtaUpdateActivity.cpp:36, FontDownloadActivity.cpp:84). The catalog list and
-  // download progress render with UI_10/UI_12 only, never a reader font.
-  fontUnload_.emplace(renderer);
-
   state = BrowserState::CHECK_WIFI;
   entries.clear();
   navigationHistory.clear();
@@ -64,7 +54,6 @@ void OpdsBookBrowserActivity::onEnter() {
   consumeConfirm = false;
   consumeBack = false;
   errorMessage.clear();
-  errorHint.clear();
   statusMessage = tr(STR_CHECKING_WIFI);
   requestUpdate();
 
@@ -81,12 +70,6 @@ void OpdsBookBrowserActivity::onExit() {
     delay(30);
     silentRestart();
   }
-
-  // Only reached when Wi‑Fi never came up, or when silentRestart() declined to
-  // reboot (deep sleep already committed) — the reboot would otherwise reload the
-  // font for us. Explicit here so the onEnter unload has a visible counterpart;
-  // the member destructor would be a no-op after this.
-  fontUnload_.reset();
 }
 
 void OpdsBookBrowserActivity::loop() {
@@ -106,13 +89,7 @@ void OpdsBookBrowserActivity::loop() {
   if (state == BrowserState::ERROR) {
     int tx = 0;
     int ty = 0;
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) ||
-        mappedInput.wasScreenTapped(tx, ty)) {
-      // Auth / not-logged-in: open server credentials settings instead of retrying.
-      if (!errorHint.empty()) {
-        openLoginSettings();
-        return;
-      }
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(tx, ty)) {
       if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
         state = BrowserState::LOADING;
         statusMessage = tr(STR_LOADING);
@@ -129,7 +106,7 @@ void OpdsBookBrowserActivity::loop() {
 
   if (state == BrowserState::CHECK_WIFI || state == BrowserState::LOADING) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
-      state == BrowserState::CHECK_WIFI ? activityManager.goToApps() : navigateBack();
+      state == BrowserState::CHECK_WIFI ? onGoHome() : navigateBack();
     }
     return;
   }
@@ -235,21 +212,12 @@ void OpdsBookBrowserActivity::render(RenderLock&&) {
   }
 
   if (state == BrowserState::ERROR) {
-    // Auth failures skip the "Error:" label — message + account blurb are enough.
-    if (!errorHint.empty()) {
-      const int mid = pageHeight / 2;
-      renderer.drawCenteredText(UI_10_FONT_ID, mid - 40, errorMessage.c_str(), true, EpdFontFamily::BOLD);
-      renderer.drawCenteredText(UI_10_FONT_ID, mid, tr(STR_LOGIN_SETTINGS_HINT));
-      renderer.drawCenteredText(UI_10_FONT_ID, mid + 30, tr(STR_RYOS_ACCOUNT_HINT));
-    } else {
-      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, tr(STR_ERROR_MSG));
-      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 10, errorMessage.c_str());
-      if (mappedInput.hasTouch()) {
-        renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 40, tr(STR_TAP_TO_RETRY));
-      }
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 - 20, tr(STR_ERROR_MSG));
+    renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 10, errorMessage.c_str());
+    if (mappedInput.hasTouch()) {
+      renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 40, tr(STR_TAP_TO_RETRY));
     }
-    const char* confirmLabel = errorHint.empty() ? tr(STR_RETRY) : tr(STR_SETTINGS_TITLE);
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), confirmLabel, "", "");
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_RETRY), "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     renderer.displayBuffer();
     return;
@@ -295,7 +263,6 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   if (server.url.empty()) {
     state = BrowserState::ERROR;
     errorMessage = tr(STR_NO_SERVER_URL);
-    errorHint.clear();
     requestUpdate();
     return;
   }
@@ -305,16 +272,9 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   OpdsParser parser;
   {
     OpdsParserStream stream{parser};
-    const auto fetchResult = HttpDownloader::fetchUrl(url, stream, server.username, server.password);
-    if (fetchResult != HttpDownloader::OK) {
+    if (!HttpDownloader::fetchUrl(url, stream, server.username, server.password)) {
       state = BrowserState::ERROR;
-      if (fetchResult == HttpDownloader::AUTH_FAILED) {
-        errorMessage = tr(STR_NO_CREDENTIALS_MSG);
-        errorHint = tr(STR_LOGIN_SETTINGS_HINT);
-      } else {
-        errorMessage = tr(STR_FETCH_FEED_FAILED);
-        errorHint.clear();
-      }
+      errorMessage = tr(STR_FETCH_FEED_FAILED);
       requestUpdate();
       return;
     }
@@ -323,7 +283,6 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
   if (!parser) {
     state = BrowserState::ERROR;
     errorMessage = tr(STR_PARSE_FEED_FAILED);
-    errorHint.clear();
     requestUpdate();
     return;
   }
@@ -347,10 +306,7 @@ void OpdsBookBrowserActivity::fetchFeed(const std::string& path) {
 
   selectorIndex = 0;
   state = entries.empty() ? BrowserState::ERROR : BrowserState::BROWSING;
-  if (entries.empty()) {
-    errorMessage = tr(STR_NO_ENTRIES);
-    errorHint.clear();
-  }
+  if (entries.empty()) errorMessage = tr(STR_NO_ENTRIES);
   requestUpdate();
 }
 
@@ -372,7 +328,7 @@ void OpdsBookBrowserActivity::navigateToEntry(const OpdsEntry& entry) {
 
 void OpdsBookBrowserActivity::navigateBack() {
   if (navigationHistory.empty()) {
-    activityManager.goToApps();
+    onGoHome();
   } else {
     currentPath = navigationHistory.back();
     navigationHistory.pop_back();
@@ -441,13 +397,7 @@ void OpdsBookBrowserActivity::downloadBook(const OpdsEntry& book) {
   } else {
     LOG_ERR("OPDS", "Download failed: %d", static_cast<int>(result));
     state = BrowserState::ERROR;
-    if (result == HttpDownloader::AUTH_FAILED) {
-      errorMessage = tr(STR_NO_CREDENTIALS_MSG);
-      errorHint = tr(STR_LOGIN_SETTINGS_HINT);
-    } else {
-      errorMessage = tr(STR_DOWNLOAD_FAILED);
-      errorHint.clear();
-    }
+    errorMessage = tr(STR_DOWNLOAD_FAILED);
   }
   requestUpdate();
 }
@@ -537,35 +487,4 @@ void OpdsBookBrowserActivity::onWifiSelectionComplete(const bool connected) {
     errorMessage = tr(STR_WIFI_CONN_FAILED);
     requestUpdate();
   }
-}
-
-int OpdsBookBrowserActivity::findServerIndex() const {
-  const auto& servers = OPDS_STORE.getServers();
-  for (size_t i = 0; i < servers.size(); ++i) {
-    if (servers[i].url == server.url && servers[i].name == server.name) {
-      return static_cast<int>(i);
-    }
-  }
-  // Fall back to the sole / first server so Settings still opens when the
-  // in-memory copy drifted (e.g. rename elsewhere).
-  return servers.empty() ? -1 : 0;
-}
-
-void OpdsBookBrowserActivity::openLoginSettings() {
-  const int index = findServerIndex();
-  startActivityForResult(std::make_unique<OpdsSettingsActivity>(renderer, mappedInput, index),
-                         [this](const ActivityResult&) {
-                           // Pick up any username/password saved in Settings, then retry.
-                           if (const auto* updated = OPDS_STORE.getServer(static_cast<size_t>(findServerIndex()))) {
-                             server = *updated;
-                           }
-                           if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
-                             state = BrowserState::LOADING;
-                             statusMessage = tr(STR_LOADING);
-                             requestUpdate(true);
-                             fetchFeed(currentPath);
-                           } else {
-                             launchWifiSelection();
-                           }
-                         });
 }

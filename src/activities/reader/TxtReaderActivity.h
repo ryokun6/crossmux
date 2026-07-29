@@ -15,8 +15,6 @@ class TxtReaderActivity final : public Activity {
   // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
   // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
   int pagesUntilFullRefresh = 0;
-  unsigned long openStartMs;
-  bool firstPageLogged = false;
 
   // Streaming text reader - stores file offsets for each page
   std::vector<size_t> pageOffsets;  // File offset for start of each page
@@ -46,24 +44,12 @@ class TxtReaderActivity final : public Activity {
   void loadProgress();
 
  public:
-  explicit TxtReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Txt> txt,
-                             int initialRefreshCountdown, unsigned long openStartMs)
-      : Activity("TxtReader", renderer, mappedInput),
-        txt(std::move(txt)),
-        pagesUntilFullRefresh(initialRefreshCountdown),
-        openStartMs(openStartMs) {}
+  explicit TxtReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Txt> txt)
+      : Activity("TxtReader", renderer, mappedInput), txt(std::move(txt)) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
   bool isReaderActivity() const override { return true; }
-  bool handleForcedRefresh() override {
-    {
-      RenderLock lock(*this);
-      pagesUntilFullRefresh = 1;
-    }
-    requestUpdate();
-    return true;
-  }
   ScreenshotInfo getScreenshotInfo() const override;
 };

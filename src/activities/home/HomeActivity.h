@@ -82,5 +82,4 @@ class HomeActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
-  bool isHomeActivity() const override { return true; }
 };

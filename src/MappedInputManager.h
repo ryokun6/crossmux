@@ -60,8 +60,7 @@ class MappedInputManager {
   // LANDSCAPE_CCW). Keyed on the live renderer orientation rather than the persisted reader setting,
   // so portrait UI (home, settings) never swaps while the reader and its menus do.
   [[nodiscard]] bool isNavDirectionSwapped() const;
-  // EPUB reader sets this from the OPF spine. Vertical-rl also reverses controls
-  // independently, so callers use the combined query below.
+
   void setPageProgressionRtl(const bool rtl) { pageProgressionRtl = rtl; }
   void setVerticalWritingRtl(const bool verticalRtl) { verticalWritingRtl = verticalRtl; }
   [[nodiscard]] bool isPageTurnDirectionReversed() const;

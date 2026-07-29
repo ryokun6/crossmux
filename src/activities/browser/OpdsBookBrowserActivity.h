@@ -1,13 +1,11 @@
 #pragma once
 #include <OpdsParser.h>
 
-#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "OpdsServerStore.h"
-#include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
@@ -38,17 +36,11 @@ class OpdsBookBrowserActivity final : public Activity {
   bool consumeBack = false;  // Added missing member
   int selectorIndex = 0;
   std::string errorMessage;
-  std::string errorHint;  // Non-empty for auth failures (shows account blurb + Settings)
   std::string statusMessage;
   size_t downloadProgress = 0;
   size_t downloadTotal = 0;
 
   OpdsServer server;  // Copied at construction — safe even if the store changes during browsing
-
-  // Engaged in onEnter and released when the activity is destroyed. onExit's
-  // silentRestart() usually reboots first (Wi‑Fi always comes up on this screen),
-  // so the reload only runs when the user backed out before that.
-  std::optional<ScopedSdFontUnload> fontUnload_;
 
   void checkAndConnectWifi();
   void launchWifiSelection();
@@ -60,7 +52,5 @@ class OpdsBookBrowserActivity final : public Activity {
   void downloadBook(const OpdsEntry& book);
   void launchSearch();
   void performSearch(const std::string& query);
-  void openLoginSettings();
-  int findServerIndex() const;
   bool preventAutoSleep() override { return true; }
 };

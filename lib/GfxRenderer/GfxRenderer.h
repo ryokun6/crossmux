@@ -2,6 +2,7 @@
 
 #include <EpdFontFamily.h>
 #include <HalDisplay.h>
+#include <WordListView.h>
 
 namespace BidiUtils {
 // Paragraph base direction for the Unicode BiDi algorithm (UAX#9).
@@ -15,7 +16,6 @@ class FontCacheManager;
 class SdCardFont;
 
 #include <cstring>
-#include <deque>
 #include <map>
 #include <string>
 #include <vector>
@@ -28,7 +28,9 @@ enum Color : uint8_t { Clear = 0x00, White = 0x01, LightGray = 0x05, DarkGray = 
 
 class GfxRenderer {
  public:
-  enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB };
+  // GRAYSCALE_DUAL: one text/image walk writes LSB+MSB strip buffers together
+  // (see beginDualStripTarget). Used by EPUB AA to cut strip re-renders in half.
+  enum RenderMode { BW, GRAYSCALE_LSB, GRAYSCALE_MSB, GRAYSCALE_DUAL };
 
   // Logical screen orientation from the perspective of callers
   enum Orientation {
@@ -62,7 +64,6 @@ class GfxRenderer {
   // allocation inside the SdCardFont objects. Same pragmatic compromise as
   // fontCacheManager_ below.
   mutable std::map<int, SdCardFont*> sdCardFonts_;
-  mutable std::map<int, uint16_t> sdCardFontScales_;  // fontId -> 8.8 fixed point scale (256=1.0x)
 
   // Mutable because drawText() is const but needs to delegate scan-mode
   // recording to the (non-const) FontCacheManager. Same pragmatic compromise
@@ -76,7 +77,9 @@ class GfxRenderer {
   // planes render band-by-band straight to the controller without destroying
   // the BW framebuffer (no storeBwBuffer). Mutable because the render path is
   // const. See beginStripTarget()/endStripTarget().
+  // _stripBufMsb is set only by beginDualStripTarget() for GRAYSCALE_DUAL.
   mutable uint8_t* _stripBuf = nullptr;
+  mutable uint8_t* _stripBufMsb = nullptr;
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
@@ -94,20 +97,6 @@ class GfxRenderer {
   mutable int clipY0 = 0;
   mutable int clipX1 = 0;
   mutable int clipY1 = 0;
-
-  // CJK UI font fallback map: primary (built-in, Latin-only) UI font id -> a
-  // size-matched SD-card font id that carries CJK glyphs. When a string drawn
-  // or measured with a mapped primary font contains a CJK codepoint the primary
-  // cannot render, the whole string is routed to the mapped fallback so it
-  // appears at the same point size as the surrounding UI text. Populated by the
-  // app-level SD font setup when an SD family is loaded. See resolveTextFontId().
-  std::map<int, int> fallbackFontMap_;
-
-  // If `text` contains a CJK codepoint that `fontId` cannot render and `fontId`
-  // has a registered fallback, returns the fallback id; otherwise returns
-  // fontId unchanged. The whole string is routed as a unit so each draw/measure
-  // call stays single-font (consistent bit depth, metrics, wrapping).
-  int resolveTextFontId(int fontId, const char* text, EpdFontFamily::Style style) const;
 
   void renderChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, int* y, bool pixelState,
                   EpdFontFamily::Style style) const;
@@ -136,13 +125,16 @@ class GfxRenderer {
   // Setup
   void begin();  // must be called right after display.begin()
   void insertFont(int fontId, EpdFontFamily font);
+  /// Point \p fontId at \p fallbackFontId for missing-glyph lookup (Latin SD
+  /// font → builtin system font). Both IDs must already be in fontMap.
+  /// Returns false if either ID is missing.
+  bool setFontGlyphFallback(int fontId, int fallbackFontId);
   // Clears both the flash-font map and any SD-font registration for fontId.
   // Coupled to avoid dangling SdCardFont* in sdCardFonts_ when callers free
   // the underlying SdCardFont and forget the SD-side unregister.
   void removeFont(int fontId) {
     fontMap.erase(fontId);
     sdCardFonts_.erase(fontId);
-    sdCardFontScales_.erase(fontId);
   }
   void setFontCacheManager(FontCacheManager* m) { fontCacheManager_ = m; }
   FontCacheManager* getFontCacheManager() const { return fontCacheManager_; }
@@ -150,28 +142,14 @@ class GfxRenderer {
   const std::map<int, EpdFontFamily>& getFontMap() const { return fontMap; }
   void registerSdCardFont(int fontId, SdCardFont* font) { sdCardFonts_[fontId] = font; }
   void unregisterSdCardFont(int fontId) { removeFont(fontId); }
-  void clearSdCardFonts() {
-    sdCardFonts_.clear();
-    sdCardFontScales_.clear();
-  }
-  void registerSdCardFontScale(int fontId, uint16_t scale) { sdCardFontScales_[fontId] = scale; }
-  void clearSdCardFontScales() { sdCardFontScales_.clear(); }
-  uint16_t getSdCardFontScale(int fontId) const {
-    auto it = sdCardFontScales_.find(fontId);
-    return (it != sdCardFontScales_.end()) ? it->second : 256;
-  }
+  void clearSdCardFonts() { sdCardFonts_.clear(); }
   const std::map<int, SdCardFont*>& getSdCardFonts() const { return sdCardFonts_; }
   bool isSdCardFont(int fontId) const { return sdCardFonts_.count(fontId) > 0; }
-  // Register/clear size-matched CJK UI fallbacks (see fallbackFontMap_).
-  // setFallbackFont maps a primary UI font id to an SD font id of the same size.
-  void setFallbackFont(int primaryFontId, int fallbackFontId) { fallbackFontMap_[primaryFontId] = fallbackFontId; }
-  void clearFallbackFonts() { fallbackFontMap_.clear(); }
   // Ensure SD card font glyph data is loaded for the given text. Called from layout code
   // (which holds a const GfxRenderer&) before measuring word widths. Safe to call on non-SD fonts (no-op).
   // styleMask: bitmask of styles to prepare (bit 0=regular, 1=bold, 2=italic, 3=bold-italic).
   void ensureSdCardFontReady(int fontId, const char* utf8Text, uint8_t styleMask = 0x0F) const;
-  void ensureSdCardFontReady(int fontId, const std::deque<std::string>& words, bool includeHyphen,
-                             uint8_t styleMask = 0x0F) const;
+  void ensureSdCardFontReady(int fontId, const WordListView& words, bool includeHyphen, uint8_t styleMask = 0x0F) const;
 
   // Orientation control (affects logical width/height and coordinate transforms)
   void setOrientation(const Orientation o) { orientation = o; }
@@ -185,6 +163,10 @@ class GfxRenderer {
   int getScreenHeight() const;
   void tapToLogical(float nx, float ny, int& outX, int& outY) const;
   void displayBuffer(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
+  void displayBufferAsync(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const {
+    displayBuffer(refreshMode);
+  }
+  void waitRefreshComplete() const {}
   // Force the next displayBuffer() to use `mode`, overriding its argument once.
   void requestNextRefresh(const HalDisplay::RefreshMode mode) const {
     nextRefreshOverride = mode;
@@ -192,17 +174,6 @@ class GfxRenderer {
   }
   void clearNextRefreshOverride() const { nextRefreshOverridePending = false; }
   void requestNextFullRefresh() const { requestNextRefresh(HalDisplay::FULL_REFRESH); }
-  // Non-blocking refresh: starts the waveform and returns so CPU work (e.g.
-  // grayscale strip rendering) can overlap the panel's refresh time. The
-  // framebuffer must stay untouched until waitRefreshComplete(). Falls back to
-  // a blocking refresh when fadingFix is enabled or the panel lacks deferral
-  // support. See HalDisplay::displayBufferAsync for the baseline contract.
-  void displayBufferAsync(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
-  void waitRefreshComplete() const;
-  // True when displayBufferAsync() genuinely overlaps: panel defers and
-  // fadingFix isn't forcing the blocking path. Callers can skip overlap
-  // scaffolding (e.g. whole-plane grayscale buffers) when false.
-  bool supportsAsyncRefresh() const;
   // EXPERIMENTAL: Windowed update - display only a rectangular region
   // void displayWindow(int x, int y, int width, int height) const;
   void invertScreen() const;
@@ -216,6 +187,9 @@ class GfxRenderer {
   // after the orientation rotate, so it is orientation-agnostic. Used to render
   // grayscale planes band-by-band without a full second buffer.
   void beginStripTarget(uint8_t* scratch, int stripY0, int stripRows) const;
+  // Dual-plane strip for GRAYSCALE_DUAL: one page walk fills LSB + MSB. Both
+  // buffers are panelWidthBytes * stripRows; clearScreen() clears both.
+  void beginDualStripTarget(uint8_t* scratchLsb, uint8_t* scratchMsb, int stripY0, int stripRows) const;
   void endStripTarget() const;
 
   // Band culling for tiled grayscale. Takes a glyph bounding box in logical
@@ -231,8 +205,11 @@ class GfxRenderer {
   // framebuffer ([0, panelHeight)). Writers subtract the origin and clip to the
   // extent, so they honor tiled-grayscale banding without per-pixel method calls.
   uint8_t* getWriteTarget() const { return _stripActive ? _stripBuf : frameBuffer; }
+  // MSB plane buffer during beginDualStripTarget(); nullptr otherwise.
+  uint8_t* getWriteTargetMsb() const { return _stripActive ? _stripBufMsb : nullptr; }
   int getWriteOriginY() const { return _stripActive ? _stripY0 : 0; }
   int getWriteRows() const { return _stripActive ? _stripRows : panelHeight; }
+  bool hasClipRect() const { return clipActive; }
 
   // Logical-coordinate clip rectangle (scissor). While set, drawPixel() drops
   // pixels outside [x, x+width) x [y, y+height) without logging. Coordinates are
@@ -278,20 +255,12 @@ class GfxRenderer {
   void fillRoundedRect(int x, int y, int width, int height, int cornerRadius, bool roundTopLeft, bool roundTopRight,
                        bool roundBottomLeft, bool roundBottomRight, Color color) const;
   void drawImage(const uint8_t bitmap[], int x, int y, int width, int height) const;
-  void drawIcon(const uint8_t bitmap[], int x, int y, int size) const;
+  void drawIcon(const uint8_t bitmap[], int x, int y, int width, int height) const;
+  void drawIcon(const uint8_t bitmap[], int x, int y, int size) const { drawIcon(bitmap, x, y, size, size); }
   void drawBitmap(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight, float cropX = 0,
                   float cropY = 0) const;
   void drawBitmap1Bit(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight) const;
   void fillPolygon(const int* xPoints, const int* yPoints, int numPoints, bool state = true) const;
-
-  // Snapshot / restore a screen-coordinate framebuffer region (byte-aligned in
-  // panel memory). readFramebufferRegion returns the bytes written to dst, or
-  // 0 when the region is empty, offscreen, or exceeds dstCapacity. Pass the
-  // same rectangle to writeFramebufferRegion to restore the saved pixels.
-  // Enables partial-repaint patterns (e.g. moving a selection highlight)
-  // without re-rendering the whole page.
-  size_t readFramebufferRegion(int x, int y, int w, int h, uint8_t* dst, size_t dstCapacity) const;
-  void writeFramebufferRegion(int x, int y, int w, int h, const uint8_t* src);
 
   // Text
   int getTextWidth(int fontId, const char* text, EpdFontFamily::Style style = EpdFontFamily::REGULAR,
@@ -306,13 +275,16 @@ class GfxRenderer {
   /// Returns the total inter-word advance: fp4::toPixel(spaceAdvance + kern(leftCp,' ') + kern(' ',rightCp)).
   /// Using a single snap avoids the +/-1 px rounding error that arises when space advance and kern are
   /// snapped separately and then added as integers.
-  int getSpaceAdvance(int fontId, uint32_t leftCp, uint32_t rightCp, EpdFontFamily::Style style) const;
+  int getSpaceAdvance(int fontId, uint32_t leftCp, uint32_t rightCp, EpdFontFamily::Style style,
+                      bool forceWordSpace = false) const;
   /// Returns the kerning adjustment between two adjacent codepoints.
   int getKerning(int fontId, uint32_t leftCp, uint32_t rightCp, EpdFontFamily::Style style) const;
   int getTextAdvanceX(int fontId, const char* text, EpdFontFamily::Style style) const;
   int getFontAscenderSize(int fontId) const;
   int getLineHeight(int fontId) const;
-  int getLineHeight(int fontId, float compression) const;
+  int getLineHeight(int fontId, float compression) const {
+    return static_cast<int>(getLineHeight(fontId) * compression);
+  }
   std::string truncatedText(int fontId, const char* text, int maxWidth,
                             EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   /// Word-wrap \p text into at most \p maxLines lines, each no wider than
@@ -324,6 +296,9 @@ class GfxRenderer {
   // Helper for drawing rotated text (90 degrees clockwise, for side buttons)
   void drawTextRotated90CW(int fontId, int x, int y, const char* text, bool black = true,
                            EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
+  // 90° counter-clockwise, advancing +Y — used for sideways Latin in vertical-rl columns.
+  void drawTextRotated90CCW(int fontId, int x, int y, const char* text, bool black = true,
+                            EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   int getTextHeight(int fontId) const;
 
   // Grayscale functions
@@ -354,34 +329,6 @@ class GfxRenderer {
 
   // Font helpers
   const uint8_t* getGlyphBitmap(const EpdFontData* fontData, const EpdGlyph* glyph) const;
-
-  // Lend the 48 KB framebuffer's bytes to a memory-hungry phase (chapter
-  // builds) WITHOUT freeing the allocation, so it never moves and repeated
-  // loans cannot fragment the heap. Between release and restore NOTHING may
-  // draw or display — the panel keeps showing its last refreshed image. The
-  // lent bytes are published via buildscratch::claim() for consumers like
-  // InflateStream. restore returns the buffer white, so the caller must
-  // redraw the full screen; it cannot fail (no allocation involved).
-  void releaseFrameBufferForBuild();
-  bool restoreFrameBufferAfterBuild();
-  bool hasFrameBuffer() const { return frameBuffer != nullptr; }
-
-  // RAII form of the loan above, for blocking build regions with early-return
-  // error paths: restores on scope exit (or explicitly via end()). Display the
-  // popup/screen the panel should hold BEFORE constructing one. Constructing
-  // while the framebuffer is already lent yields an inert loan (nesting-safe).
-  class FrameBufferLoan {
-   public:
-    explicit FrameBufferLoan(GfxRenderer& renderer);
-    ~FrameBufferLoan() { end(); }
-    void end();
-    FrameBufferLoan(const FrameBufferLoan&) = delete;
-    FrameBufferLoan& operator=(const FrameBufferLoan&) = delete;
-
-   private:
-    GfxRenderer& renderer_;
-    bool active_ = false;
-  };
 
   // Low level functions
   uint8_t* getFrameBuffer() const;
