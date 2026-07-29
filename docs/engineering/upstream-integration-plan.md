@@ -27,8 +27,8 @@ Companion policy for docs-only conflicts:
 ### Non-goals
 
 - Importing games / Avatar / Sokoban (out of [`SCOPE.md`](../../SCOPE.md)).
-- Replacing `open-x4-sdk` with upstream `freeink-sdk` unless a dedicated
-  HAL migration is scoped later.
+- Replacing GenSen / multi-SKU CJK / vertical layout with upstream’s single-CN
+  trim. (SDK: this sync **did** adopt `freeink-sdk` + wolfSSL for WeRead; see §10.)
 - Reintroducing monolithic `.skills/SKILL.md` / `CLAUDE.md`.
 - Collapsing TC/SC/JA/KO into upstream’s single `gh_release_cn`.
 
@@ -41,14 +41,14 @@ be re-applied *around* them, never by taking upstream wholesale.
 |---|---|---|
 | SKU matrix | `gh_release_{tc,sc,ja,ko}` (+ RC), `ENABLE_CJK_VERSION`, OpenCC `tw2sp` SC UI | Upstream only has `gh_release_cn` |
 | Vertical CJK EPUB | `WritingMode`, `VerticalPunctuation`, kinsoku, 標點擠壓, TC/JA vertical defaults | Upstream has no vertical layout |
-| Section cache versions | Fork `SECTION_FILE_VERSION` 54 / 77–80 (CJK axes) | Upstream uses 46/47; layouts differ |
+| Section cache versions | Fork `SECTION_FILE_VERSION` 55 / 81–84 (CJK axes + TextBlock arena) | Upstream uses different CN counters; layouts differ |
 | Builtin CJK fonts | GenSen TW / SC-keyed / JP / KO pipelines, coverage tiers, LTO strategy | Upstream trimmed to Noto SC 3500 pool |
 | Apps surface | Stats + WeRead (CN SKUs) + Standby (+ OPDS entry) — **no games** | Matches SCOPE; upstream still ships games |
 | Branding / sync UX | ryOS Books, Cloud Sync, account banners | Fork product identity |
 | Docs map | Thin `AGENTS.md` + `docs/engineering/*` | See merge policy |
-| SDK submodule | `open-x4-sdk` → `community-sdk` | Do not auto-adopt `freeink-sdk` |
+| SDK submodule | `freeink-sdk` (adopted with 1.5.1 sync) | Keep fork HAL wrappers; do not call SDK UI paths directly |
 | Locale READMEs | `README.{zh,ja,ko}.md` | Upstream uses `README.zh-CN.md` |
-| TLS for general HTTPS | Fork’s `esp_http_client` + mbedTLS CA verify (fonts/OTA/OPDS) | Upstream WeRead adds a **separate** wolfSSL path; keep both roles distinct |
+| TLS for general HTTPS | Fork’s `esp_http_client` + mbedTLS CA verify (fonts/OTA/OPDS) | WeRead uses a **separate** wolfSSL path; keep both roles distinct |
 | Heap guards | `ScopedSdFontUnload`, CJK reader heap hardening, X3 mbedTLS buffer work | Fork-specific stability |
 
 ## 3. What we take (upstream-owned)
@@ -87,8 +87,8 @@ Legend: **K** = keep ours · **T** = take upstream · **M** = manual merge · **
 | Font build scripts / charsets | **K** + selective **T** | Keep GenSen/OpenCC pipelines; borrow upstream “complete SD font” guidance strings/flow |
 | `SdCardFont*` + flash cache | **M** | Take `#57` API (`allowFlashCache`, inactive slot) onto our SD font manager; keep `ScopedSdFontUnload` |
 | `HalClock` / `TimeUtils` / DateTime settings | **M** | Prefer upstream UTC-everywhere + X3 RTC restore; manual edit lives in `DateTimeSettingsActivity` (orphan `DateTimeEditActivity` removed) |
-| `platformio.ini` | **M** | Keep SKU envs; add wolfSSL + `patch_wolfssl.py` only as needed for WeRead; do **not** drop mbedTLS custom_sdkconfig work |
-| `.gitmodules` / SDK | **K** | Stay on `open-x4-sdk`; map any upstream `freeink::SecureClient` usage to community-sdk equivalents or a thin shim |
+| `platformio.ini` | **M** | Keep SKU envs; wolfSSL + `patch_wolfssl.py` for WeRead; keep mbedTLS custom_sdkconfig for fonts/OTA/OPDS |
+| `.gitmodules` / SDK | **T→adapt** | Adopted `freeink-sdk` with 1.5.1; keep HAL-only app code; isolate WeRead wolfSSL from mbedTLS HTTPS |
 | `SCOPE.md` / READMEs | **K** | Keep ryOS scope; fold upstream WeRead security notice into USER_GUIDE / chinese-build |
 | `AGENTS.md` / `.skills` | **K** + route | Per `upstream-merge-policy.md` |
 | I18n YAML (english/chinese + others) | **M** | Union keys: keep ryOS strings; import WeRead/clock/visibility strings; regenerate; SC still via OpenCC |
@@ -190,7 +190,7 @@ flash cache, heap during WeRead download + silent restart into Reader.
 | Risk | Mitigation |
 |---|---|
 | wolfSSL + mbedTLS both linked → flash overflow on CJK SKUs | Size-check `gh_release_sc` after Phase 4; trim companion dead code first; keep WeRead CN-only |
-| `freeink::SecureClient` missing in community-sdk | Shim or vendor only the WeRead TLS helper; do not flip whole SDK |
+| wolfSSL + freeink-sdk flash pressure on TC (~97%) | Size-check after each WeRead/feature land; prefer arena/heap wins over more flash |
 | Section cache chaos after Epub merge | Explicit version bumps per SKU; document; accept one-time rebuild |
 | Vertical regressions when taking `#50` | Keep vertical tests (`test/vertical_punctuation`, kinsoku, punct compression) in gate |
 | User backlash losing Companion notes/reviews UI | Release note: offline book download is the product; notes/reviews not ported |
@@ -225,3 +225,10 @@ Deferred items completed on this branch:
 - Dictionary reader activities (TextBlock accessors + menu/long-press entry)
 - Removed orphan `DateTimeEditActivity` (`DateTimeSettingsActivity::ManualEdit` covers UX)
 - Background SNTP auto-sync on HalClock (`esp_netif_sntp_*` + DS3231 persist)
+- Arena `TextBlock` (flat per-line heap blob; section cache 55 / 81–84)
+- Adopted `freeink-sdk` + WeRead wolfSSL (plan originally preferred staying on open-x4)
+
+Follow-ups still open:
+- TC flash headroom (~97.4%) before more CN-only growth
+- Full ruby layout pipeline (arena already serializes empty ruby strings)
+- Host `HalOtaSlot` completeness for inactive-slot sim paths
