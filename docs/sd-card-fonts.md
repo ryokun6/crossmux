@@ -52,6 +52,67 @@ There are three ways to install fonts:
 
 3. Insert the SD card and power on your ryOS CrossMux reader
 
+## CJK in the User Interface
+
+In global builds the built-in UI fonts are Latin-only, so by default the
+interface (book titles in the library, file names in the browser, list rows,
+headers) shows replacement boxes for Chinese/Japanese/Korean text even when
+book *content* renders correctly with a selected SD-card font.
+
+To avoid shipping a large CJK glyph set in flash, CrossPoint instead reuses the
+SD-card font you already selected: when a UI string contains a CJK character
+the built-in font cannot draw, that whole string is rendered with your selected
+SD-card font instead.
+
+The fallback is **size-matched**. The built-in UI fonts render at 8 pt
+(small/author lines), 10 pt (list rows) and 12 pt (book-cover titles, headers),
+so CrossPoint loads your SD family at those sizes too and maps each UI font to
+its same-size SD font. CJK book names therefore appear at the same size as the
+Latin text around them. For this to work the family must contain `.cpfont`
+files at sizes **8, 10 and 12** (in addition to the reader sizes 12–18); any UI
+size missing from the family simply keeps showing boxes for CJK at that size.
+The extra sizes are not loaded when the built-in UI fonts already cover every
+CJK script detected in the selected family.
+
+The Simplified-Chinese firmware is intentionally different: its embedded
+8/10/12pt UI fonts already cover the supported interface, so it does not keep
+the three SD fallback sizes resident. The selected reader-size SD font still
+renders book content normally. Japanese/Korean UI glyphs outside the embedded
+set may therefore show replacement boxes in that build; preserving contiguous
+heap for EPUB decoding takes priority on the ESP32-C3.
+
+Note that **Settings > Reader > Font Size** lists every size the family ships,
+so a family built at 8,10,12,14,16,18 offers all six as reading sizes — the UI
+sizes are not hidden from the list. Reading at 8 pt is your call; if you would
+rather not see the small sizes there, convert two families (one with the UI
+sizes for fallback, one with only the reading sizes you want).
+
+When converting your own font, include the UI sizes:
+
+    python3 lib/EpdFont/scripts/fontconvert_sdcard.py \
+      MyCJKFont-Regular.otf \
+      --intervals cjk \
+      --sizes 8,10,12,14,16,18 \
+      --style regular \
+      --name MyCJKFont \
+      --output-dir ./MyCJKFont/
+
+What this means in practice:
+
+- Select a CJK-capable SD font under **Settings > Reader > Font Family**
+  (see [Installing Fonts](#installing-fonts) and the `cjk` / `hangul` presets
+  under [Converting Custom Fonts](#converting-custom-fonts)). That single
+  selection drives both book content *and* size-matched CJK fallback in the UI.
+- Pure-Latin UI strings keep the crisp built-in font; only strings that
+  actually contain CJK are routed to the SD font.
+- The fallback is per *string*, not per glyph: a mixed title such as
+  `三体 Vol.1` renders entirely in the SD font (including the Latin part). If
+  that SD font is a `Mono` family, the Latin portion will appear half/full
+  width.
+- If no SD font is selected (a built-in reading font is active), there is no
+  CJK fallback and the UI again shows boxes for CJK — pick a CJK SD font to
+  restore it.
+
 ## Available Pre-Built Fonts
 
 Pre-built fonts are published as `sd-fonts-*` **prereleases** on this
@@ -62,6 +123,21 @@ plus the four EB Garamond + Source Han Serif locale composites
 (`EBGaramondSHS-TC` / `-SC` / `-JA` / `-KO`) built by
 `lib/EpdFont/scripts/build-ebgaramond-cjk-sd.sh` (see below). Trigger a build
 with **Actions → Build & Publish SD Card Fonts → Run workflow**.
+
+Chinese firmware builds use an externally maintained Gitee catalog; global
+builds keep using the GitHub catalog. Both use the release tag
+`sd-fonts-m<manifest>-b<binary>`, matching the manifest and cpfont versions
+compiled into the firmware.
+
+The external Chinese catalog must publish manifest v1 with a valid `baseUrl`,
+family/file names, non-zero file sizes, and CRC32 values. Every referenced
+asset must be cpfont v4 and provide the complete Chinese coverage promised by
+the catalog maintainer. Font sources and catalog-generation configuration are
+not kept in this repository.
+
+The incomplete-font prompt opens the same font manager described above.
+Downloading does not change the selected reader font; choose the installed
+family later in the reader's text settings.
 
 ## Converting Custom Fonts
 

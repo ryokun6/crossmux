@@ -40,67 +40,42 @@ FetchContent_Declare(
 # and still sets qrcode_SOURCE_DIR. Replaces the deprecated FetchContent_Populate().
 FetchContent_MakeAvailable(qrcode)
 
-# bitbank2/JPEGDEC — same pin as platformio.ini. Needed for home/recent cover
-# thumbnails (JpegToBmpConverter). WASM keeps the stub path (no FetchContent).
+# JPEGDEC backs the firmware's existing JPEG-to-BMP cover converter. Keep it
+# native-only: WeRead is excluded from the offline WASM simulator.
 if(NOT EMSCRIPTEN)
-    set(JPEGDEC_ROOT "")
-    foreach(_jpegdec_candidate
-            "${REPO_ROOT}/.pio/libdeps/default/JPEGDEC"
-            "${REPO_ROOT}/.pio/libdeps/gh_release/JPEGDEC"
-            "${REPO_ROOT}/.pio/libdeps/gh_release_tc/JPEGDEC"
-            "${REPO_ROOT}/.pio/libdeps/gh_release_sc/JPEGDEC")
-        if(EXISTS "${_jpegdec_candidate}/src/JPEGDEC.cpp")
-            set(JPEGDEC_ROOT "${_jpegdec_candidate}")
-            message(STATUS "JPEGDEC: using PlatformIO libdep at ${JPEGDEC_ROOT}")
-            break()
-        endif()
-    endforeach()
-    if(JPEGDEC_ROOT STREQUAL "")
-        # JPEGDEC's tree has an ESP-IDF CMakeLists; populate without add_subdirectory.
-        FetchContent_Declare(
-            jpegdec
-            GIT_REPOSITORY https://github.com/bitbank2/JPEGDEC.git
-            GIT_TAG 86282979224c8a32fd51e091ed5a35b0c699a52b
-        )
+    FetchContent_Declare(
+        jpegdec
+        GIT_REPOSITORY https://github.com/bitbank2/JPEGDEC.git
+        GIT_TAG 86282979224c8a32fd51e091ed5a35b0c699a52b
+        SOURCE_SUBDIR cmake-unused
+        PATCH_COMMAND /bin/sh -c
+            "git apply --reverse --check '${REPO_ROOT}/scripts/jpegdec_patches/0001-redirect-pmcu-on-mcu-skip.patch' '${REPO_ROOT}/scripts/jpegdec_patches/0002-guard-dc-writes-on-mcu-skip.patch' || git apply '${REPO_ROOT}/scripts/jpegdec_patches/0001-redirect-pmcu-on-mcu-skip.patch' '${REPO_ROOT}/scripts/jpegdec_patches/0002-guard-dc-writes-on-mcu-skip.patch'"
+    )
+    # JPEGDEC's own CMakeLists is ESP-IDF-only. CMake 3.18+ can populate it
+    # without adding that subdirectory; retain the older path for our 3.16 minimum.
+    if(CMAKE_VERSION VERSION_LESS 3.18)
         FetchContent_GetProperties(jpegdec)
         if(NOT jpegdec_POPULATED)
             FetchContent_Populate(jpegdec)
         endif()
-        set(JPEGDEC_ROOT "${jpegdec_SOURCE_DIR}")
-        message(STATUS "JPEGDEC: fetched to ${JPEGDEC_ROOT}")
+    else()
+        FetchContent_MakeAvailable(jpegdec)
     endif()
-    # CrossPoint's progressive-JPEG MCU patches (scripts/patch_jpegdec.py equivalent).
-    file(GLOB JPEGDEC_PATCHES "${REPO_ROOT}/scripts/jpegdec_patches/*.patch")
-    list(SORT JPEGDEC_PATCHES)
-    foreach(patch ${JPEGDEC_PATCHES})
-        execute_process(
-            COMMAND git apply --check --reverse "${patch}"
-            WORKING_DIRECTORY "${JPEGDEC_ROOT}"
-            RESULT_VARIABLE JPEGDEC_PATCH_ALREADY
-            OUTPUT_QUIET ERROR_QUIET
-        )
-        if(NOT JPEGDEC_PATCH_ALREADY EQUAL 0)
-            execute_process(
-                COMMAND git apply "${patch}"
-                WORKING_DIRECTORY "${JPEGDEC_ROOT}"
-                RESULT_VARIABLE JPEGDEC_PATCH_OK
-                OUTPUT_QUIET ERROR_QUIET
-            )
-            if(NOT JPEGDEC_PATCH_OK EQUAL 0)
-                message(WARNING "JPEGDEC patch failed to apply: ${patch}")
-            else()
-                message(STATUS "Applied JPEGDEC patch: ${patch}")
-            endif()
-        endif()
-    endforeach()
+    # SOURCE_SUBDIR=cmake-unused can leave jpegdec_SOURCE_DIR empty even after a
+    # successful populate; fall back to the conventional FetchContent layout.
+    if(NOT jpegdec_SOURCE_DIR)
+        set(jpegdec_SOURCE_DIR "${CMAKE_BINARY_DIR}/_deps/jpegdec-src")
+    endif()
+    set(JPEGDEC_ROOT "${jpegdec_SOURCE_DIR}")
 endif()
 
-# libcurl — backs the native simulator's esp_http_client shim (shims/esp_http_client.h)
-# so WeRead, AirPage, and any other on-device HTTPS code paths we don't exclude can hit
-# the real network from host. The WASM build is offline-only (the same shim compiles a
-# curl-free stub under #ifdef __EMSCRIPTEN__), so it skips libcurl entirely.
+# libcurl — backs the native simulator's esp_http_client shim
+# (shims/esp_http_client.h), including WeRead's dedicated host transport.
+# AirPage and other included HTTPS paths use it as well. The WASM build is
+# offline-only, so the same shim compiles a curl-free stub there.
 if(NOT EMSCRIPTEN)
     find_package(CURL REQUIRED)
+    find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 endif()
 
 # SDL2 — native simulator window only. The WASM build renders via the browser canvas
@@ -141,7 +116,9 @@ file(GLOB_RECURSE CROSSPOINT_LIB
     "${REPO_ROOT}/lib/JpegToBmpConverter/*.cpp"
     "${REPO_ROOT}/lib/JsonParser/*.cpp"
     "${REPO_ROOT}/lib/Logging/*.cpp"
+    "${REPO_ROOT}/lib/Memory/*.cpp"
     "${REPO_ROOT}/lib/MiniBidi/*.cpp"
+    "${REPO_ROOT}/lib/miniz/src/*.cpp"
     "${REPO_ROOT}/lib/OpdsParser/*.cpp"
     "${REPO_ROOT}/lib/PngToBmpConverter/*.cpp"
     "${REPO_ROOT}/lib/Serialization/*.cpp"
@@ -152,35 +129,41 @@ file(GLOB_RECURSE CROSSPOINT_LIB
     "${REPO_ROOT}/lib/ZipFile/*.cpp"
 )
 
+# WeRead requires native HTTPS and OpenSSL-backed MD5.
+if(EMSCRIPTEN)
+    list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/activities/apps/weread/")
+endif()
+# Device-only wolfSSL SNI wrap (max-fragment for weread.qq.com).
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/platform/wolfssl_max_fragment\\.cpp$")
+
 # Real HAL .cpp is replaced by simulator/hal/.
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/hal/Hal.*\\.cpp$")
 
-# Network / OTA .cpp files use APIs that are too deep to shim for first-version
-# simulator scope. Image converters (JPEG/PNG → BMP) are enabled on native so
-# home/recent book covers work; WASM keeps stubs. Inline EPUB image decoders
-# stay excluded on both (heavier; covers don't need them).
-
+# Network / OTA / EPUB framebuffer decoders use APIs that remain outside the
+# simulator scope. Their public symbols are stubbed in missing_symbols.cpp.
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/network/")
-# ...but keep the real HttpDownloader: the libcurl-backed esp_http_client shim lets it
-# actually fetch over the network, so AirPage and WeRead can hit the real internet.
+# ...but keep the real HttpDownloader for applications such as AirPage. WeRead's
+# dedicated transport is included with the rest of its activity sources.
 list(APPEND CROSSPOINT_SRC ${REPO_ROOT}/src/network/HttpDownloader.cpp)
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/activities/network/")
-# OPDS browser + KOReader sync use HttpDownloader / credential store (available on
-# host). Keep other network-heavy activities stubbed.
+# OPDS browser + KOReader sync pull host-unavailable deps; stub in missing_symbols.cpp.
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "OtaUpdateActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "SdFirmwareUpdateActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "FontDownloadActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderAuthActivity")
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "OpdsBookBrowserActivity")
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSettingsActivity")
+list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSyncActivity")
 
-if(EMSCRIPTEN)
-    list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/JpegToBmpConverter/")
-    list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/PngToBmpConverter/")
-endif()
-list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Epub/Epub/converters/")
+list(FILTER CROSSPOINT_LIB EXCLUDE REGEX
+     "lib/Epub/Epub/converters/(ImageDecoderFactory|ImageToFramebufferDecoder|JpegToFramebufferConverter|PngToFramebufferConverter)\\.cpp$")
 list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Serialization/ObfuscationUtils")
+if(EMSCRIPTEN)
+    list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/(JpegToBmpConverter|PngToBmpConverter)/")
+endif()
 
 # KOReaderSync credential store referenced via the KOREADER_STORE singleton in main.cpp.
-# KOReaderJsonIO.cpp implements the load/save backing the store and must link with it.
+# Its load/save backing now comes from the globbed PersistableStore.cpp.
 # KOReaderDocumentId.cpp backs BookIdentity::calculateContentBookId (reading-stats book
 # identity); it only depends on HalStorage/Logging/MD5Builder, all available on host.
 # ProgressMapper.cpp + ChapterXPathResolver.cpp map saved XPath/percent positions to
@@ -188,9 +171,10 @@ list(FILTER CROSSPOINT_LIB EXCLUDE REGEX "lib/Serialization/ObfuscationUtils")
 # (GfxRenderer/Epub/Utf8/XmlParserUtils/expat) are all host-available, so compile them for
 # real instead of stubbing, otherwise bookmark navigation returns empty positions.
 list(APPEND CROSSPOINT_LIB
+    ${REPO_ROOT}/freeink-sdk/libs/ui/FreeInkUI/src/FreeInkUI.cpp
     ${REPO_ROOT}/lib/KOReaderSync/KOReaderCredentialStore.cpp
-    ${REPO_ROOT}/lib/KOReaderSync/KOReaderJsonIO.cpp
     ${REPO_ROOT}/lib/KOReaderSync/KOReaderDocumentId.cpp
+    ${REPO_ROOT}/lib/KOReaderSync/KOReaderJsonIO.cpp
     ${REPO_ROOT}/lib/KOReaderSync/ChapterXPathResolver.cpp
     ${REPO_ROOT}/lib/KOReaderSync/ProgressMapper.cpp
 )
@@ -204,6 +188,7 @@ set(SIMULATOR_HAL
     hal/HalClock.cpp
     hal/HalDisplay.cpp
     hal/HalGPIO.cpp
+    hal/HalOtaSlot.cpp
     hal/HalPowerManager.cpp
     hal/HalStorage.cpp
     hal/HalSystem.cpp
@@ -216,6 +201,7 @@ set(VENDOR_C
     ${REPO_ROOT}/lib/expat/xmlrole.c
     ${REPO_ROOT}/lib/expat/xmltok.c
     ${REPO_ROOT}/lib/uzlib/src/tinflate.c
+    ${REPO_ROOT}/lib/miniz/src/miniz_impl.c
     ${REPO_ROOT}/lib/MiniBidi/minibidi.c
     ${qrcode_SOURCE_DIR}/src/qrcode.c
 )
@@ -355,7 +341,7 @@ add_dependencies(crosspoint_simulator i18n_generated)
 target_link_libraries(crosspoint_simulator PRIVATE arduino_host ArduinoJson)
 
 if(NOT EMSCRIPTEN)
-    target_link_libraries(crosspoint_simulator PRIVATE CURL::libcurl)
+    target_link_libraries(crosspoint_simulator PRIVATE CURL::libcurl OpenSSL::Crypto)
     if(SDL2_FOUND)
         target_link_libraries(crosspoint_simulator PRIVATE SDL2::SDL2)
     else()
@@ -378,6 +364,7 @@ target_include_directories(crosspoint_simulator PRIVATE
     ${REPO_ROOT}/lib/Logging
     ${REPO_ROOT}/lib/Memory
     ${REPO_ROOT}/lib/MiniBidi
+    ${REPO_ROOT}/lib/miniz/src
     ${REPO_ROOT}/lib/I18n
     ${REPO_ROOT}/lib/GfxRenderer
     ${REPO_ROOT}/lib/EpdFont
@@ -402,13 +389,21 @@ target_include_directories(crosspoint_simulator PRIVATE
     ${qrcode_SOURCE_DIR}/src
     ${REPO_ROOT}/lib/KOReaderSync
     ${REPO_ROOT}/lib/Epub/Epub/converters
+    ${REPO_ROOT}/lib/AvatarGen
+    ${REPO_ROOT}/freeink-sdk/libs/ui/FreeInkUI/include
 )
+if(NOT EMSCRIPTEN)
+    # Prefer the fetched decoder over simulator/shims/JPEGDEC.h.
+    target_include_directories(crosspoint_simulator BEFORE PRIVATE ${jpegdec_SOURCE_DIR}/src)
+endif()
 
 # Rename Arduino entry points so the simulator entry can drive them explicitly.
 # Default SKU is Traditional Chinese (CJK fonts + WeRead/农历/CJK typography).
 # SIMULATOR_INTERNATIONAL_VERSION selects the non-CJK international firmware.
 # SIMULATOR_JAPANESE_VERSION / SIMULATOR_KOREAN_VERSION switch to those firmwares.
 # SIMULATOR_CHINESE_UI_SIMPLIFIED mirrors PlatformIO's CHINESE_UI_SIMPLIFIED (SC SKU).
+# ENABLE_CHINESE_VERSION includes WeRead on native builds; the browser build
+# excludes its sources because the browser HTTP shim is offline.
 target_compile_definitions(crosspoint_simulator PRIVATE
     CROSSPOINT_EMULATED=1
     EINK_DISPLAY_SINGLE_BUFFER_MODE=1
@@ -438,6 +433,13 @@ else()
     if(SIMULATOR_CHINESE_UI_SIMPLIFIED)
         target_compile_definitions(crosspoint_simulator PRIVATE CHINESE_UI_SIMPLIFIED=1)
     endif()
+endif()
+
+if(NOT EMSCRIPTEN)
+    target_compile_definitions(crosspoint_simulator PRIVATE
+        CROSSPOINT_SIM_REAL_MD5=1
+        CROSSPOINT_SIM_VERIFIED_TLS=1
+    )
 endif()
 
 target_compile_options(crosspoint_simulator PRIVATE -fno-exceptions -fno-rtti
@@ -488,4 +490,3 @@ if(EMSCRIPTEN)
         OUTPUT_NAME "crosspoint_simulator_wasm"
         SUFFIX ".js")
 endif()
-

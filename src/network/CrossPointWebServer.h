@@ -72,6 +72,7 @@ class CrossPointWebServer {
   std::unique_ptr<WebServer> server = nullptr;
   std::unique_ptr<WebSocketsServer> wsServer = nullptr;
   bool running = false;
+  bool watchdogTaskRegistered = false;
   bool apMode = false;  // true when running in AP mode, false for STA mode
   uint16_t port = 80;
   uint16_t wsPort = 81;  // WebSocket port
@@ -139,11 +140,4 @@ class CrossPointWebServer {
   void handleGetWifiNetworks() const;
   void handlePostWifiNetwork();
   void handleDeleteWifiNetwork();
-
-#ifdef ENABLE_CHINESE_VERSION
-  // WeRead API key handlers — only built into the Chinese release, which is
-  // where the WeRead Companion app itself lives (see build_src_filter).
-  void handleWeReadKeyPage() const;
-  void handlePostWeReadKey();
-#endif
 };

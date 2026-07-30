@@ -71,16 +71,17 @@ void EpdFont::getTextBounds(const char* string, const int startX, const int star
       continue;
     }
 
-    const int raiseBy = isCombining ? combiningMark::raiseAboveBase(glyph->top, glyph->height, lastBaseTop) : 0;
+    const auto anchor = isCombining ? combiningMark::anchorFor(cp) : combiningMark::Anchor::CenterRaised;
+    const int raiseBy = isCombining ? combiningMark::raiseAboveBase(anchor, glyph->top, glyph->height, lastBaseTop) : 0;
 
     if (!isCombining && prevCp != 0) {
       const auto kernFP = getKerning(prevCp, cp);  // 4.4 fixed-point kern
       lastBaseX += fp4::toPixel(prevAdvanceFP + kernFP);
     }
 
-    const int glyphBaseX =
-        isCombining ? combiningMark::centerOver(lastBaseX, lastBaseLeft, lastBaseWidth, glyph->left, glyph->width)
-                    : lastBaseX;
+    const int glyphBaseX = isCombining ? combiningMark::anchorOver(anchor, lastBaseX, lastBaseLeft, lastBaseWidth,
+                                                                   glyph->left, glyph->width)
+                                       : lastBaseX;
     const int glyphBaseY = startY - raiseBy;
 
     *minX = std::min(*minX, glyphBaseX + glyph->left);
@@ -212,13 +213,35 @@ const EpdGlyph* EpdFont::getGlyphNoReplacement(const uint32_t cpIn) const {
   return nullptr;
 }
 
-const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn) const {
+const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn) const { return getGlyph(cpIn, nullptr); }
+
+const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn, bool* const usedReplacement) const {
+  if (usedReplacement) *usedReplacement = false;
+
   const EpdGlyph* glyph = getGlyphNoReplacement(cpIn);
   if (glyph) return glyph;
 
+  if (usedReplacement) *usedReplacement = true;
   const uint32_t cp = resolveCnCodepoint(cpIn);
   if (cp != REPLACEMENT_GLYPH) {
     return getGlyphNoReplacement(REPLACEMENT_GLYPH);
   }
   return nullptr;
+}
+
+bool EpdFont::hasCodepoint(const uint32_t cpIn) const {
+  const uint32_t cp = resolveCnCodepoint(cpIn);
+  const int count = data->intervalCount;
+  if (count > 0) {
+    const EpdUnicodeInterval* intervals = data->intervals;
+    const auto* end = intervals + count;
+    const auto it = std::upper_bound(
+        intervals, end, cp, [](uint32_t value, const EpdUnicodeInterval& interval) { return value < interval.first; });
+    if (it != intervals && cp <= (it - 1)->last) return true;
+  }
+
+  if (data->coverageHandler) {
+    return data->coverageHandler(data->glyphMissCtx, cp);
+  }
+  return false;
 }

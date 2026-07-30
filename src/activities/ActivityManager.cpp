@@ -2,20 +2,14 @@
 
 #include <FontCacheManager.h>
 #include <HalPowerManager.h>
-#include <Logging.h>
 #include <Memory.h>
 
 #include <algorithm>
 
 #include "OpdsServerStore.h"
 #include "apps/AppsMenuActivity.h"
-#ifdef ENABLE_CHINESE_VERSION
-#include "apps/weread/WeReadBookActivity.h"
-#include "apps/weread/WeReadMenuActivity.h"
-#include "apps/weread/WeReadRecommendActivity.h"
-#include "apps/weread/WeReadSearchActivity.h"
-#include "apps/weread/WeReadShelfActivity.h"
-#include "apps/weread/WeReadStatsActivity.h"
+#if defined(ENABLE_CHINESE_VERSION) && !defined(__EMSCRIPTEN__)
+#include "apps/weread/WeReadActivity.h"
 #endif
 #include "apps/reading-stats/ReadingStatsMenuActivity.h"
 #include "apps/standby/StandbyActivity.h"
@@ -32,12 +26,20 @@
 #include "settings/SettingsActivity.h"
 #include "util/FullScreenMessageActivity.h"
 
+static portMUX_TYPE activityManagerSpinlock = portMUX_INITIALIZER_UNLOCKED;
+
 void ActivityManager::begin() {
-  xTaskCreate(&renderTaskTrampoline, "ActivityManagerRender",
-              8192,              // Stack size
-              this,              // Parameters
-              1,                 // Priority
-              &renderTaskHandle  // Task handle
+#if defined(configNUM_CORES) && configNUM_CORES > 1
+  constexpr BaseType_t renderTaskCore = 1;
+#else
+  constexpr BaseType_t renderTaskCore = 0;
+#endif
+  xTaskCreatePinnedToCore(&renderTaskTrampoline, "ActivityManagerRender",
+                          8192,               // Stack size
+                          this,               // Parameters
+                          1,                  // Priority
+                          &renderTaskHandle,  // Task handle
+                          renderTaskCore  // Keep long renders/cover decodes off CPU 0's idle watchdog when available
   );
   assert(renderTaskHandle != nullptr && "Failed to create render task");
 }
@@ -59,10 +61,10 @@ void ActivityManager::renderTaskLoop() {
     }
     // Notify any task blocked in requestUpdateAndWait() that the render is done.
     TaskHandle_t waiter = nullptr;
-    taskENTER_CRITICAL(nullptr);
+    taskENTER_CRITICAL(&activityManagerSpinlock);
     waiter = waitingTaskHandle;
     waitingTaskHandle = nullptr;
-    taskEXIT_CRITICAL(nullptr);
+    taskEXIT_CRITICAL(&activityManagerSpinlock);
     if (waiter) {
       xTaskNotify(waiter, 1, eIncrement);
     }
@@ -71,6 +73,14 @@ void ActivityManager::renderTaskLoop() {
 
 void ActivityManager::loop() {
   if (currentActivity) {
+    if (!currentActivity->isHomeActivity() && mappedInput.wasHomeGesture()) {
+      if (currentActivity->handleHomeGesture()) {
+        return;
+      }
+      goHome();
+      return;
+    }
+
     // Note: do not hold a lock here, the loop() method must be responsible for acquire one if needed
     currentActivity->loop();
   }
@@ -150,8 +160,7 @@ void ActivityManager::loop() {
     }
   }
 
-  if (requestedUpdate) {
-    requestedUpdate = false;
+  if (requestedUpdate.exchange(false)) {
     // Using direct notification to signal the render task to update
     // Increment counter so multiple rapid calls won't be lost
     if (renderTaskHandle) {
@@ -238,7 +247,8 @@ void ActivityManager::goToBrowser() {
   }
 }
 
-void ActivityManager::goToReader(std::string path) {
+void ActivityManager::goToReader(std::string path, const bool allowFastInitialRefresh) {
+  (void)allowFastInitialRefresh;
   auto activity = makeUniqueNoThrow<ReaderActivity>(renderer, mappedInput, std::move(path));
   if (!activity) {
     LOG_ERR("ACT", "OOM allocating ReaderActivity");
@@ -266,6 +276,17 @@ void ActivityManager::goToBoot() {
   replaceActivity(std::move(activity));
 }
 
+bool ActivityManager::goToPostOtaBoot(bool allowAutoPreload) {
+  // Activities outlive this call and are owned by ActivityManager, so this small allocation cannot use the stack.
+  auto activity = makeUniqueNoThrow<BootActivity>(renderer, mappedInput, BootActivity::Mode::PostOta, allowAutoPreload);
+  if (!activity) {
+    LOG_ERR("ACT", "OOM: BootActivity (%u bytes)", static_cast<unsigned>(sizeof(BootActivity)));
+    return false;
+  }
+  replaceActivity(std::move(activity));
+  return true;
+}
+
 void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::Style style) {
   auto activity = makeUniqueNoThrow<FullScreenMessageActivity>(renderer, mappedInput, std::move(message), style);
   if (!activity) {
@@ -282,6 +303,8 @@ void ActivityManager::goHome(HomeMenuItem initialMenuItem) {
       initialMenuItem = HomeMenuItem::FILE_BROWSER;
     } else if (activityName == "RecentBooks") {
       initialMenuItem = HomeMenuItem::RECENTS;
+    } else if (activityName == "OpdsBookBrowser") {
+      initialMenuItem = HomeMenuItem::OPDS_BROWSER;
     } else if (activityName == "CrossPointWebServer") {
       initialMenuItem = HomeMenuItem::FILE_TRANSFER;
     } else if (activityName == "Settings") {
@@ -331,56 +354,11 @@ void ActivityManager::goToStandby() {
   replaceActivity(std::move(activity));
 }
 
-#ifdef ENABLE_CHINESE_VERSION
+#if defined(ENABLE_CHINESE_VERSION) && !defined(__EMSCRIPTEN__)
 void ActivityManager::goToWeRead() {
-  auto activity = makeUniqueNoThrow<WeReadMenuActivity>(renderer, mappedInput);
+  auto activity = makeUniqueNoThrow<WeReadActivity>(renderer, mappedInput);
   if (!activity) {
-    LOG_ERR("ACT", "OOM allocating WeReadMenuActivity");
-    return;
-  }
-  replaceActivity(std::move(activity));
-}
-
-void ActivityManager::goToWeReadShelf() {
-  auto activity = makeUniqueNoThrow<WeReadShelfActivity>(renderer, mappedInput);
-  if (!activity) {
-    LOG_ERR("ACT", "OOM allocating WeReadShelfActivity");
-    return;
-  }
-  replaceActivity(std::move(activity));
-}
-
-void ActivityManager::goToWeReadSearch() {
-  auto activity = makeUniqueNoThrow<WeReadSearchActivity>(renderer, mappedInput);
-  if (!activity) {
-    LOG_ERR("ACT", "OOM allocating WeReadSearchActivity");
-    return;
-  }
-  replaceActivity(std::move(activity));
-}
-
-void ActivityManager::goToWeReadRecommend() {
-  auto activity = makeUniqueNoThrow<WeReadRecommendActivity>(renderer, mappedInput);
-  if (!activity) {
-    LOG_ERR("ACT", "OOM allocating WeReadRecommendActivity");
-    return;
-  }
-  replaceActivity(std::move(activity));
-}
-
-void ActivityManager::goToWeReadStats() {
-  auto activity = makeUniqueNoThrow<WeReadStatsActivity>(renderer, mappedInput);
-  if (!activity) {
-    LOG_ERR("ACT", "OOM allocating WeReadStatsActivity");
-    return;
-  }
-  replaceActivity(std::move(activity));
-}
-
-void ActivityManager::goToWeReadBook(std::string bookId, std::string title) {
-  auto activity = makeUniqueNoThrow<WeReadBookActivity>(renderer, mappedInput, std::move(bookId), std::move(title));
-  if (!activity) {
-    LOG_ERR("ACT", "OOM allocating WeReadBookActivity");
+    LOG_ERR("ACT", "OOM: WeReadActivity");
     return;
   }
   replaceActivity(std::move(activity));
@@ -414,6 +392,8 @@ bool ActivityManager::isReaderActivity() const {
          (currentActivity && currentActivity->isReaderActivity());
 }
 
+bool ActivityManager::handleForcedRefresh() { return currentActivity && currentActivity->handleForcedRefresh(); }
+
 bool ActivityManager::skipLoopDelay() const { return currentActivity && currentActivity->skipLoopDelay(); }
 
 ScreenshotInfo ActivityManager::getScreenshotInfo() const {
@@ -440,7 +420,7 @@ void ActivityManager::requestUpdateAndWait() {
   }
 
   // Atomic section to perform checks
-  taskENTER_CRITICAL(nullptr);
+  taskENTER_CRITICAL(&activityManagerSpinlock);
   auto currTaskHandler = xTaskGetCurrentTaskHandle();
   auto mutexHolder = xSemaphoreGetMutexHolder(renderingMutex);
   bool isRenderTask = (currTaskHandler == renderTaskHandle);
@@ -449,7 +429,7 @@ void ActivityManager::requestUpdateAndWait() {
   if (!alreadyWaiting && !isRenderTask && !holdingRenderLock) {
     waitingTaskHandle = currTaskHandler;
   }
-  taskEXIT_CRITICAL(nullptr);
+  taskEXIT_CRITICAL(&activityManagerSpinlock);
 
   // Render task cannot call requestUpdateAndWait() or it will cause a deadlock
   assert(!isRenderTask && "Render task cannot call requestUpdateAndWait()");

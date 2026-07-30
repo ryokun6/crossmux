@@ -1,8 +1,10 @@
 #include <HalGPIO.h>
 #include <Logging.h>
+#include <PowerManager.h>
 #include <Preferences.h>
 #include <SPI.h>
 #include <Wire.h>
+#include <XteinkDetect.h>
 #include <esp_sleep.h>
 
 // Global HalGPIO instance
@@ -188,18 +190,67 @@ HalGPIO::DeviceType detectDeviceTypeWithFingerprint() {
   return HalGPIO::DeviceType::X4;
 }
 
+// --- X3 panel-controller fingerprint (UC8253 vs UC8279) ----------------------
+// Newer X3 production units ship a UC8279d panel controller on the same board,
+// glass and pins. The SDK probe reads the UC8279's VER/FLG registers over a
+// bit-banged half-duplex SPI on the EPD pins; same override/cache scheme as
+// the device fingerprint (values reuse NvsDeviceValue: 1 = UC8253, 2 = UC8279).
+constexpr char NVS_KEY_EPD_OVERRIDE[] = "epd_ovr";  // 0=auto, 1=uc8253, 2=uc8279
+constexpr char NVS_KEY_EPD_CACHED[] = "epd_det";    // 0=unknown, 1=uc8253, 2=uc8279
+
+bool detectX3DisplayIsUc8279() {
+  const NvsDeviceValue overrideValue = readNvsDeviceValue(NVS_KEY_EPD_OVERRIDE, NvsDeviceValue::Unknown);
+  if (overrideValue != NvsDeviceValue::Unknown) {
+    LOG_INF("HW", "EPD controller override active: %s", overrideValue == NvsDeviceValue::X3 ? "UC8279" : "UC8253");
+    return overrideValue == NvsDeviceValue::X3;
+  }
+
+  const NvsDeviceValue cachedValue = readNvsDeviceValue(NVS_KEY_EPD_CACHED, NvsDeviceValue::Unknown);
+  if (cachedValue != NvsDeviceValue::Unknown) {
+    LOG_INF("HW", "Using cached EPD controller: %s", cachedValue == NvsDeviceValue::X3 ? "UC8279" : "UC8253");
+    return cachedValue == NvsDeviceValue::X3;
+  }
+
+  uint8_t ver[5] = {0};
+  uint8_t flg = 0;
+  const freeink::X3DisplayVerdict verdict = freeink::detectX3DisplayController(ver, &flg);
+  LOG_INF("HW", "EPD probe: ver=%02X %02X %02X %02X %02X flg=%02X verdict=%u", ver[0], ver[1], ver[2], ver[3], ver[4],
+          flg, static_cast<unsigned>(verdict));
+  if (verdict == freeink::X3DisplayVerdict::Uc8279Confirmed) {
+    writeNvsDeviceValue(NVS_KEY_EPD_CACHED, NvsDeviceValue::X3);
+    return true;
+  }
+  if (verdict == freeink::X3DisplayVerdict::Uc8253Assumed) {
+    writeNvsDeviceValue(NVS_KEY_EPD_CACHED, NvsDeviceValue::X4);
+  }
+  // Inconclusive: run as UC8253 (the shipping controller) but don't persist,
+  // so a flaky first boot gets re-probed.
+  return false;
+}
+
 }  // namespace
 
 void HalGPIO::begin() {
-  inputMgr.begin();
-  SPI.begin(EPD_SCLK, SPI_MISO, EPD_MOSI, EPD_CS);
-
+#if FREEINK_MCU_C3
   _deviceType = detectDeviceTypeWithFingerprint();
+  // The panel-controller probe bit-bangs the EPD pins, so it must run before
+  // SPI.begin() attaches them to the SPI matrix. I2C-only device fingerprint
+  // above doesn't care about SPI ordering.
+  const bool x3IsUc8279 = deviceIsX3() && detectX3DisplayIsUc8279();
+  BoardConfig::selectDevice(!deviceIsX3() ? BoardConfig::Board::XteinkX4
+                            : x3IsUc8279  ? BoardConfig::Board::XteinkX3Uc8279
+                                          : BoardConfig::Board::XteinkX3);
+
+  SPI.begin(EPD_SCLK, SPI_MISO, EPD_MOSI, EPD_CS);
 
   if (deviceIsX4()) {
     pinMode(BAT_GPIO0, INPUT);
     pinMode(UART0_RXD, INPUT);
   }
+#else
+  _deviceType = DeviceType::X4;
+#endif
+  inputMgr.begin();
 }
 
 void HalGPIO::update() {
@@ -225,29 +276,54 @@ unsigned long HalGPIO::getHeldTime() const { return inputMgr.getHeldTime(); }
 
 unsigned long HalGPIO::getPowerButtonHeldTime() const { return inputMgr.getPowerButtonHeldTime(); }
 
-void HalGPIO::startDeepSleep() {
-  // Ensure that the power button has been released to avoid immediately turning back on if you're holding it
-  while (inputMgr.isPressed(BTN_POWER)) {
-    delay(50);
-    inputMgr.update();
-  }
-  // Arm the wakeup trigger *after* the button is released
-  esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
-  // Enter Deep Sleep
-  esp_deep_sleep_start();
+bool HalGPIO::hasTouch() const { return inputMgr.hasTouch(); }
+
+bool HalGPIO::wasTouchTap(float& nx, float& ny) const { return inputMgr.wasTouchTap(nx, ny); }
+
+bool HalGPIO::wasTouchDown(float& nx, float& ny) const { return inputMgr.wasTouchPressedAt(nx, ny); }
+
+bool HalGPIO::isTouchTapCandidate(float& nx, float& ny, unsigned long& heldMs) const {
+  return inputMgr.isTouchTapCandidate(nx, ny, heldMs);
 }
 
-void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPressAllowed) {
+bool HalGPIO::isTouchHeldAt(float& nx, float& ny) const { return inputMgr.isTouchHeldAt(nx, ny); }
+
+unsigned long HalGPIO::lastTouchHeldMs() const { return inputMgr.lastTouchHeldMs(); }
+
+bool HalGPIO::wasSwipe(float& nxStart, float& nyStart, float& nxEnd, float& nyEnd) const {
+  return inputMgr.wasSwipe(nxStart, nyStart, nxEnd, nyEnd);
+}
+
+bool HalGPIO::wasTouchActivity() const { return inputMgr.wasTouchActivity(); }
+
+void HalGPIO::setSharedConfirmPowerShortPressEmitsPower(const bool enabled) {
+  InputManager::setSharedConfirmPowerShortPressEmitsPower(enabled);
+}
+
+bool HalGPIO::isXteinkDevice() const {
+  return BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX3 ||
+         BoardConfig::ACTIVE.board == BoardConfig::Board::XteinkX4;
+}
+
+bool HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPressAllowed) {
+  // Boards without a power button (or M5Paper's latch circuit) cannot verify a
+  // hold; treat the wake as valid.
+  if (BoardConfig::ACTIVE.input.power < 0) {
+    return true;
+  }
+#if defined(FREEINK_DEVICE_M5PAPER) && FREEINK_DEVICE_M5PAPER
+  return true;
+#endif
   if (shortPressAllowed) {
     // Fast path - no duration check needed
-    return;
+    return true;
   }
   // TODO: Intermittent edge case remains: a single tap followed by another single tap
   // can still power on the device. Tighten wake debounce/state handling here.
 
-  // Calibrate: subtract boot time already elapsed, assuming button held since boot
-  const uint16_t calibration = millis();
-  const uint16_t calibratedDuration = (calibration < requiredDurationMs) ? (requiredDurationMs - calibration) : 1;
+  // Calibrate: subtract boot time already elapsed, assuming button held since boot.
+  const unsigned long calibration = millis();
+  const unsigned long calibratedDuration = (calibration < requiredDurationMs) ? (requiredDurationMs - calibration) : 1;
 
   const auto start = millis();
   inputMgr.update();
@@ -262,11 +338,12 @@ void HalGPIO::verifyPowerButtonWakeup(uint16_t requiredDurationMs, bool shortPre
       inputMgr.update();
     } while (inputMgr.isPressed(BTN_POWER) && inputMgr.getPowerButtonHeldTime() < calibratedDuration);
     if (inputMgr.getPowerButtonHeldTime() < calibratedDuration) {
-      startDeepSleep();
+      return false;
     }
   } else {
-    startDeepSleep();
+    return false;
   }
+  return true;
 }
 
 bool HalGPIO::isUsbConnected() const {
@@ -282,8 +359,10 @@ bool HalGPIO::isUsbConnected() const {
     }
     return false;
   }
-  // U0RXD/GPIO20 reads HIGH when USB is connected
-  return digitalRead(UART0_RXD) == HIGH;
+  if (BoardConfig::ACTIVE.usbDetect < 0) {
+    return false;
+  }
+  return digitalRead(BoardConfig::ACTIVE.usbDetect) == HIGH;
 }
 
 HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
@@ -292,8 +371,11 @@ HalGPIO::WakeupReason HalGPIO::getWakeupReason() const {
 
   const bool usbConnected = isUsbConnected();
 
-  if ((wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && !usbConnected) ||
-      (wakeupCause == ESP_SLEEP_WAKEUP_GPIO && resetReason == ESP_RST_DEEPSLEEP && usbConnected)) {
+  if (resetReason == ESP_RST_DEEPSLEEP &&
+      (wakeupCause == ESP_SLEEP_WAKEUP_GPIO || wakeupCause == ESP_SLEEP_WAKEUP_EXT1)) {
+    return WakeupReason::PowerButton;
+  }
+  if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_POWERON && !usbConnected) {
     return WakeupReason::PowerButton;
   }
   if (wakeupCause == ESP_SLEEP_WAKEUP_UNDEFINED && resetReason == ESP_RST_UNKNOWN && usbConnected) {

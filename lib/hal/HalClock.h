@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include <Wire.h>
 
+#include <cstdint>
+#include <ctime>
+
 #include "HalGPIO.h"
 
 class HalClock;
@@ -17,12 +20,25 @@ struct UtcDateTime {
   uint8_t second = 0;
 };
 
+// Upstream call sites (DateTimeSettings, Standby, WeRead) use this enum.
+enum class ClockSyncState : uint8_t {
+  Idle,
+  Syncing,
+  Succeeded,
+  Failed,
+};
+
 class HalClock {
   bool _available = false;
   mutable uint8_t _cachedHour = 0;
   mutable uint8_t _cachedMinute = 0;
   mutable bool _hasCachedTime = false;
   mutable unsigned long _lastPollMs = 0;
+  bool _autoSyncEnabled = true;
+  bool _wifiWasConnected = false;
+  bool _sntpInitialized = false;
+  ClockSyncState _syncState = ClockSyncState::Idle;
+  unsigned long _lastSyncMs = 0;
 
   static constexpr unsigned long CLOCK_POLL_MS = 10000;  // 10 seconds
 
@@ -69,8 +85,24 @@ class HalClock {
   static time_t utcToEpoch(const UtcDateTime& dt);
   static void epochToUtc(time_t epoch, UtcDateTime& out);
 
+  // Async SNTP: requestSync starts a non-blocking sync; update() completes it
+  // and optionally restarts when Wi-Fi reconnects / the LWIP update interval elapses.
+  // syncNow blocks until the wait deadline (or success).
+  void setAutoSyncEnabled(bool enabled);
+  void update();
+  bool syncNow(uint32_t timeoutMs = 10000);
+  bool requestSync();
+  ClockSyncState syncState() const { return _syncState; }
+
+  time_t nowUtc() const;
+  bool setUtcTime(time_t epoch);
+
  private:
   bool readRtcUtc(UtcDateTime& out) const;
   bool writeRtcUtc(const UtcDateTime& dt);
   bool writeTimeToRTC(uint8_t hour, uint8_t minute, uint8_t second);
+  bool updateRtcFromSystemTime();
+  bool startSntp();
+  void stopSntp();
+  void completeSync();
 };

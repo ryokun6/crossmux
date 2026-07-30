@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "../../../util/TimeUtils.h"
 #include "ChineseAlmanac.h"
 #include "I18nKeys.h"
 #include "SloppyAlphabets.h"
@@ -21,10 +22,10 @@
 //
 //   8 / 10 / 12 / 14 pt  → CN bitmap built from cn_common_chars.txt (~3500
 //                          chars).  Safe for any CJK glyph used in the design.
-//   16 / 18 pt           → CN bitmap built from cn_i18n_chars.txt (~430 chars,
-//                          i18n-only subset).  Glyphs absent from that file
-//                          render as no-ops (getGlyph returns nullptr → silent
-//                          skip), producing missing characters or blank cells.
+//   16 / 18 pt           → CN bitmap built from cn_i18n_chars.txt (~650 chars,
+//                          chinese.yaml + feature requirements). Glyphs absent
+//                          from that file render as no-ops (getGlyph returns
+//                          nullptr → silent skip).
 //
 // Therefore: every Chinese-text drawText / drawCenteredText / drawCenteredRow
 // call in this file uses ≤14pt, with one exception — the lunar row uses 18pt
@@ -145,8 +146,6 @@ int verticalCenterY(const GfxRenderer& renderer, int fontId, int bandY, int heig
 }
 
 // 宜 / 忌 card: black header strip with white label + 2×2 grid of body items.
-// Header label uses 12pt because 宜 / 忌 are absent from the 16/18pt
-// i18n CJK subset.
 void drawYiJiBox(const GfxRenderer& renderer, int x, int y, int w, int h, const char* headerLabel,
                  const char* const items[4]) {
   constexpr int kHeaderH = 36;
@@ -284,40 +283,30 @@ void drawAlmanacPage(GfxRenderer& renderer, const Rect& viewport, const AlmanacD
 //  ChineseCalendarFace lifecycle helpers
 // =====================================================================
 
-// Anchor: 1970-01-01 00:00:00 UTC+8 → time_t = -8*3600 (= -28800).  But we
-// only ever consume real `time(nullptr)` values from `localtime_r`, so this
-// helper just returns the UTC+8 midnight that contains the given local
-// struct tm.
-time_t startOfDayLocal(const struct tm& local) {
-  struct tm midnight = local;
-  midnight.tm_hour = 0;
-  midnight.tm_min = 0;
-  midnight.tm_sec = 0;
-  midnight.tm_isdst = 0;
-  // Use mktime, which assumes the struct tm is in local time (TZ already set
-  // to UTC+8 by configTime).
-  return mktime(&midnight);
-}
-
-// Apply day offset to a base struct tm by going through time_t arithmetic.
-// Returns the resulting struct tm in local (UTC+8) zone.
+// Apply a fixed-day offset without consulting the process-global TZ state.
 bool offsetDay(const struct tm& base, int32_t daysOffset, struct tm& out) {
-  time_t midnight = startOfDayLocal(base);
-  if (midnight == static_cast<time_t>(-1)) return false;
-  midnight += static_cast<time_t>(daysOffset) * 86400;
-  if (!localtime_r(&midnight, &out)) return false;
+  const int64_t dayOrdinal =
+      static_cast<int64_t>(TimeUtils::getDayOrdinalForDate(base.tm_year + 1900, base.tm_mon + 1, base.tm_mday)) +
+      daysOffset;
+  if (dayOrdinal < 0 || dayOrdinal > UINT32_MAX) return false;
+
+  int year = 0;
+  unsigned month = 0;
+  unsigned day = 0;
+  if (!TimeUtils::getDateFromDayOrdinal(static_cast<uint32_t>(dayOrdinal), year, month, day)) return false;
+
+  out = base;
+  out.tm_year = year - 1900;
+  out.tm_mon = static_cast<int>(month) - 1;
+  out.tm_mday = static_cast<int>(day);
+  out.tm_wday = static_cast<int>((dayOrdinal + 4) % 7);  // 1970-01-01 was Thursday.
+  out.tm_yday = static_cast<int>(dayOrdinal) - static_cast<int>(TimeUtils::getDayOrdinalForDate(year, 1, 1));
   return true;
 }
 
-// Pre-NTP fallback: use UTC+8 today regardless of system clock.
-// localtime_r with the configTime'd TZ already handles this when synced;
-// when not synced, time(nullptr) returns ~ESP epoch boot time, which is
-// not meaningful as a date. We still proceed (caller decided this face is
-// active), but visible dates will be wrong until NTP succeeds.
 bool getTodayLocal(struct tm& out) {
-  const time_t now = time(nullptr);
-  if (!localtime_r(&now, &out)) return false;
-  return true;
+  const uint32_t now = TimeUtils::getCurrentValidTimestamp();
+  return now && TimeUtils::getLocalDateTime(now, out);
 }
 
 }  // namespace
@@ -353,7 +342,7 @@ void ChineseCalendarFace::onExit() {
 bool ChineseCalendarFace::refreshCachedDay() {
   struct tm today;
   if (!getTodayLocal(today)) {
-    LOG_DBG("STANDBY", "Calendar: localtime_r failed");
+    LOG_DBG("STANDBY", "Calendar: trustworthy local date unavailable");
     cacheValid_ = false;
     return false;
   }

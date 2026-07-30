@@ -42,6 +42,7 @@ class Section {
                          bool embeddedStyle, uint8_t imageRendering, bool focusReadingEnabled,
                          bool punctCompressionEnabled, const std::function<void()>& popupFn = nullptr);
   std::unique_ptr<Page> loadPageFromSectionFile();
+  std::unique_ptr<Page> loadPage(int pageIndex);
   std::string getTextFromSectionFile();
 
   // Look up the page number for an anchor id from the section cache file.

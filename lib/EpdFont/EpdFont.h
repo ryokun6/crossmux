@@ -16,6 +16,11 @@ class EpdFont {
   const EpdGlyph* getGlyphNoReplacement(uint32_t cp) const;
 
   const EpdGlyph* getGlyph(uint32_t cp) const;
+  const EpdGlyph* getGlyph(uint32_t cp, bool* usedReplacement) const;
+
+  /// True if this font covers `cp` via interval table or SD coverageHandler.
+  /// Never falls back to U+FFFD and never does glyph-miss I/O beyond coverage.
+  bool hasCodepoint(uint32_t cp) const;
 
   /// Returns the kerning adjustment (4.4 fixed-point in pixels) between two codepoints.
   /// Returns 0 if no kerning data exists for the pair.

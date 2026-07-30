@@ -98,4 +98,19 @@ void renderAntiAliased(GfxRenderer& renderer, RenderFn&& renderFn) {
   renderer.restoreBwBuffer();
 }
 
+struct TouchPageTurn {
+  bool prev;
+  bool next;
+  int zone;
+};
+
+// Touch zones are no-ops on button-only builds; callers also use detectPageTurn().
+inline TouchPageTurn detectTouchPageTurn(GfxRenderer& /*renderer*/, const MappedInputManager& /*input*/) {
+  return {false, false, 0};
+}
+inline bool handleBackNavigation(const MappedInputManager& input) {
+  return input.wasReleased(MappedInputManager::Button::Back);
+}
+inline bool isTouchMenuGesture(const MappedInputManager& /*input*/) { return false; }
+
 }  // namespace ReaderUtils

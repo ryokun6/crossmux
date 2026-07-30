@@ -175,3 +175,16 @@ void KOReaderCredentialStore::setMatchMethod(DocumentMatchMethod method) {
   matchMethod = method;
   LOG_DBG("KRS", "Set match method: %s", method == DocumentMatchMethod::FILENAME ? "Filename" : "Binary");
 }
+
+void KOReaderCredentialStore::setSendMetadata(bool enabled) {
+  sendMetadata = enabled;
+  LOG_DBG("KRS", "Set send metadata: %s", enabled ? "true" : "false");
+}
+
+void KOReaderCredentialStore::setSyncBehavior(KOReaderSyncBehavior behavior) {
+  if (static_cast<uint8_t>(behavior) > static_cast<uint8_t>(KOReaderSyncBehavior::SMART)) {
+    behavior = KOReaderSyncBehavior::ASK_EVERY_TIME;
+  }
+  syncBehavior = behavior;
+  LOG_DBG("KRS", "Set sync behavior: %s", behavior == KOReaderSyncBehavior::SMART ? "Smart" : "Ask");
+}

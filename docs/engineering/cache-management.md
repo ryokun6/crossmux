@@ -1,6 +1,6 @@
 # Cache Management & Invalidation
 
-> Deep reference for [AGENTS.md](../../AGENTS.md). The SD-card cache trades flash
+> Deep reference for [CLAUDE.md](../../CLAUDE.md). The SD-card cache trades flash
 > for RAM/CPU. **Always bump the format version BEFORE changing a binary layout.**
 > For the byte-level binary formats themselves, see
 > [../file-formats.md](../file-formats.md) (canonical reference).
@@ -23,8 +23,6 @@
    - Font family or size (`SETTINGS.fontFamily`, `SETTINGS.fontSize`)
    - Line spacing (`SETTINGS.lineSpacing`)
    - Paragraph spacing (`SETTINGS.extraParagraphSpacing`)
-   - Effective writing mode (`SETTINGS.writingMode`; vertical-rl applies only to
-     EPUBs whose `dc:language` is Chinese, Japanese, or Korean)
    - Screen margins (`SETTINGS.screenMargin`)
 3. **Viewport dimensions change**:
    - Screen orientation change
@@ -58,13 +56,8 @@ rm -rf /path/to/sd/.crosspoint/epub_<hash>/sections/
 **Source**: `lib/Epub/Epub/Section.cpp`, `lib/Epub/Epub/BookMetadataCache.cpp`
 
 **Current Versions** (as of [../file-formats.md](../file-formats.md)):
-- `book.bin`: **Version 10** — stores NFC metadata plus the OPF spine's RTL page-progression flag.
-- `section.bin`: **per-flavor** — Latin **54**, TC **77**, SC **78**, JA **79**, KO **80** (`lib/Epub/Epub/Section.cpp`). The flavors emit different word streams (per-character CJK tokenization, 禁则, punctuation compression, source-space preservation), so each carries an independent counter; the numbers are kept distinct and above every previously-shipped value so a firmware flavor swap never reuses another flavor's cache.
-
-This is what makes switching language build over OTA safe without any explicit
-cache clearing (see [build-system.md](build-system.md)): the new firmware reads a
-version it did not write, discards the section files, and repaginates. Keep the
-counters distinct when bumping any one of them.
+- `book.bin`: **Version 11** (metadata structure) — includes NFC-composed titles and ignores ambiguous EPUB guide text references while remaining above every version shipped by either lineage.
+- `section.bin`: **per-flavor** — Latin builds **Version 46**, Chinese builds (`ENABLE_CHINESE_VERSION`) **Version 47**. Versions 46/47 invalidate pagination after oversized tokens began using UTF-8-safe emergency wrapping without synthetic hyphens. The two flavors emit different word streams (per-character CJK tokenization), so each carries an independent counter; numbers stay distinct and above every previously shipped value so a firmware flavor swap never reuses the other's cache.
 
 **Version Increment Rules**:
 1. **ALWAYS increment version** BEFORE changing binary structure
@@ -74,7 +67,7 @@ counters distinct when bumping any one of them.
 **Example** (incrementing section format version):
 ```cpp
 // lib/Epub/Epub/Section.cpp
-static constexpr uint8_t SECTION_FILE_VERSION = 30;  // bump before any layout change
+static constexpr uint8_t SECTION_FILE_VERSION = 42;  // bump before any layout change
 
 // Add new field to structure
 struct PageLine {

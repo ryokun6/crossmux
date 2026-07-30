@@ -109,6 +109,7 @@ simulator at a time against a given `sd_root`. See
 | Generated files | HTML, i18n, fonts produced by build scripts | [docs/engineering/generated-files.md](docs/engineering/generated-files.md) |
 | Testing & debugging | Build/monitor commands, crash playbook, verification, CI | [docs/engineering/testing-and-debugging.md](docs/engineering/testing-and-debugging.md) |
 | Git workflow | Repo detection, branching, commits | [docs/engineering/git-workflow.md](docs/engineering/git-workflow.md) |
+| Upstream sync into ryOS | Integrating `0x1abin/crossmux` (WeRead rewrite, overlap keep/take) | [docs/engineering/upstream-integration-plan.md](docs/engineering/upstream-integration-plan.md) |
 | Cache management | Cache structure, invalidation, format versioning | [docs/engineering/cache-management.md](docs/engineering/cache-management.md) |
 | Chinese builds | `gh_release_tc` (zh-TW) / `gh_release_sc` (zh-CN), embedded CJK fonts | [docs/engineering/chinese-build.md](docs/engineering/chinese-build.md) |
 | Japanese / Korean builds | `gh_release_ja` / `gh_release_ko`, GenSen JP + Resource Han Rounded KR | [docs/engineering/japanese-korean-build.md](docs/engineering/japanese-korean-build.md) |

@@ -123,13 +123,19 @@ unsigned long HalGPIO::getPowerButtonHeldTime() const {
   return 0;
 }
 
-// No real device to sleep. Keep the runtime alive (same as emscripten): the
-// last sleep frame stays on screen. Native used to std::exit(0), but that still
-// runs static destructors and aborts on ActivityManager's never-destroy assert.
-void HalGPIO::startDeepSleep() {}
+bool HalGPIO::hasTouch() const { return false; }
+bool HalGPIO::wasTouchTap(float&, float&) const { return false; }
+bool HalGPIO::wasTouchDown(float&, float&) const { return false; }
+bool HalGPIO::isTouchTapCandidate(float&, float&, unsigned long&) const { return false; }
+bool HalGPIO::isTouchHeldAt(float&, float&) const { return false; }
+unsigned long HalGPIO::lastTouchHeldMs() const { return 0; }
+bool HalGPIO::wasSwipe(float&, float&, float&, float&) const { return false; }
+bool HalGPIO::wasTouchActivity() const { return false; }
+void HalGPIO::setSharedConfirmPowerShortPressEmitsPower(bool) {}
 
-void HalGPIO::verifyPowerButtonWakeup(uint16_t /*requiredDurationMs*/, bool /*shortPressAllowed*/) {
-  // No-op: in the simulator we always proceed past the boot wakeup gate.
+bool HalGPIO::verifyPowerButtonWakeup(uint16_t /*requiredDurationMs*/, bool /*shortPressAllowed*/) {
+  // The simulator always proceeds past the boot wakeup gate.
+  return true;
 }
 
 bool HalGPIO::isUsbConnected() const { return true; }

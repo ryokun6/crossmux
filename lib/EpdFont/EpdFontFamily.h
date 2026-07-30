@@ -12,11 +12,16 @@ class EpdFontFamily {
     BOLD = 1,
     ITALIC = 2,
     BOLD_ITALIC = 3,
-    UNDERLINE = 4,      // drawn as a line below baseline by TextBlock::render()
-    STRIKETHROUGH = 8,  // drawn as a line through midline by TextBlock::render()
-    SUP = 16,           // superscript: glyph scaled 50%, raised ~40% of ascender
-    SUB = 32,           // subscript: glyph scaled 50%, lowered ~25% of ascender
+    UNDERLINE = 4,       // drawn as a line below baseline by TextBlock::render()
+    STRIKETHROUGH = 8,   // drawn as a line through midline by TextBlock::render()
+    SUP = 16,            // superscript: glyph scaled 50%, raised ~40% of ascender
+    SUB = 32,            // subscript: glyph scaled 50%, lowered ~25% of ascender
+    RUBY_CONTINUE = 64,  // Group ruby follower marker (used internally by Epub layout)
   };
+  static constexpr uint8_t TEXT_DECORATION_MASK = static_cast<uint8_t>(UNDERLINE | STRIKETHROUGH);
+  static constexpr bool hasTextDecoration(const Style style) {
+    return (static_cast<uint8_t>(style) & TEXT_DECORATION_MASK) != 0;
+  }
 
   explicit EpdFontFamily(const EpdFont* regular, const EpdFont* bold = nullptr, const EpdFont* italic = nullptr,
                          const EpdFont* boldItalic = nullptr)
@@ -37,6 +42,10 @@ class EpdFontFamily {
   /// is non-null, it receives the EpdFontData that owns the returned glyph —
   /// callers must use that for bitmap lookup, not getData(style).
   const EpdGlyph* getGlyph(uint32_t cp, Style style = REGULAR, const EpdFontData** outData = nullptr) const;
+  /// Same as getGlyph; sets *usedReplacement when this family (styled→regular
+  /// included) lacks \p cp and a cross-family fallback or U+FFFD is used.
+  const EpdGlyph* getGlyph(uint32_t cp, Style style, bool* usedReplacement,
+                           const EpdFontData** outData = nullptr) const;
   /// Like getGlyph, but returns nullptr instead of substituting U+FFFD.
   /// Still applies same-family styled→regular fallback. Does not consult
   /// glyphFallback_ (callers that want cross-family fallback use getGlyph).

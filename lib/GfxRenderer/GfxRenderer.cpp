@@ -21,6 +21,19 @@ namespace {
 uint8_t resolveSdCardStyle(const SdCardFont& font, const EpdFontFamily::Style style) {
   return font.resolveStyle(static_cast<uint8_t>(style));
 }
+
+#ifdef ENABLE_CHINESE_VERSION
+const EpdGlyph* getGlyphMaybeReportMissing(FontCacheManager* fcm, const EpdFontFamily& font, const int fontId,
+                                           const uint32_t sourceCp, const uint32_t cp,
+                                           const EpdFontFamily::Style style) {
+  bool usedReplacement = false;
+  const EpdGlyph* glyph = font.getGlyph(cp, style, &usedReplacement);
+  if (usedReplacement && fcm) {
+    fcm->reportMissingChineseCodepoint(fontId, sourceCp);
+  }
+  return glyph;
+}
+#endif
 }  // namespace
 
 namespace {
@@ -512,13 +525,18 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
     if (utf8IsCombiningMark(cp)) {
       const EpdGlyph* combiningGlyph = font.getGlyph(cp, style);
       if (!combiningGlyph) continue;
-      const int raiseBy = combiningMark::raiseAboveBase(combiningGlyph->top, combiningGlyph->height, lastBaseTop);
-      const int combiningX = combiningMark::centerOver(lastBaseX, lastBaseLeft, lastBaseWidth, combiningGlyph->left,
-                                                       combiningGlyph->width);
+      const auto anchor = combiningMark::anchorFor(cp);
+      const int raiseBy =
+          combiningMark::raiseAboveBase(anchor, combiningGlyph->top, combiningGlyph->height, lastBaseTop);
+      const int combiningX = combiningMark::anchorOver(anchor, lastBaseX, lastBaseLeft, lastBaseWidth,
+                                                       combiningGlyph->left, combiningGlyph->width);
       renderCharImpl<TextRotation::None>(*this, renderMode, font, cp, combiningX, yPos - raiseBy, black, style);
       continue;
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const uint32_t sourceCp = cp;
+#endif
     cp = font.applyLigatures(cp, textCursor, style);
 
     // Differential rounding: snap (previous advance + current kern) as one unit so
@@ -529,7 +547,11 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       lastBaseX += fp4::toPixel(prevAdvanceFP + kernFP);       // snap 12.4 fixed-point to nearest pixel
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const EpdGlyph* glyph = getGlyphMaybeReportMissing(fontCacheManager_, font, fontId, sourceCp, cp, style);
+#else
     const EpdGlyph* glyph = font.getGlyph(cp, style);
+#endif
 
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;
@@ -1448,6 +1470,35 @@ void GfxRenderer::invertScreen() const {
   }
 }
 
+void GfxRenderer::tapToLogical(float nx, float ny, int& outX, int& outY) const {
+  int phyX = static_cast<int>(nx * panelWidth);
+  int phyY = static_cast<int>(ny * panelHeight);
+  if (phyX < 0) phyX = 0;
+  if (phyX > panelWidth - 1) phyX = panelWidth - 1;
+  if (phyY < 0) phyY = 0;
+  if (phyY > panelHeight - 1) phyY = panelHeight - 1;
+
+  switch (orientation) {
+    case Portrait:
+      outX = panelHeight - 1 - phyY;
+      outY = phyX;
+      break;
+    case PortraitInverted:
+      outX = phyY;
+      outY = panelWidth - 1 - phyX;
+      break;
+    case LandscapeClockwise:
+      outX = panelWidth - 1 - phyX;
+      outY = panelHeight - 1 - phyY;
+      break;
+    case LandscapeCounterClockwise:
+    default:
+      outX = phyX;
+      outY = phyY;
+      break;
+  }
+}
+
 void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const {
   auto elapsed = millis() - start_ms;
   LOG_DBG("GFX", "Time = %lu ms from clearScreen to displayBuffer", elapsed);
@@ -1655,6 +1706,20 @@ bool GfxRenderer::copyBufferToRegion(int lx, int ly, int lw, int lh, const uint8
   return true;
 }
 
+size_t GfxRenderer::readFramebufferRegion(int x, int y, int w, int h, uint8_t* dst, size_t dstCapacity) const {
+  if (dst == nullptr || w <= 0 || h <= 0) return 0;
+  const size_t needed = getRegionByteSize(x, y, w, h);
+  if (needed == 0 || needed > dstCapacity) return 0;
+  return copyRegionToBuffer(x, y, w, h, dst, dstCapacity) ? needed : 0;
+}
+
+void GfxRenderer::writeFramebufferRegion(int x, int y, int w, int h, const uint8_t* src) {
+  if (src == nullptr || w <= 0 || h <= 0) return;
+  const size_t needed = getRegionByteSize(x, y, w, h);
+  if (needed == 0) return;
+  (void)copyBufferToRegion(x, y, w, h, src, needed);
+}
+
 int GfxRenderer::getSpaceWidth(const int fontId, const EpdFontFamily::Style style) const {
   // Advance table fast-path for SD card fonts during layout
   auto sdIt = sdCardFonts_.find(fontId);
@@ -1846,14 +1911,19 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
     if (utf8IsCombiningMark(cp)) {
       const EpdGlyph* combiningGlyph = font.getGlyph(cp, style);
       if (!combiningGlyph) continue;
-      const int raiseBy = combiningMark::raiseAboveBase(combiningGlyph->top, combiningGlyph->height, lastBaseTop);
+      const auto anchor = combiningMark::anchorFor(cp);
+      const int raiseBy =
+          combiningMark::raiseAboveBase(anchor, combiningGlyph->top, combiningGlyph->height, lastBaseTop);
       const int combiningX = x - raiseBy;
-      const int combiningY = combiningMark::centerOverRotated90CW(lastBaseY, lastBaseLeft, lastBaseWidth,
+      const int combiningY = combiningMark::anchorOverRotated90CW(anchor, lastBaseY, lastBaseLeft, lastBaseWidth,
                                                                   combiningGlyph->left, combiningGlyph->width);
       renderCharImpl<TextRotation::Rotated90CW>(*this, renderMode, font, cp, combiningX, combiningY, black, style);
       continue;
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const uint32_t sourceCp = cp;
+#endif
     cp = font.applyLigatures(cp, text, style);
 
     // Differential rounding: snap (previous advance + current kern) as one unit,
@@ -1863,7 +1933,11 @@ void GfxRenderer::drawTextRotated90CW(const int fontId, const int x, const int y
       lastBaseY -= fp4::toPixel(prevAdvanceFP + kernFP);       // snap 12.4 fixed-point to nearest pixel
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const EpdGlyph* glyph = getGlyphMaybeReportMissing(fontCacheManager_, font, fontId, sourceCp, cp, style);
+#else
     const EpdGlyph* glyph = font.getGlyph(cp, style);
+#endif
 
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;
@@ -1911,14 +1985,19 @@ void GfxRenderer::drawTextRotated90CCW(const int fontId, const int x, const int 
     if (utf8IsCombiningMark(cp)) {
       const EpdGlyph* combiningGlyph = font.getGlyph(cp, style);
       if (!combiningGlyph) continue;
-      const int raiseBy = combiningMark::raiseAboveBase(combiningGlyph->top, combiningGlyph->height, lastBaseTop);
+      const auto anchor = combiningMark::anchorFor(cp);
+      const int raiseBy =
+          combiningMark::raiseAboveBase(anchor, combiningGlyph->top, combiningGlyph->height, lastBaseTop);
       const int combiningX = x + raiseBy;
-      const int combiningY = combiningMark::centerOverRotated90CCW(lastBaseY, lastBaseLeft, lastBaseWidth,
+      const int combiningY = combiningMark::anchorOverRotated90CCW(anchor, lastBaseY, lastBaseLeft, lastBaseWidth,
                                                                    combiningGlyph->left, combiningGlyph->width);
       renderCharImpl<TextRotation::Rotated90CCW>(*this, renderMode, font, cp, combiningX, combiningY, black, style);
       continue;
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const uint32_t sourceCp = cp;
+#endif
     cp = font.applyLigatures(cp, text, style);
 
     if (prevCp != 0) {
@@ -1926,7 +2005,11 @@ void GfxRenderer::drawTextRotated90CCW(const int fontId, const int x, const int 
       lastBaseY += fp4::toPixel(prevAdvanceFP + kernFP);  // top→bottom within a vertical column
     }
 
+#ifdef ENABLE_CHINESE_VERSION
+    const EpdGlyph* glyph = getGlyphMaybeReportMissing(fontCacheManager_, font, fontId, sourceCp, cp, style);
+#else
     const EpdGlyph* glyph = font.getGlyph(cp, style);
+#endif
 
     lastBaseLeft = glyph ? glyph->left : 0;
     lastBaseWidth = glyph ? glyph->width : 0;

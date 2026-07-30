@@ -48,19 +48,15 @@ unsigned int uzlib_crc32(const void*, unsigned int, unsigned int prev) { return 
 }
 
 // =============================================================================
-// Excluded image converters / decoder factory
+// WASM-only image converter stubs / excluded decoder factory
 // =============================================================================
 
-// Native builds compile real JpegToBmpConverter + PngToBmpConverter (covers).
-// WASM keeps these stubs. Inline EPUB image decoders stay stubbed on both.
 #ifdef __EMSCRIPTEN__
+#include "JpegToBmpConverter.h"
 #include "PngToBmpConverter.h"
-
 bool PngToBmpConverter::pngFileToBmpStream(HalFile&, Print&, bool) { return false; }
 bool PngToBmpConverter::pngFileToBmpStreamWithSize(HalFile&, Print&, int, int) { return false; }
 bool PngToBmpConverter::pngFileTo1BitBmpStreamWithSize(HalFile&, Print&, int, int) { return false; }
-
-#include "JpegToBmpConverter.h"
 
 bool JpegToBmpConverter::jpegFileToBmpStream(HalFile&, Print&, bool) { return false; }
 bool JpegToBmpConverter::jpegFileToBmpStreamWithSize(HalFile&, Print&, int, int) { return false; }
@@ -176,43 +172,16 @@ void selfTest() {}
   void Cls::render(RenderLock&&) {}
 
 #include "activities/network/WifiSelectionActivity.h"
-// Simulator has no Wi-Fi UI; immediately succeed so callers (OPDS / KOSync /
-// ClockSync) continue on the host network stack instead of hanging on a blank stub.
-void WifiSelectionActivity::onEnter() {
-  Activity::onEnter();
-  result.isCancelled = false;
-  finish();
-}
-void WifiSelectionActivity::onExit() {}
-void WifiSelectionActivity::loop() {}
-void WifiSelectionActivity::render(RenderLock&&) {}
+STUB_ACTIVITY_BASE(WifiSelectionActivity)
 
 #include "activities/network/CrossPointWebServerActivity.h"
-// File Transfer / WeRead-key setup replace Home with this activity. An empty
-// STUB_ACTIVITY_BASE onEnter left a dead blank screen that looked like a crash
-// (no Back handler, no mode chooser). Bounce home via deferred finish() so we
-// don't nest replaceActivity inside onEnter.
-void CrossPointWebServerActivity::onEnter() {
-  Activity::onEnter();
-  LOG_INF("WEBACT", "File transfer / web server is not available in the simulator");
-  result.isCancelled = true;
-  finish();
-}
-void CrossPointWebServerActivity::onExit() {}
-void CrossPointWebServerActivity::loop() {}
-void CrossPointWebServerActivity::render(RenderLock&&) {}
+STUB_ACTIVITY_BASE(CrossPointWebServerActivity)
 
 #include "activities/network/CalibreConnectActivity.h"
-// Same replace-not-push trap as CrossPointWebServerActivity above.
-void CalibreConnectActivity::onEnter() {
-  Activity::onEnter();
-  LOG_INF("WEBACT", "Calibre connect is not available in the simulator");
-  result.isCancelled = true;
-  finish();
-}
-void CalibreConnectActivity::onExit() {}
-void CalibreConnectActivity::loop() {}
-void CalibreConnectActivity::render(RenderLock&&) {}
+STUB_ACTIVITY_BASE(CalibreConnectActivity)
+
+#include "activities/browser/OpdsBookBrowserActivity.h"
+STUB_ACTIVITY_BASE(OpdsBookBrowserActivity)
 
 #include "activities/settings/OtaUpdateActivity.h"
 STUB_ACTIVITY_BASE(OtaUpdateActivity)
@@ -230,24 +199,25 @@ void SdFirmwareUpdateActivity::performUpdate() {}
 
 #include "SdCardFontSystem.h"
 #include "activities/settings/FontDownloadActivity.h"
-FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m, bool)
-    : Activity("FontDownload", r, m), fontInstaller_(sdFontSystem.registry()) {}
+FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m, Purpose purpose,
+                                           bool resumedAfterDefrag)
+    : Activity("FontDownload", r, m),
+      purpose_(purpose),
+      fontInstaller_(sdFontSystem.registry()),
+      resumedAfterDefrag_(resumedAfterDefrag) {}
+#ifdef ENABLE_CHINESE_VERSION
+bool FontDownloadActivity::wasChineseFontPromptShownThisBoot() { return true; }
+#endif
 STUB_ACTIVITY_BASE(FontDownloadActivity)
 
 #include "activities/settings/KOReaderAuthActivity.h"
 STUB_ACTIVITY_BASE(KOReaderAuthActivity)
 
-// Real KOReaderSyncActivity is linked (credentials hint UI), but the HTTP client
-// needs a fuller esp_http_client shim than the simulator carries. Stub the
-// network methods; NO_CREDENTIALS never calls them.
-#include "KOReaderSyncClient.h"
-int KOReaderSyncClient::lastHttpCode = 0;
-KOReaderSyncClient::Error KOReaderSyncClient::authenticate() { return NO_CREDENTIALS; }
-KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string&, KOReaderProgress&) {
-  return NO_CREDENTIALS;
-}
-KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgress&) { return NO_CREDENTIALS; }
-const char* KOReaderSyncClient::errorString(Error) { return "No credentials configured"; }
+#include "activities/settings/KOReaderSettingsActivity.h"
+STUB_ACTIVITY_BASE(KOReaderSettingsActivity)
+
+#include "activities/reader/KOReaderSyncActivity.h"
+STUB_ACTIVITY_BASE(KOReaderSyncActivity)
 
 // CrossPointWebServer destructor referenced from CrossPointWebServerActivity vtable.
 #include "network/CrossPointWebServer.h"

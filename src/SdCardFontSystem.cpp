@@ -8,8 +8,18 @@
 namespace {
 
 static uint8_t fontSizeEnumFromSettings() {
-  uint8_t e = SETTINGS.fontSize;
-  if (e >= CrossPointSettings::FONT_SIZE_COUNT) e = 1;  // default to MEDIUM
+  // Map reader point size onto the legacy 0..3 size slots the SD font manager loads.
+  const uint8_t pt = SETTINGS.fontPointSize;
+  uint8_t e = 1;  // MEDIUM default
+  if (pt <= 10) {
+    e = 0;
+  } else if (pt <= 12) {
+    e = 1;
+  } else if (pt <= 14) {
+    e = 2;
+  } else {
+    e = 3;
+  }
   return e;
 }
 
@@ -38,7 +48,8 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
   if (SETTINGS.sdFontFamilyName[0] != '\0') {
     const auto* family = registry_.findFamily(SETTINGS.sdFontFamilyName);
     if (family) {
-      if (manager_.loadFamily(*family, renderer, fontSizeEnumFromSettings())) {
+      const bool preferFlash = SETTINGS.sdFontFlashPreload != 0;
+      if (manager_.loadFamily(*family, renderer, fontSizeEnumFromSettings(), preferFlash)) {
         LOG_DBG("SDFS", "Loaded SD card font family: %s", SETTINGS.sdFontFamilyName);
         wireBuiltinGlyphFallback(renderer, SETTINGS.sdFontFamilyName);
       } else {
@@ -54,7 +65,9 @@ void SdCardFontSystem::begin(GfxRenderer& renderer) {
   LOG_DBG("SDFS", "SD font system ready (%d families discovered)", registry_.getFamilyCount());
 }
 
-void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
+void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) { ensureLoaded(renderer, true); }
+
+void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache) {
   // If the web server (or another task) installed/deleted fonts, re-discover.
   // Track whether we just re-discovered so we can force a reload below even
   // when the wanted family/size still maps to the same point size — the file
@@ -68,6 +81,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
   const char* wantedFamily = SETTINGS.sdFontFamilyName;
   const std::string& currentFamily = manager_.currentFamilyName();
   const uint8_t sizeEnum = fontSizeEnumFromSettings();
+  const bool preferFlash = allowFlashCache && SETTINGS.sdFontFlashPreload != 0;
 
   if (wantedFamily[0] == '\0') {
     if (!currentFamily.empty()) {
@@ -105,7 +119,7 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer) {
 
   const auto* family = registry_.findFamily(wantedFamily);
   if (family) {
-    if (manager_.loadFamily(*family, renderer, sizeEnum)) {
+    if (manager_.loadFamily(*family, renderer, sizeEnum, preferFlash)) {
       LOG_DBG("SDFS", "Loaded SD font family: %s", wantedFamily);
       wireBuiltinGlyphFallback(renderer, wantedFamily);
     } else {
@@ -124,3 +138,5 @@ int SdCardFontSystem::resolveFontId(const char* familyName, uint8_t /*fontSizeEn
   // ensureLoaded() must have been called with the current settings before this.
   return manager_.getFontId(familyName);
 }
+
+void SdCardFontSystem::releaseLoadedFont(GfxRenderer& renderer) { manager_.unloadAll(renderer); }

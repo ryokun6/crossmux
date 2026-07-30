@@ -24,16 +24,16 @@ namespace {
 // number so a firmware flavor swap can never read another flavor's stale cache.
 #if defined(ENABLE_CHINESE_VERSION)
 #ifdef CHINESE_UI_SIMPLIFIED
-constexpr uint8_t SECTION_FILE_VERSION = 78;  // SC: CSS segment-break wins over indent spaces
+constexpr uint8_t SECTION_FILE_VERSION = 86;  // SC: <br> margin strip + prior TextBlock arena
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 77;  // TC: CSS segment-break wins over indent spaces
+constexpr uint8_t SECTION_FILE_VERSION = 85;  // TC: <br> margin strip + prior TextBlock arena
 #endif
 #elif defined(ENABLE_JAPANESE_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 79;  // JA: CSS segment-break wins over indent spaces
+constexpr uint8_t SECTION_FILE_VERSION = 87;  // JA: <br> margin strip + prior TextBlock arena
 #elif defined(ENABLE_KOREAN_VERSION)
-constexpr uint8_t SECTION_FILE_VERSION = 80;  // KO: source-space + segment-break priority fix
+constexpr uint8_t SECTION_FILE_VERSION = 88;  // KO: <br> margin strip + prior TextBlock arena
 #else
-constexpr uint8_t SECTION_FILE_VERSION = 54;  // isolated upright 1-char Latin/digit → fullwidth
+constexpr uint8_t SECTION_FILE_VERSION = 56;  // Latin: <br> margin strip + prior TextBlock arena
 #endif
 constexpr uint32_t HEADER_SIZE = sizeof(uint8_t) + sizeof(int) + sizeof(float) + sizeof(bool) + sizeof(uint8_t) +
                                  sizeof(uint8_t) + sizeof(uint16_t) + sizeof(uint16_t) + sizeof(uint16_t) +
@@ -425,7 +425,10 @@ bool Section::createSectionFile(const int fontId, const float lineCompression, c
   return true;
 }
 
-std::unique_ptr<Page> Section::loadPageFromSectionFile() {
+std::unique_ptr<Page> Section::loadPage(const int pageIndex) {
+  if (pageIndex < 0 || pageIndex >= static_cast<int>(pageCount)) {
+    return nullptr;
+  }
   if (!Storage.openFileForRead("SCT", filePath, file)) {
     return nullptr;
   }
@@ -433,7 +436,7 @@ std::unique_ptr<Page> Section::loadPageFromSectionFile() {
   file.seek(HEADER_SIZE - sizeof(uint32_t) * 4);
   uint32_t lutOffset;
   serialization::readPod(file, lutOffset);
-  file.seek(lutOffset + sizeof(uint32_t) * currentPage);
+  file.seek(lutOffset + sizeof(uint32_t) * pageIndex);
   uint32_t pagePos;
   serialization::readPod(file, pagePos);
   file.seek(pagePos);
@@ -444,6 +447,8 @@ std::unique_ptr<Page> Section::loadPageFromSectionFile() {
   return page;
 }
 
+std::unique_ptr<Page> Section::loadPageFromSectionFile() { return loadPage(currentPage); }
+
 std::string Section::getTextFromSectionFile() {
   std::string fullText;
   auto p = this->loadPageFromSectionFile();
@@ -452,10 +457,10 @@ std::string Section::getTextFromSectionFile() {
       if (el->getTag() == TAG_PageLine) {
         const auto& line = static_cast<const PageLine&>(*el);
         if (line.getBlock()) {
-          const auto& words = line.getBlock()->getWords();
-          for (const auto& w : words) {
+          const auto& block = line.getBlock();
+          for (uint16_t i = 0; i < block->wordCount(); i++) {
             if (!fullText.empty()) fullText += " ";
-            fullText += w;
+            fullText += block->wordText(i);
           }
         }
       }

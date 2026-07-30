@@ -161,7 +161,12 @@ class GfxRenderer {
   // Screen ops
   int getScreenWidth() const;
   int getScreenHeight() const;
+  void tapToLogical(float nx, float ny, int& outX, int& outY) const;
   void displayBuffer(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const;
+  void displayBufferAsync(HalDisplay::RefreshMode refreshMode = HalDisplay::FAST_REFRESH) const {
+    displayBuffer(refreshMode);
+  }
+  void waitRefreshComplete() const {}
   // Force the next displayBuffer() to use `mode`, overriding its argument once.
   void requestNextRefresh(const HalDisplay::RefreshMode mode) const {
     nextRefreshOverride = mode;
@@ -251,6 +256,7 @@ class GfxRenderer {
                        bool roundBottomLeft, bool roundBottomRight, Color color) const;
   void drawImage(const uint8_t bitmap[], int x, int y, int width, int height) const;
   void drawIcon(const uint8_t bitmap[], int x, int y, int width, int height) const;
+  void drawIcon(const uint8_t bitmap[], int x, int y, int size) const { drawIcon(bitmap, x, y, size, size); }
   void drawBitmap(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight, float cropX = 0,
                   float cropY = 0) const;
   void drawBitmap1Bit(const Bitmap& bitmap, int x, int y, int maxWidth, int maxHeight) const;
@@ -276,6 +282,9 @@ class GfxRenderer {
   int getTextAdvanceX(int fontId, const char* text, EpdFontFamily::Style style) const;
   int getFontAscenderSize(int fontId) const;
   int getLineHeight(int fontId) const;
+  int getLineHeight(int fontId, float compression) const {
+    return static_cast<int>(getLineHeight(fontId) * compression);
+  }
   std::string truncatedText(int fontId, const char* text, int maxWidth,
                             EpdFontFamily::Style style = EpdFontFamily::REGULAR) const;
   /// Word-wrap \p text into at most \p maxLines lines, each no wider than
@@ -323,6 +332,7 @@ class GfxRenderer {
 
   // Low level functions
   uint8_t* getFrameBuffer() const;
+  bool hasFrameBuffer() const { return frameBuffer != nullptr; }
   size_t getBufferSize() const;
   uint16_t getDisplayWidth() const { return panelWidth; }
   uint16_t getDisplayHeight() const { return panelHeight; }
@@ -339,4 +349,8 @@ class GfxRenderer {
   bool copyRegionToBuffer(int logicalX, int logicalY, int logicalW, int logicalH, uint8_t* buf, size_t bufSize) const;
   bool copyBufferToRegion(int logicalX, int logicalY, int logicalW, int logicalH, const uint8_t* buf,
                           size_t bufSize) const;
+
+  // Upstream Dictionary names — thin wrappers over the logical region API.
+  size_t readFramebufferRegion(int x, int y, int w, int h, uint8_t* dst, size_t dstCapacity) const;
+  void writeFramebufferRegion(int x, int y, int w, int h, const uint8_t* src);
 };

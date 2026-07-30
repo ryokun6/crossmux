@@ -1,6 +1,7 @@
 #include "EpubReaderActivity.h"
 
 #include <Epub/Page.h>
+#include <Epub/blocks/ImageBlock.h>
 #include <Epub/blocks/TextBlock.h>
 #include <FontCacheManager.h>
 #include <FsHelpers.h>
@@ -14,6 +15,7 @@
 #include <esp_system.h>
 
 #include <algorithm>
+#include <cstring>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -22,6 +24,7 @@
 #include "BookmarkEntry.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "DictionaryWordSelectActivity.h"
 #include "EpubReaderBookmarksActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderFootnotesActivity.h"
@@ -29,6 +32,12 @@
 #include "EpubReaderUtils.h"
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncActivity.h"
+#ifdef ENABLE_CHINESE_VERSION
+#include "activities/apps/weread/WeReadClient.h"
+#include "activities/apps/weread/WeReadProgressSyncActivity.h"
+#include "activities/apps/weread/WeReadStore.h"
+#include "activities/settings/FontDownloadActivity.h"
+#endif
 #include "MappedInputManager.h"
 #include "ProgressMapper.h"
 #include "QrDisplayActivity.h"
@@ -214,6 +223,8 @@ void EpubReaderActivity::onEnter() {
     return;
   }
 
+  ImageBlock::clearSessionRenderFailures();
+
   // Start the refresh cadence at a full interval so opening a book paints with a FAST refresh
   // instead of dropping straight into the slower HALF ghost-cleanup path.
   pagesUntilFullRefresh = SETTINGS.getRefreshFrequency();
@@ -227,11 +238,24 @@ void EpubReaderActivity::onEnter() {
 
   epub->setupCacheDir();
 
+#ifdef ENABLE_CHINESE_VERSION
+  wereadBookId_[0] = '\0';
+  clearInitialProgressAfterSave_ = false;
+  if (WeReadStore::findBookIdForPath(epub->getPath(), wereadBookId_, sizeof(wereadBookId_)) &&
+      strncmp(wereadBookId_, "MP_WXS_", 7) == 0) {
+    wereadBookId_[0] = '\0';
+  }
+  bool hasSavedProgress = false;
+#endif
+
   HalFile f;
   if (Storage.openFileForRead("ERS", epub->getCachePath() + "/progress.bin", f)) {
     uint8_t data[6];
     int dataSize = f.read(data, 6);
     if (dataSize == 4 || dataSize == 6) {
+#ifdef ENABLE_CHINESE_VERSION
+      hasSavedProgress = true;
+#endif
       currentSpineIndex = data[0] + (data[1] << 8);
       nextPageNumber = data[2] + (data[3] << 8);
       if (nextPageNumber == UINT16_MAX) {
@@ -268,6 +292,19 @@ void EpubReaderActivity::onEnter() {
       getStatsChapterTitle(*epub, currentSpineIndex), 0);
 
   loadCachedBookmarks();
+
+#ifdef ENABLE_CHINESE_VERSION
+  if (wereadBookId_[0]) {
+    float initialProgress = 0.0f;
+    const bool loaded = WeReadStore::loadInitialProgress(wereadBookId_, initialProgress);
+    if (hasSavedProgress || !loaded || initialProgress <= 0.0f) {
+      WeReadStore::clearInitialProgress(wereadBookId_);
+    } else {
+      clearInitialProgressAfterSave_ = true;
+      jumpToPercent(static_cast<int>(initialProgress * 100.0f + 0.5f));
+    }
+  }
+#endif
 
   // Trigger first update
   requestUpdate();
@@ -308,6 +345,31 @@ void EpubReaderActivity::onExit() {
   }
 }
 
+#ifdef ENABLE_CHINESE_VERSION
+bool EpubReaderActivity::maybeOfferCompleteChineseFont() {
+  if (SETTINGS.sdFontFamilyName[0] != '\0') {
+    pendingMissingChineseCodepoint_.store(0, std::memory_order_relaxed);
+    return false;
+  }
+
+  const uint32_t codepoint = pendingMissingChineseCodepoint_.exchange(0, std::memory_order_relaxed);
+  if (codepoint == 0 || FontDownloadActivity::wasChineseFontPromptShownThisBoot()) return false;
+
+  LOG_INF("FONT", "Missing built-in Chinese glyph U+%04X; offering SD fonts", static_cast<unsigned>(codepoint));
+
+  // ActivityManager owns the downloader across frames, so it must live on the heap.
+  auto downloader =
+      makeUniqueNoThrow<FontDownloadActivity>(renderer, mappedInput, FontDownloadActivity::Purpose::PromptThenManage);
+  if (!downloader) {
+    LOG_ERR("FONT", "OOM allocating FontDownloadActivity (%zu bytes)", sizeof(FontDownloadActivity));
+    return false;
+  }
+
+  startActivityForResult(std::move(downloader), [this](const ActivityResult&) { requestUpdate(); });
+  return true;
+}
+#endif
+
 void EpubReaderActivity::loop() {
   if (!epub) {
     // Should never happen
@@ -315,7 +377,39 @@ void EpubReaderActivity::loop() {
     return;
   }
 
+#ifdef ENABLE_CHINESE_VERSION
+  if (maybeOfferCompleteChineseFont()) return;
+#endif
+
   READING_STATS.tickActiveSession();
+
+  // Idle glyph prewarm for the likely next page (currentPage + 1). The scan
+  // pass draws nothing (FCM scan mode suppresses pixels), so the displayed
+  // framebuffer is untouched. Debounced past rapid page-flipping, one attempt
+  // per position, and deferred while a render owns the CPU or the heap is at
+  // the render floor. Cross-chapter prewarm is out of scope.
+  constexpr unsigned long IDLE_PREWARM_DEBOUNCE_MS = 400;
+  auto* fcm = renderer.getFontCacheManager();
+  if (section && !RenderLock::peek() && renderer.hasFrameBuffer() && lastRenderCompleteMs != 0 &&
+      millis() - lastRenderCompleteMs > IDLE_PREWARM_DEBOUNCE_MS && ESP.getFreeHeap() > RENDER_MIN_FREE_HEAP &&
+      ESP.getMaxAllocHeap() > RENDER_MIN_MAX_ALLOC && fcm && fcm->canIdlePrewarm(SETTINGS.getReaderFontId()) &&
+      (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
+    RenderLock lock;
+    if (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage) {
+      idlePrewarmSpine = currentSpineIndex;
+      idlePrewarmPage = section->currentPage;
+      const int nextPage = section->currentPage + 1;
+      if (nextPage < static_cast<int>(section->pageCount)) {
+        if (const auto p = section->loadPage(nextPage)) {
+          const auto t0 = millis();
+          auto scope = fcm->createPrewarmScope();
+          p->render(renderer, SETTINGS.getReaderFontId(), 0, 0);
+          scope.endScanAndPrewarm();
+          LOG_DBG("ERS", "Idle prewarm: page %d in %lums", nextPage, millis() - t0);
+        }
+      }
+    }
+  }
 
   // End-of-Book screen reached (currentSpineIndex == spine count) means the book is
   // finished. Two independent finished-book features key off this same condition.
@@ -377,6 +471,11 @@ void EpubReaderActivity::loop() {
     }
   }
 
+  if (showDictionaryMessage && (millis() - dictionaryMessageTime) >= ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS) {
+    showDictionaryMessage = false;
+    requestUpdate();
+  }
+
   if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS) {
     showBookmarkMessage = false;
     requestUpdate();
@@ -433,6 +532,14 @@ void EpubReaderActivity::loop() {
         if (mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
           launchKOReaderSync();
           ignoreNextConfirmRelease = true;  // sync launched or error shown; suppress menu open
+          return;
+        }
+        break;
+      case CrossPointSettings::LP_MENU_DICTIONARY:
+        // Hold ~0.4s starts dictionary word selection on the current page.
+        if (mappedInput.getHeldTime() >= ReaderUtils::BOOKMARK_HOLD_MS && !showDictionaryMessage) {
+          ignoreNextConfirmRelease = true;  // Prevent menu open on the release that follows
+          openDictionaryWordSelect();
           return;
         }
         break;
@@ -731,6 +838,11 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::SYNC: {
+#ifdef ENABLE_CHINESE_VERSION
+      if (wereadBookId_[0] && launchWeReadSync()) {
+        break;
+      }
+#endif
       launchKOReaderSync();
       break;
     }
@@ -748,6 +860,10 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       bookmarkMessageTime = millis();
       break;
     }
+    case EpubReaderMenuActivity::MenuAction::DICTIONARY: {
+      openDictionaryWordSelect();
+      break;
+    }
     case EpubReaderMenuActivity::MenuAction::ROTATE_SCREEN:
     case EpubReaderMenuActivity::MenuAction::TOGGLE_WRITING_MODE:
     case EpubReaderMenuActivity::MenuAction::AUTO_PAGE_TURN:
@@ -755,6 +871,29 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       // this action; listed for switch exhaustiveness.
       break;
   }
+}
+
+void EpubReaderActivity::openDictionaryWordSelect() {
+  if (SETTINGS.dictionaryName[0] == '\0') {
+    showDictionaryMessage = true;
+    dictionaryMessageTime = millis();
+    requestUpdate();
+    return;
+  }
+  if (!section) return;
+  auto page = section->loadPageFromSectionFile();
+  if (!page) return;
+
+  // Word geometry must match render(): viewable-area margins plus screen margin.
+  int orientedMarginTop, orientedMarginRight, orientedMarginBottom, orientedMarginLeft;
+  renderer.getOrientedViewableTRBL(&orientedMarginTop, &orientedMarginRight, &orientedMarginBottom,
+                                   &orientedMarginLeft);
+  orientedMarginTop += SETTINGS.screenMargin;
+  orientedMarginLeft += SETTINGS.screenMargin;
+
+  startActivityForResult(std::make_unique<DictionaryWordSelectActivity>(renderer, mappedInput, std::move(page),
+                                                                        orientedMarginLeft, orientedMarginTop),
+                         [this](const ActivityResult&) { requestUpdate(); });
 }
 
 void EpubReaderActivity::launchKOReaderSync() {
@@ -814,8 +953,63 @@ void EpubReaderActivity::launchKOReaderSync() {
   activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
       renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, std::move(localKoPos),
       std::move(localChapterName), paragraphIndex));
-  // acted: launched the sync activity
 }
+
+#ifdef ENABLE_CHINESE_VERSION
+bool EpubReaderActivity::launchWeReadSync() {
+  if (!wereadBookId_[0] || !epub) return false;
+  const int currentPage = section ? section->currentPage : nextPageNumber;
+  const int totalPages = section ? section->pageCount : cachedChapterTotalPageCount;
+  const float chapterFraction =
+      totalPages > 1 ? static_cast<float>(currentPage) / static_cast<float>(totalPages - 1) : 0.0f;
+  const float localFraction = epub->calculateProgress(currentSpineIndex, chapterFraction);
+  std::string savedEpubPath = epub->getPath();
+
+  if (!saveProgress(currentSpineIndex, currentPage, totalPages)) {
+    LOG_ERR("WRSync", "Aborting sync because current progress could not be saved");
+    pendingSyncSaveError = true;
+    requestUpdate();
+    return true;
+  }
+
+  WeReadClient::ProgressSyncInput input;
+  input.localFraction = localFraction;
+  input.localSpineIndex = static_cast<uint16_t>(currentSpineIndex);
+  input.localPageNumber = static_cast<uint16_t>(currentPage);
+  input.localPageCount = static_cast<uint16_t>(totalPages);
+  WeReadStore::BookOptions options;
+  input.hasLocalTocIndex =
+      WeReadStore::loadBookOptions(WeReadStore::bookDirectory(wereadBookId_), options) &&
+      WeReadStore::parseGeneratedChapterHref(epub->getSpineItem(currentSpineIndex).href, input.localTocIndex);
+  LOG_INF("WRSync", "local chapter mapping: precise=%u spine=%u toc=%u page=%u/%u",
+          static_cast<unsigned>(input.hasLocalTocIndex), static_cast<unsigned>(input.localSpineIndex),
+          static_cast<unsigned>(input.localTocIndex), static_cast<unsigned>(input.localPageNumber),
+          static_cast<unsigned>(input.localPageCount));
+
+  auto sync = makeUniqueNoThrow<WeReadProgressSyncActivity>(renderer, mappedInput, std::move(savedEpubPath),
+                                                            wereadBookId_, input);
+  if (!sync) {
+    LOG_ERR("WRSync", "OOM: WeReadProgressSyncActivity (%u bytes)",
+            static_cast<unsigned>(sizeof(WeReadProgressSyncActivity)));
+    pendingSyncLaunchError = true;
+    requestUpdate();
+    return true;
+  }
+
+  LOG_DBG("WRSync", "Releasing epub for sync (heap before: %u)", static_cast<unsigned>(ESP.getFreeHeap()));
+  {
+    RenderLock lock(*this);
+    if (section) {
+      nextPageNumber = section->currentPage;
+    }
+    section.reset();
+    epub.reset();
+  }
+  LOG_DBG("WRSync", "Epub released (heap after: %u)", static_cast<unsigned>(ESP.getFreeHeap()));
+  activityManager.replaceActivity(std::move(sync));
+  return true;
+}
+#endif
 
 void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
   // No-op if the selected orientation matches current settings.
@@ -944,9 +1138,13 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   }
 
   const auto showPendingSyncSaveError = [this]() {
-    if (!pendingSyncSaveError) return;
-    pendingSyncSaveError = false;
-    GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
+    if (pendingSyncSaveError) {
+      pendingSyncSaveError = false;
+      GUI.drawPopup(renderer, tr(STR_SAVE_PROGRESS_FAILED));
+    } else if (pendingSyncLaunchError) {
+      pendingSyncLaunchError = false;
+      GUI.drawPopup(renderer, tr(STR_SYNC_FAILED_MSG));
+    }
   };
 
   // edge case handling for sub-zero spine index
@@ -1154,6 +1352,12 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (showBookmarkMessage) {
     GUI.drawPopup(renderer, bookmarkRemoved ? tr(STR_BOOKMARK_REMOVED) : tr(STR_BOOKMARK_ADDED));
   }
+
+  if (showDictionaryMessage) {
+    GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
+  }
+
+  lastRenderCompleteMs = millis();
 }
 
 void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportWidth, const uint16_t viewportHeight) {
@@ -1220,7 +1424,13 @@ bool EpubReaderActivity::saveProgress(int spineIndex, int currentPage, int pageC
   READING_STATS.updateProgress(static_cast<uint8_t>(progressPercent), progressPercent >= 100,
                                getStatsChapterTitle(*epub, spineIndex),
                                getStatsChapterProgressPercent(currentPage, pageCount));
-  return EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount);
+  const bool saved = EpubReaderUtils::saveProgress(*epub, spineIndex, currentPage, pageCount);
+#ifdef ENABLE_CHINESE_VERSION
+  if (saved && clearInitialProgressAfterSave_ && wereadBookId_[0] && WeReadStore::clearInitialProgress(wereadBookId_)) {
+    clearInitialProgressAfterSave_ = false;
+  }
+#endif
+  return saved;
 }
 void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int orientedMarginTop,
                                         const int orientedMarginRight, const int orientedMarginBottom,
@@ -1228,15 +1438,47 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto t0 = millis();
   const int fontId = SETTINGS.getReaderFontId();
 
-  // Font prewarm: scan pass accumulates text, then prewarm, then real render
-  auto* fcm = renderer.getFontCacheManager();
-  auto scope = fcm->createPrewarmScope();
-  TextBlock::fakeBold = SETTINGS.fakeBold;
-  page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);  // scan pass
-  scope.endScanAndPrewarm();
-  const auto tPrewarm = millis();
+  // The image pixel-cache RAM slot lives for exactly one page render (it feeds
+  // the BW double-refresh and every grayscale band pass); release it on every
+  // exit so nothing stays resident across page turns.
+  struct PxcSlotGuard {
+    ~PxcSlotGuard() { ImageBlock::releaseRenderCache(); }
+  } pxcSlotGuard;
 
   const bool pageHasImages = page->hasImages();
+  if (pageHasImages && page->hasImagesNeedingDecode()) {
+    // Decode/cache only missing images before the SD-font prewarm allocates its
+    // per-page bitmap. This keeps JPEGDEC and the CJK mini bitmap out of the
+    // heap at the same time.
+    page->renderImagesNeedingDecode(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+    ImageBlock::releaseRenderCache();
+    renderer.clearScreen();
+  }
+
+  // Compressed and SD fonts need a scan pass to build their page glyph cache.
+  // Raw built-in fonts (GenSen) render directly and skip both the scan and its
+  // temporary string.
+  auto* fcm = renderer.getFontCacheManager();
+#ifdef ENABLE_CHINESE_VERSION
+  fcm->consumeMissingChineseCodepoint();  // discard status/UI glyphs left by the previous render
+#endif
+  struct EndClear {
+    FontCacheManager& manager;
+    ~EndClear() { manager.clearCache(); }
+  };
+  std::optional<FontCacheManager::PrewarmScope> prewarmScope;
+  std::optional<EndClear> rawFontCacheClear;
+  TextBlock::fakeBold = SETTINGS.fakeBold;
+  if (fcm->needsPrewarmScan(fontId)) {
+    prewarmScope.emplace(*fcm);
+    page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);  // scan pass
+    prewarmScope->endScanAndPrewarm();
+  } else {
+    fcm->clearCache();
+    fcm->resetStats();
+    rawFontCacheClear.emplace(*fcm);
+  }
+  const auto tPrewarm = millis();
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
   auto renderGrayscalePass = [&]() {
@@ -1248,6 +1490,13 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   };
 
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+#ifdef ENABLE_CHINESE_VERSION
+  const uint32_t missingCodepoint = fcm->consumeMissingChineseCodepoint();
+  if (missingCodepoint != 0 && !FontDownloadActivity::wasChineseFontPromptShownThisBoot()) {
+    uint32_t expected = 0;
+    pendingMissingChineseCodepoint_.compare_exchange_strong(expected, missingCodepoint, std::memory_order_relaxed);
+  }
+#endif
   renderStatusBar();
   const auto tBwRender = millis();
 

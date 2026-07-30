@@ -71,6 +71,13 @@ uint8_t* HalDisplay::getFrameBuffer() const {
   return fb;
 }
 
+uint8_t* HalDisplay::lendFrameBufferStorage(uint32_t* sizeOut) {
+  if (sizeOut) *sizeOut = static_cast<uint32_t>(kBufferSize);
+  return getFrameBuffer();
+}
+
+void HalDisplay::returnFrameBufferStorage() {}
+
 void HalDisplay::clearScreen(uint8_t color) const {
   std::lock_guard<std::mutex> lock(fb_mutex());
   std::memset(getFrameBuffer(), color, kBufferSize);
@@ -95,6 +102,12 @@ void HalDisplay::displayBuffer(RefreshMode /*mode*/, bool /*turnOffScreen*/) {
 #endif
 
 void HalDisplay::refreshDisplay(RefreshMode mode, bool turnOffScreen) { displayBuffer(mode, turnOffScreen); }
+
+void HalDisplay::displayBufferAsync(RefreshMode mode) { displayBuffer(mode); }
+
+void HalDisplay::waitRefreshComplete() {}
+
+bool HalDisplay::supportsAsyncRefresh() const { return false; }
 
 void HalDisplay::deepSleep() {}
 

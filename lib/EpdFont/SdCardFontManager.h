@@ -20,7 +20,8 @@ class SdCardFontManager {
   // .cpfont file is loaded; other sizes remain on disk. This keeps resident
   // interval + kern/ligature tables to one size's worth of memory.
   // Returns true on success.
-  bool loadFamily(const SdCardFontFamilyInfo& family, GfxRenderer& renderer, uint8_t fontSizeEnum);
+  bool loadFamily(const SdCardFontFamilyInfo& family, GfxRenderer& renderer, uint8_t fontSizeEnum,
+                  bool preferFlash = false);
 
   // Unload everything, unregister from renderer.
   void unloadAll(GfxRenderer& renderer);
