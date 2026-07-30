@@ -5,6 +5,14 @@
 
 #include "LanguageHyphenator.h"
 
+// CJK SKUs keep English only (~323 KB of DE/RU/… tries stay out of flash).
+// International firmware embeds the full Latin/Cyrillic set.
+#ifdef ENABLE_CJK_VERSION
+inline constexpr size_t kEmbeddedHyphenationLanguageCount = 1;
+#else
+inline constexpr size_t kEmbeddedHyphenationLanguageCount = 10;
+#endif
+
 struct LanguageEntry {
   const char* cliName;
   const char* primaryTag;

@@ -14,6 +14,8 @@ Shared compile flags: `-DENABLE_CJK_VERSION` (CJK tokenization / inter-character
 gaps) plus either `-DENABLE_JAPANESE_VERSION` or `-DENABLE_KOREAN_VERSION`.
 Chinese-only features (WeRead, 农历, SC↔TC remap) stay behind
 `ENABLE_CHINESE_VERSION` and are **not** compiled into JA/KO SKUs.
+Latin hyphenation is **English-only** on all CJK SKUs (same `ENABLE_CJK_VERSION`
+gate as TC/SC); see [hyphenation-trie-format.md](../hyphenation-trie-format.md).
 
 EPUB and TXT line breaking use [`CjkKinsoku.h`](../../lib/Epub/Epub/CjkKinsoku.h) for
 行頭/行末/分離 禁則 (EPUB: horizontal lines and vertical-rl columns; TXT: horizontal
