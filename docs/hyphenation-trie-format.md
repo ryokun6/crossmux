@@ -45,6 +45,11 @@ byte arrays, and emits headers under
 `SerializedHyphenationPatterns` descriptor so the reader can keep the automaton
 in flash.
 
+`LanguageRegistry.cpp` includes those headers. Under `ENABLE_CJK_VERSION`
+(TC/SC/JA/KO) only **English** (`hyph-en.trie.h`) is compiled in. International
+builds keep all ten languages. Mixed Latin/Cyrillic EPUBs on CJK SKUs fall back
+to explicit/`emergency` breaks for non-English tags.
+
 A convenient script `update_hyphenation.sh` is used to update all languages.
 To use it, run:
 

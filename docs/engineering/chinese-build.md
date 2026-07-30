@@ -35,7 +35,9 @@ gates every Chinese-only resource:
 | 1 CJK font header 14pt | ~1.62 MB |
 | 2 CJK font headers 16/18pt | ~400 KB |
 | i18n strings (EN + one Chinese) | ~16 KB |
+| Hyphenation tries | English only on CJK (`ENABLE_CJK_VERSION`); intl keeps 10 langs |
 | **Total (measured post-1.5.1 sync / #27)** | SC ~95.4% / TC ~98.1% of 6.25 MB app slot (WeRead + GenSen + wolfSSL) |
+| **After EN-only hyphen (TC)** | Re-measure with `pio run -e gh_release_tc` — expect ~320 KB more headroom |
 
 A/B OTA rollback works exactly like the Latin build — the firmware fits in
 both app slots, and a failed update can auto-revert.
