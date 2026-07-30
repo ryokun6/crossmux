@@ -150,6 +150,13 @@ if (parsedSize != fileSize) {
 > non-empty `<br>` line breaks and inject a line-height gap for empty `<br>`
 > section separators (`fromBrElement`). Prior caches are invalidated on mismatch.
 >
+> Incremental / partial section builds write finalized files with the same layout
+> as **56 / 85–88**. Mid-build crashes leave version `0` (rejected). Suspended
+> builds persist as a paired partial sentinel
+> `0xFE - (SECTION_FILE_VERSION - 28)` plus a watermark trailer after the li LUT
+> (`bytesConsumed`, `totalBytes`). Older firmware treats the sentinel as unknown
+> and rebuilds. Unzipped HTML is cached under `html/<spine>.html`.
+>
 > CJK versions also enforce 禁則 (kinsoku) for both horizontal lines and
 > vertical-rl columns: breaks may not leave closing punctuation / non-starters at
 > the run head or opening brackets at the run end. Japanese builds also treat

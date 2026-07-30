@@ -1,5 +1,6 @@
 #pragma once
 
+#include <HalStorage.h>
 #include <expat.h>
 
 #include <climits>
@@ -118,6 +119,12 @@ class ChapterHtmlSlimParser {
   std::vector<std::pair<int, FootnoteEntry>> pendingFootnotes;  // <wordIndex, entry>
   int wordsExtractedInBlock = 0;
 
+  // Resumable parse state. parseAndBuildPages() drives these internally; the
+  // incremental section builder drives them across render ticks.
+  XML_Parser xmlParser_ = nullptr;
+  HalFile parseFile_;
+  uint32_t parseStartTime_ = 0;
+
   void updateEffectiveInlineStyle();
   // Replaces currentPage with a fresh Page. Returns false and latches allocationFailed on OOM,
   // in which case currentPage is left null and callers must return without touching it.
@@ -169,8 +176,21 @@ class ChapterHtmlSlimParser {
         imageBasePath(imageBasePath),
         tocAnchors(std::move(tocAnchors)) {}
 
-  ~ChapterHtmlSlimParser() = default;
+  ~ChapterHtmlSlimParser();
+
+  // One-shot parse: builds every page before returning (begin + step* + finish).
   bool parseAndBuildPages();
+
+  // Resumable parse for the incremental section builder.
+  enum class ParseStatus { More, Done, Error };
+  bool beginParse();
+  ParseStatus parseStep();
+  bool finishParse();
+  void abortParse();
+
   void addLineToPage(std::shared_ptr<TextBlock> line);
   const std::vector<std::pair<std::string, uint16_t>>& getAnchors() const { return anchorData; }
+
+  size_t parseBytesConsumed() { return parseFile_ ? parseFile_.position() : 0; }
+  size_t parseTotalBytes() { return parseFile_ ? parseFile_.size() : 0; }
 };

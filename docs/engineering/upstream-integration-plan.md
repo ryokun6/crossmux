@@ -1,6 +1,7 @@
 # Upstream Integration Plan (`0x1abin/crossmux` → ryOS)
 
-> Living plan for absorbing CrossMux upstream `main` (currently **1.5.1**) into
+> Living plan for absorbing CrossMux upstream `main` (currently **1.5.1**; fork
+> tip **1.5.2**) into
 > this fork while preserving ryOS identity: multi-SKU CJK (TC/SC/JA/KO),
 > vertical EPUB, no games, GenSen/SD-font stack, and thin `AGENTS.md`.
 >
@@ -214,6 +215,10 @@ flash cache, heap during WeRead download + silent restart into Reader.
 `7c67aeec` (2026-07-30). Firmware version **1.5.1**; release tag `1.5.1` on
 `59e016ae`. Branch was `cursor/upstream-sync-1.5.1-2423`.
 
+**1.5.2 (fork patch):** [PR #28](https://github.com/ryokun6/crossmux/pull/28)
+async e-ink refresh overlap + incremental/partial Section + HTML cache. Version
+`1.5.2` in `platformio.ini`; tag `1.5.2` after merge to `main`.
+
 | Gate | Result |
 |---|---|
 | `pio run` (default / intl) | SUCCESS — Flash ~87.9% |
@@ -238,10 +243,22 @@ Deferred items completed on this branch:
 
 Follow-ups still open:
 - TC flash headroom (~98.0%) before more CN-only growth
-- Incremental/partial section build (`Section::startBuild` / `suspendBuild`)
 - Full ruby layout pipeline (arena already serializes empty ruby strings)
 - Host `HalOtaSlot` completeness for inactive-slot sim paths
 - Post-1.5.1 still deferred: AirPage standalone app, Nightly OTA, Lyra theme, SDK bump `e514a868`
+
+Landed after `main` 1.5.1 (async + incremental Section PR):
+- Real `GfxRenderer::displayBufferAsync` / `waitRefreshComplete` / `supportsAsyncRefresh`
+- Reader grayscale overlap (whole-plane + dual-strip `GRAYSCALE_DUAL` fallback)
+- Incremental/partial `Section::startBuild` / `suspendBuild` + HTML cache
+- `FrameBufferLoan` + `buildscratch` during chapter inflate
+
+Verification (cloud VM, no device waveform):
+- `pio run` default SUCCESS — Flash **88.0%** (5764813 / 6553600)
+- `pio run -e gh_release_tc` SUCCESS — Flash **98.1%** (6431173 / 6553600), unchanged vs post-#44 gate
+- `ctest` 230/230; `pio check` clean
+- Intl sim: Alice incremental open + page turns; `html/` + `sections/*.bin` v56
+- TC sim: 吶喊 vertical incremental + silent next-chapter index; section v85; reopen skipped rebuild
 
 Landed after the 1.5.1 pin on this branch:
 - Page deserialize reserve clamp + null TextBlock check

@@ -370,6 +370,47 @@ bool EpubReaderActivity::maybeOfferCompleteChineseFont() {
 }
 #endif
 
+bool EpubReaderActivity::buildTickHeapGate() {
+  const size_t freeHeap = ESP.getFreeHeap();
+  const size_t maxBlock = ESP.getMaxAllocHeap();
+  buildHeapPaused = freeHeap < BACKGROUND_BUILD_MIN_FREE_HEAP || maxBlock < BACKGROUND_BUILD_MIN_MAX_ALLOC;
+  return !buildHeapPaused;
+}
+
+void EpubReaderActivity::showBuildPopup() {
+  if (!buildPopupPending || !renderer.hasFrameBuffer()) return;
+  GUI.drawPopup(renderer, tr(STR_INDEXING));
+  pagesUntilFullRefresh = 1;
+  buildPopupPending = false;
+}
+
+bool EpubReaderActivity::applyDeferredReposition() {
+  if (cachedChapterTotalPageCount == 0 || !section || section->isBuilding()) {
+    return false;
+  }
+  bool changed = false;
+  if (currentSpineIndex == cachedSpineIndex && section->pageCount != cachedChapterTotalPageCount) {
+    const float progress = static_cast<float>(section->currentPage) / static_cast<float>(cachedChapterTotalPageCount);
+    int newPage = static_cast<int>(progress * static_cast<float>(section->pageCount));
+    if (newPage < 0) newPage = 0;
+    if (section->pageCount > 0 && newPage >= static_cast<int>(section->pageCount)) {
+      newPage = section->pageCount - 1;
+    }
+    if (newPage != section->currentPage) {
+      section->currentPage = newPage;
+      changed = true;
+    }
+  }
+  cachedChapterTotalPageCount = 0;
+  return changed;
+}
+
+ReaderRenderSpec EpubReaderActivity::makeRenderSpec(const uint16_t viewportWidth, const uint16_t viewportHeight) const {
+  ReaderRenderSpec spec = SETTINGS.readerRenderSpec(viewportWidth, viewportHeight);
+  spec.writingMode = effectiveWritingMode();
+  return spec;
+}
+
 void EpubReaderActivity::loop() {
   if (!epub) {
     // Should never happen
@@ -390,11 +431,15 @@ void EpubReaderActivity::loop() {
   // the render floor. Cross-chapter prewarm is out of scope.
   constexpr unsigned long IDLE_PREWARM_DEBOUNCE_MS = 400;
   auto* fcm = renderer.getFontCacheManager();
-  if (section && !RenderLock::peek() && renderer.hasFrameBuffer() && lastRenderCompleteMs != 0 &&
-      millis() - lastRenderCompleteMs > IDLE_PREWARM_DEBOUNCE_MS && ESP.getFreeHeap() > RENDER_MIN_FREE_HEAP &&
-      ESP.getMaxAllocHeap() > RENDER_MIN_MAX_ALLOC && fcm && fcm->canIdlePrewarm(SETTINGS.getReaderFontId()) &&
+  if (section && !section->isBuilding() && !RenderLock::peek() && renderer.hasFrameBuffer() &&
+      lastRenderCompleteMs != 0 && millis() - lastRenderCompleteMs > IDLE_PREWARM_DEBOUNCE_MS &&
+      ESP.getFreeHeap() > RENDER_MIN_FREE_HEAP && ESP.getMaxAllocHeap() > RENDER_MIN_MAX_ALLOC && fcm &&
+      fcm->canIdlePrewarm(SETTINGS.getReaderFontId()) &&
       (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
     RenderLock lock;
+    // Outer gate already checked section + !isBuilding. Re-check only page
+    // identity — cppcheck cannot see cross-task mutation between peek() and
+    // lock acquire (same pattern as 2dca7845).
     if (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage) {
       idlePrewarmSpine = currentSpineIndex;
       idlePrewarmPage = section->currentPage;
@@ -407,6 +452,36 @@ void EpubReaderActivity::loop() {
           scope.endScanAndPrewarm();
           LOG_DBG("ERS", "Idle prewarm: page %d in %lums", nextPage, millis() - t0);
         }
+      }
+    }
+  }
+
+  if (section && !section->isBuilding() && section->isPartial() && !RenderLock::peek() && buildViewportWidth > 0 &&
+      !partialRebuildStartFailed &&
+      section->currentPage + PARTIAL_REBUILD_START_MARGIN >= static_cast<int>(section->pageCount)) {
+    RenderLock lock;
+    const ReaderRenderSpec buildSpec = makeRenderSpec(buildViewportWidth, buildViewportHeight);
+    if (!section->startBuild(buildSpec)) {
+      partialRebuildStartFailed = true;
+      LOG_ERR("ERS", "Failed to start deferred partial extension build");
+    } else {
+      LOG_DBG("ERS", "Reader near partial watermark (%d/%d), resuming extension build", section->currentPage,
+              section->pageCount);
+    }
+  }
+
+  if (section && section->isBuilding() && !RenderLock::peek() &&
+      (section->isPartial() || static_cast<int>(section->pageCount) < section->currentPage + BUILD_WINDOW_AHEAD) &&
+      buildTickHeapGate()) {
+    RenderLock lock;
+    // cppcheck-suppress knownConditionTrueFalse
+    if (section->isBuilding() && buildTickHeapGate()) {
+      if (!section->buildSomeMore(BACKGROUND_BUILD_PAGES_PER_TICK)) {
+        LOG_ERR("ERS", "Background section build failed");
+        section.reset();
+        requestUpdate();
+      } else if (section->isBuildComplete() && applyDeferredReposition()) {
+        requestUpdate();
       }
     }
   }
@@ -1102,7 +1177,7 @@ void EpubReaderActivity::pageTurn(bool isForwardTurn) {
   READING_STATS.noteActivity();
   sectionBuildFailed = false;
   if (isForwardTurn) {
-    if (section->currentPage < section->pageCount - 1) {
+    if (section->currentPage < section->pageCount - 1 || section->isBuilding()) {
       section->currentPage++;
     } else {
       // We don't want to delete the section mid-render, so grab the semaphore
@@ -1188,57 +1263,115 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   const uint16_t viewportWidth = renderer.getScreenWidth() - orientedMarginLeft - orientedMarginRight;
   const uint16_t viewportHeight = renderer.getScreenHeight() - orientedMarginTop - orientedMarginBottom;
+  buildViewportWidth = viewportWidth;
+  buildViewportHeight = viewportHeight;
+  const ReaderRenderSpec renderSpec = makeRenderSpec(viewportWidth, viewportHeight);
+
+  const auto showBuildError = [this, &showPendingSyncSaveError]() {
+    sectionBuildFailed = true;
+    automaticPageTurnActive = false;
+    renderer.clearScreen();
+    GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
+    renderer.displayBuffer();
+    showPendingSyncSaveError();
+  };
 
   if (!section) {
     if (sectionBuildFailed) {
-      renderer.clearScreen();
-      GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
-      renderer.displayBuffer();
-      showPendingSyncSaveError();
+      showBuildError();
       return;
     }
     const auto filepath = epub->getSpineItem(currentSpineIndex).href;
     LOG_DBG("ERS", "Loading file: %s, index: %d", filepath.c_str(), currentSpineIndex);
-    // Section owns parse/cache state for one spine item; heap-only (too large for stack).
     section = makeUniqueNoThrow<Section>(epub, currentSpineIndex, renderer);
     if (!section) {
       LOG_ERR("ERS", "OOM allocating Section for spine %d", currentSpineIndex);
-      sectionBuildFailed = true;
-      automaticPageTurnActive = false;
-      renderer.clearScreen();
-      GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
-      renderer.displayBuffer();
-      showPendingSyncSaveError();
+      showBuildError();
       return;
     }
+    partialRebuildStartFailed = false;
 
-    if (!section->loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                  SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, effectiveWritingMode(),
-                                  viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
-                                  SETTINGS.imageRendering, SETTINGS.focusReadingEnabled,
-                                  SETTINGS.punctCompressionEnabled)) {
-      LOG_DBG("ERS", "Cache not found, building...");
+    const bool cacheLoaded = section->loadSectionFile(renderSpec);
+    if (cacheLoaded) {
+      cachedChapterTotalPageCount = 0;
+    }
+    const bool cacheComplete = cacheLoaded && !section->isPartial();
+    if (!cacheComplete) {
+      if (section->isPartial()) {
+        LOG_DBG("ERS", "Partial cache found (%d pages), resuming build...", section->pageCount);
+      } else {
+        LOG_DBG("ERS", "Cache not found, building...");
+      }
 
-      GUI.drawPopup(renderer, tr(STR_INDEXING));
-
-      const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
-
-      if (!section->createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                      SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment,
-                                      effectiveWritingMode(), viewportWidth, viewportHeight,
-                                      SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle, SETTINGS.imageRendering,
-                                      SETTINGS.focusReadingEnabled, SETTINGS.punctCompressionEnabled, popupFn)) {
-        LOG_ERR("ERS", "Failed to persist page data to SD");
-        section.reset();
-        sectionBuildFailed = true;
-        automaticPageTurnActive = false;
-        // INDEXING was already drawn into the framebuffer; without a redraw the
-        // device looks permanently stuck even though indexing has aborted.
-        renderer.clearScreen();
-        GUI.drawPopup(renderer, tr(STR_ERROR_GENERAL_FAILURE));
-        renderer.displayBuffer();
-        showPendingSyncSaveError();
-        return;
+      const bool needsFullBuild = pendingPercentJump;
+      if (needsFullBuild) {
+        GUI.drawPopup(renderer, tr(STR_INDEXING));
+        pagesUntilFullRefresh = 1;
+        const auto popupFn = [this]() {
+          if (renderer.hasFrameBuffer()) GUI.drawPopup(renderer, tr(STR_INDEXING));
+        };
+        GfxRenderer::FrameBufferLoan loan(renderer);
+        if (!section->createSectionFile(renderSpec, popupFn)) {
+          LOG_ERR("ERS", "Failed to persist page data to SD");
+          section.reset();
+          loan.end();
+          showBuildError();
+          return;
+        }
+        loan.end();
+      } else {
+        const int target = pendingPageJump.has_value() ? *pendingPageJump : (nextPageNumber < 0 ? 0 : nextPageNumber);
+        const bool anchorJump = !pendingAnchor.empty();
+        if (section->isPartial() &&
+            (anchorJump ? section->getPageForAnchor(pendingAnchor).has_value()
+                        : target + PARTIAL_REBUILD_START_MARGIN < static_cast<int>(section->pageCount))) {
+          LOG_DBG("ERS", "Partial covers target %d of %d; deferring extension build", target, section->pageCount);
+        } else {
+          const size_t spineBytes =
+              epub->getCumulativeSpineItemSize(currentSpineIndex) -
+              (currentSpineIndex > 0 ? epub->getCumulativeSpineItemSize(currentSpineIndex - 1) : 0);
+          const bool willInflate = !section->hasHtmlCache();
+          bool showPopup;
+          if (anchorJump) {
+            showPopup = !section->findAnchor(pendingAnchor).has_value() && spineBytes > BUILD_POPUP_BYTE_THRESHOLD;
+          } else {
+            const bool targetAvailable = target < static_cast<int>(section->pageCount);
+            showPopup = !targetAvailable && ((spineBytes > BUILD_POPUP_BYTE_THRESHOLD && willInflate) ||
+                                             target > BUILD_POPUP_PAGE_THRESHOLD);
+          }
+          if (showPopup) {
+            GUI.drawPopup(renderer, tr(STR_INDEXING));
+            pagesUntilFullRefresh = 1;
+          }
+          buildPopupPending = !showPopup;
+          const unsigned long buildStartMs = millis();
+          bool started;
+          {
+            GfxRenderer::FrameBufferLoan loan(renderer);
+            started = section->startBuild(renderSpec, [this] { showBuildPopup(); });
+          }
+          if (!started) {
+            LOG_ERR("ERS", "Failed to start section build");
+            section.reset();
+            buildPopupPending = false;
+            showBuildError();
+            return;
+          }
+          while (!section->isBuildComplete() &&
+                 (anchorJump ? !section->findAnchor(pendingAnchor) : static_cast<int>(section->pageCount) <= target)) {
+            if (buildPopupPending && millis() - buildStartMs >= BUILD_POPUP_DEADLINE_MS) {
+              showBuildPopup();
+            }
+            if (!section->buildSomeMore(BUILD_PAGES_PER_CHUNK)) {
+              LOG_ERR("ERS", "Failed during incremental section build");
+              section.reset();
+              buildPopupPending = false;
+              showBuildError();
+              return;
+            }
+          }
+          buildPopupPending = false;
+        }
       }
     } else {
       LOG_DBG("ERS", "Cache found, skipping build...");
@@ -1246,24 +1379,18 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     sectionBuildFailed = false;
 
     if (pendingPageJump.has_value()) {
-      if (*pendingPageJump >= section->pageCount && section->pageCount > 0) {
-        section->currentPage = section->pageCount - 1;
-      } else {
-        section->currentPage = *pendingPageJump;
-      }
+      section->currentPage = *pendingPageJump;
       pendingPageJump.reset();
     } else {
       section->currentPage = nextPageNumber;
       if (section->currentPage < 0) {
         section->currentPage = 0;
-      } else if (section->currentPage >= section->pageCount && section->pageCount > 0) {
-        LOG_DBG("ERS", "Clamping cached page %d to %d", section->currentPage, section->pageCount - 1);
-        section->currentPage = section->pageCount - 1;
       }
     }
 
     if (!pendingAnchor.empty()) {
-      if (const auto page = section->getPageForAnchor(pendingAnchor)) {
+      const auto page = section->findAnchor(pendingAnchor);
+      if (page) {
         section->currentPage = *page;
         LOG_DBG("ERS", "Resolved anchor '%s' to page %d", pendingAnchor.c_str(), *page);
       } else {
@@ -1272,19 +1399,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
       pendingAnchor.clear();
     }
 
-    // handles changes in reader settings and reset to approximate position based on cached progress
-    if (cachedChapterTotalPageCount > 0) {
-      // only goes to relative position if spine index matches cached value
-      if (currentSpineIndex == cachedSpineIndex && section->pageCount != cachedChapterTotalPageCount) {
-        float progress = static_cast<float>(section->currentPage) / static_cast<float>(cachedChapterTotalPageCount);
-        int newPage = static_cast<int>(progress * section->pageCount);
-        section->currentPage = newPage;
-      }
-      cachedChapterTotalPageCount = 0;  // resets to 0 to prevent reading cached progress again
-    }
-
     if (pendingPercentJump && section->pageCount > 0) {
-      // Apply the pending percent jump now that we know the new section's page count.
       int newPage = static_cast<int>(pendingSpineProgress * static_cast<float>(section->pageCount));
       if (newPage >= section->pageCount) {
         newPage = section->pageCount - 1;
@@ -1294,21 +1409,47 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     }
   }
 
+  if (section->isPartial() && section->currentPage >= static_cast<int>(section->pageCount)) {
+    GUI.drawPopup(renderer, tr(STR_INDEXING));
+    pagesUntilFullRefresh = 1;
+  }
+  while (section->isPartial() && section->currentPage >= static_cast<int>(section->pageCount)) {
+    if (!section->isBuilding() && !section->startBuild(renderSpec)) {
+      LOG_ERR("ERS", "Failed to start partial extension build");
+      section.reset();
+      showBuildError();
+      return;
+    }
+    while (!section->isBuildComplete() && section->currentPage >= static_cast<int>(section->pageCount)) {
+      if (!section->buildSomeMore(BUILD_PAGES_PER_CHUNK)) {
+        LOG_ERR("ERS", "Failed during incremental section build");
+        section.reset();
+        showBuildError();
+        return;
+      }
+    }
+  }
+  if (section->isBuilding()) {
+    while (!section->isBuildComplete() && section->currentPage >= static_cast<int>(section->pageCount)) {
+      if (!section->buildSomeMore(BUILD_PAGES_PER_CHUNK)) {
+        LOG_ERR("ERS", "Failed during incremental section build");
+        section.reset();
+        showBuildError();
+        return;
+      }
+    }
+  }
+  if (!section->isBuilding() && section->pageCount > 0 &&
+      section->currentPage >= static_cast<int>(section->pageCount)) {
+    section->currentPage = section->pageCount - 1;
+  }
+  applyDeferredReposition();
+
   renderer.clearScreen();
 
   if (section->pageCount == 0) {
     LOG_DBG("ERS", "No pages to render");
     renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_EMPTY_CHAPTER), true, EpdFontFamily::BOLD);
-    renderStatusBar();
-    renderer.displayBuffer();
-    automaticPageTurnActive = false;
-    showPendingSyncSaveError();
-    return;
-  }
-
-  if (section->currentPage < 0 || section->currentPage >= section->pageCount) {
-    LOG_DBG("ERS", "Page out of bounds: %d (max %d)", section->currentPage, section->pageCount);
-    renderer.drawCenteredText(UI_12_FONT_ID, 300, tr(STR_OUT_OF_BOUNDS), true, EpdFontFamily::BOLD);
     renderStatusBar();
     renderer.displayBuffer();
     automaticPageTurnActive = false;
@@ -1340,7 +1481,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
     LOG_DBG("ERS", "Rendered page in %dms", millis() - start);
   }
   silentIndexNextChapterIfNeeded(viewportWidth, viewportHeight);
-  saveProgress(currentSpineIndex, section->currentPage, section->pageCount);
+  saveProgress(currentSpineIndex, section->currentPage, section->estimatedTotalPages());
 
   showPendingSyncSaveError();
 
@@ -1361,7 +1502,7 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 }
 
 void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportWidth, const uint16_t viewportHeight) {
-  if (!epub || !section || section->pageCount < 2) {
+  if (!epub || !section || section->isBuilding() || section->isPartial() || section->pageCount < 2) {
     return;
   }
 
@@ -1376,11 +1517,8 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
   }
 
   Section nextSection(epub, nextSpineIndex, renderer);
-  if (nextSection.loadSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                  SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment, effectiveWritingMode(),
-                                  viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled, SETTINGS.embeddedStyle,
-                                  SETTINGS.imageRendering, SETTINGS.focusReadingEnabled,
-                                  SETTINGS.punctCompressionEnabled)) {
+  const ReaderRenderSpec nextSpec = makeRenderSpec(viewportWidth, viewportHeight);
+  if (nextSection.loadSectionFile(nextSpec)) {
     return;
   }
 
@@ -1405,11 +1543,7 @@ void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportW
   // otherwise block the render thread for seconds with no feedback right after the
   // penultimate page appears — now shows "INDEXING" instead of looking like a hang.
   const auto popupFn = [this]() { GUI.drawPopup(renderer, tr(STR_INDEXING)); };
-  if (!nextSection.createSectionFile(SETTINGS.getReaderFontId(), SETTINGS.getReaderLineCompression(),
-                                     SETTINGS.extraParagraphSpacing, SETTINGS.paragraphAlignment,
-                                     effectiveWritingMode(), viewportWidth, viewportHeight, SETTINGS.hyphenationEnabled,
-                                     SETTINGS.embeddedStyle, SETTINGS.imageRendering, SETTINGS.focusReadingEnabled,
-                                     SETTINGS.punctCompressionEnabled, popupFn)) {
+  if (!nextSection.createSectionFile(nextSpec, popupFn)) {
     LOG_ERR("ERS", "Failed silent indexing for chapter: %d", nextSpineIndex);
   }
 }
@@ -1481,6 +1615,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto tPrewarm = millis();
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
+  const bool tiledGrayscale = needsAnyGrayscale && renderer.supportsStripGrayscale();
+  // Whole-plane buffering only pays when the BW refresh genuinely runs async
+  // underneath it; on blocking panels (X3 / simulator) it would just spend
+  // ~50 KB for the identical serial timing. Image pages take the blocking
+  // double-FAST path below (no async refresh is ever started).
+  const bool overlapRefresh = tiledGrayscale && renderer.supportsAsyncRefresh() && !pageHasImages;
   auto renderGrayscalePass = [&]() {
     if (needsTextGrayscale) {
       page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
@@ -1526,84 +1666,145 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     // regardless of residue.
     pagesUntilFullRefresh = 1;
   } else {
-    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    // Async form: start the waveform and return so the grayscale plane rendering
+    // below overlaps the panel's refresh time instead of following it.
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, overlapRefresh);
   }
   const auto tDisplay = millis();
 
-  // Tiled grayscale: render each plane band-by-band into a small scratch and
-  // stream straight to the controller, leaving the BW framebuffer intact so no
-  // full-frame storeBwBuffer is needed; controller RAM is re-synced from the
-  // live framebuffer afterward. Text AA uses GRAYSCALE_DUAL so each strip is
-  // filled once (LSB+MSB together) instead of re-walking the page twice —
-  // dense CJK pages were spending most of their time in those extra walks.
-  // Glyphs still cull out-of-band before decode. Both text (DirectPixelWriter)
-  // and images honor the active strip target.
-  if (needsAnyGrayscale && renderer.supportsStripGrayscale()) {
+  // Tiled grayscale leaves the BW framebuffer intact so no full-frame
+  // storeBwBuffer is needed; controller RAM is re-synced from the live
+  // framebuffer afterward. When the BW refresh above went out async and heap
+  // allows, whole-plane buffers hide CPU plane rendering inside the refresh
+  // wait. Text AA still uses GRAYSCALE_DUAL (one walk) when both plane buffers
+  // (or dual strip scratch) are available. Glyphs cull out-of-band before
+  // decode. Both text and images honor the active strip target.
+  if (tiledGrayscale) {
     constexpr int STRIP_ROWS = 80;
     const int gh = renderer.getDisplayHeight();
     const int gwBytes = renderer.getDisplayWidthBytes();
+    const size_t planeBytes = static_cast<size_t>(gwBytes) * gh;
     const size_t stripBytes = static_cast<size_t>(gwBytes) * STRIP_ROWS;
 
-    // Dual scratch: ~8 KB × 2 temporary page-render buffers (stack too small;
-    // freed at end of this scope). Single-plane fallback uses one buffer.
-    auto scratchLsb = makeUniqueNoThrow<uint8_t[]>(stripBytes);
-    auto scratchMsb = needsTextGrayscale ? makeUniqueNoThrow<uint8_t[]>(stripBytes) : nullptr;
-    if (!scratchLsb || (needsTextGrayscale && !scratchMsb)) {
-      LOG_ERR("ERS", "OOM: grayscale strip scratch (%u bytes); skipping AA this page",
-              static_cast<unsigned>(stripBytes * (needsTextGrayscale ? 2 : 1)));
-    } else {
-      const auto tGrayStart = millis();
-      if (needsTextGrayscale) {
+    constexpr size_t PLANE_BUF_HEADROOM = 60000;
+    constexpr size_t PLANE_BUF_MAX_ALLOC_RESERVE = 16 * 1024;
+    const auto planeBufFits = [planeBytes] {
+      return ESP.getFreeHeap() >= planeBytes + PLANE_BUF_HEADROOM &&
+             ESP.getMaxAllocHeap() >= planeBytes + PLANE_BUF_MAX_ALLOC_RESERVE;
+    };
+    auto lsbPlaneBuf = (overlapRefresh && planeBufFits()) ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
+    auto msbPlaneBuf = (lsbPlaneBuf && planeBufFits()) ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
+
+    if (lsbPlaneBuf) {
+      if (needsTextGrayscale && msbPlaneBuf) {
         renderer.setRenderMode(GfxRenderer::GRAYSCALE_DUAL);
-        for (int y = 0; y < gh; y += STRIP_ROWS) {
-          const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
-          renderer.beginDualStripTarget(scratchLsb.get(), scratchMsb.get(), y, rows);
-          renderer.clearScreen(0x00);
-          renderGrayscalePass();
-          renderer.endStripTarget();
-          renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
-          renderer.writeGrayscalePlaneStrip(false, scratchMsb.get(), y, rows);
-        }
+        renderer.beginDualStripTarget(lsbPlaneBuf.get(), msbPlaneBuf.get(), 0, gh);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
       } else {
-        // Images only: keep the legacy single-plane passes (image writers already
-        // honor strip banding; dual would need gray-level mapping they already do
-        // via LSB then MSB modes).
         renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
-        for (int y = 0; y < gh; y += STRIP_ROWS) {
-          const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
-          renderer.beginStripTarget(scratchLsb.get(), y, rows);
-          renderer.clearScreen(0x00);
-          renderGrayscalePass();
-          renderer.endStripTarget();
-          renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
-        }
-        renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
-        for (int y = 0; y < gh; y += STRIP_ROWS) {
-          const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
-          renderer.beginStripTarget(scratchLsb.get(), y, rows);
-          renderer.clearScreen(0x00);
-          renderGrayscalePass();
-          renderer.endStripTarget();
-          renderer.writeGrayscalePlaneStrip(false, scratchLsb.get(), y, rows);
-        }
+        renderer.beginStripTarget(lsbPlaneBuf.get(), 0, gh);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
       }
-      const auto tGrayPlanes = millis();
+      const auto tGrayRender = millis();
+
+      renderer.waitRefreshComplete();
+      const auto tWait = millis();
+
+      renderer.writeGrayscalePlaneStrip(true, lsbPlaneBuf.get(), 0, gh);
+      if (msbPlaneBuf && needsTextGrayscale) {
+        renderer.writeGrayscalePlaneStrip(false, msbPlaneBuf.get(), 0, gh);
+      } else {
+        renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+        renderer.beginStripTarget(lsbPlaneBuf.get(), 0, gh);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
+        renderer.writeGrayscalePlaneStrip(false, lsbPlaneBuf.get(), 0, gh);
+      }
+      const auto tGrayWrite = millis();
 
       renderer.setRenderMode(GfxRenderer::BW);
       renderer.displayGrayBuffer();
       const auto tGrayDisplay = millis();
 
-      // BW framebuffer is intact; re-sync controller RAM for the next
-      // differential page turn directly from it.
       renderer.cleanupGrayscaleWithFrameBuffer();
-      const auto tCleanup = millis();
-
       const auto tEnd = millis();
+
       LOG_DBG("ERS",
-              "Page render (tiled): prewarm=%lums bw_render=%lums display=%lums gray_planes=%lums "
-              "gray_display=%lums cleanup=%lums total=%lums",
-              tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayPlanes - tGrayStart,
-              tGrayDisplay - tGrayPlanes, tCleanup - tGrayDisplay, tEnd - t0);
+              "Page render (tiled async): prewarm=%lums bw_render=%lums display=%lums gray_render=%lums "
+              "wait=%lums gray_write=%lums gray_display=%lums cleanup=%lums total=%lums (planes buffered: %d)",
+              tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayRender - tDisplay, tWait - tGrayRender,
+              tGrayWrite - tWait, tGrayDisplay - tGrayWrite, tEnd - tGrayDisplay, tEnd - t0, msbPlaneBuf ? 2 : 1);
+    } else {
+      // Dual-strip / per-strip scratch: blocking panels (X3, simulator) and the
+      // OOM fallback. Strip writes need the panel idle, so wait out any pending
+      // async refresh first (no-op on blocking panels).
+      renderer.waitRefreshComplete();
+      auto scratchLsb = makeUniqueNoThrow<uint8_t[]>(stripBytes);
+      auto scratchMsb = needsTextGrayscale ? makeUniqueNoThrow<uint8_t[]>(stripBytes) : nullptr;
+      if (!scratchLsb || (needsTextGrayscale && !scratchMsb)) {
+        LOG_ERR("ERS", "OOM: grayscale strip scratch (%u bytes); skipping AA this page",
+                static_cast<unsigned>(stripBytes * (needsTextGrayscale ? 2 : 1)));
+        if (overlapRefresh) {
+          // The BW refresh ran the shadow-free async path, so controller RAM's
+          // differential baseline was never rebuilt. Even with AA skipped it must
+          // be re-synced from the intact BW framebuffer, or the next differential
+          // update diffs against stale contents.
+          renderer.cleanupGrayscaleWithFrameBuffer();
+        }
+      } else {
+        const auto tGrayStart = millis();
+        if (needsTextGrayscale) {
+          renderer.setRenderMode(GfxRenderer::GRAYSCALE_DUAL);
+          for (int y = 0; y < gh; y += STRIP_ROWS) {
+            const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+            renderer.beginDualStripTarget(scratchLsb.get(), scratchMsb.get(), y, rows);
+            renderer.clearScreen(0x00);
+            renderGrayscalePass();
+            renderer.endStripTarget();
+            renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
+            renderer.writeGrayscalePlaneStrip(false, scratchMsb.get(), y, rows);
+          }
+        } else {
+          renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+          for (int y = 0; y < gh; y += STRIP_ROWS) {
+            const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+            renderer.beginStripTarget(scratchLsb.get(), y, rows);
+            renderer.clearScreen(0x00);
+            renderGrayscalePass();
+            renderer.endStripTarget();
+            renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
+          }
+          renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+          for (int y = 0; y < gh; y += STRIP_ROWS) {
+            const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+            renderer.beginStripTarget(scratchLsb.get(), y, rows);
+            renderer.clearScreen(0x00);
+            renderGrayscalePass();
+            renderer.endStripTarget();
+            renderer.writeGrayscalePlaneStrip(false, scratchLsb.get(), y, rows);
+          }
+        }
+        const auto tGrayPlanes = millis();
+
+        renderer.setRenderMode(GfxRenderer::BW);
+        renderer.displayGrayBuffer();
+        const auto tGrayDisplay = millis();
+
+        renderer.cleanupGrayscaleWithFrameBuffer();
+        const auto tCleanup = millis();
+
+        const auto tEnd = millis();
+        LOG_DBG("ERS",
+                "Page render (tiled): prewarm=%lums bw_render=%lums display=%lums gray_planes=%lums "
+                "gray_display=%lums cleanup=%lums total=%lums",
+                tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayPlanes - tGrayStart,
+                tGrayDisplay - tGrayPlanes, tCleanup - tGrayDisplay, tEnd - t0);
+      }
     }
   } else {
     // Fallback path for a controller without strip support. grayscale rendering
@@ -1659,7 +1860,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
 void EpubReaderActivity::renderStatusBar() const {
   // Calculate progress in book
   const int currentPage = section->currentPage + 1;
-  const float pageCount = section->pageCount;
+  const float pageCount = section->estimatedTotalPages();
   const float sectionChapterProg = (pageCount > 0) ? (static_cast<float>(currentPage) / pageCount) : 0;
   const float bookProgress = epub->calculateProgress(currentSpineIndex, sectionChapterProg) * 100;
 

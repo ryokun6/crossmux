@@ -25,6 +25,11 @@ class EpubReaderActivity final : public Activity {
   // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
   // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
   int pagesUntilFullRefresh = 0;
+  uint16_t buildViewportWidth = 0;
+  uint16_t buildViewportHeight = 0;
+  bool partialRebuildStartFailed = false;
+  bool buildHeapPaused = false;
+  bool buildPopupPending = false;
   // Idle-time glyph prewarm: after a page settles, scan the LIKELY next page
   // (scan mode draws nothing) and load its missing glyphs from SD during idle,
   // so the next turn's in-render prewarm is a cache hit instead of ~100 ms of
@@ -83,11 +88,21 @@ class EpubReaderActivity final : public Activity {
   void renderContents(std::unique_ptr<Page> page, int orientedMarginTop, int orientedMarginRight,
                       int orientedMarginBottom, int orientedMarginLeft);
   void renderStatusBar() const;
-  // Heap floor for optional render-adjacent work (idle prewarm). Page
-  // deserialization and glyph caching allocate through throwing paths that
-  // abort() on OOM; skip deferrable work below it.
+  static constexpr int BUILD_PAGES_PER_CHUNK = 8;
+  static constexpr int BACKGROUND_BUILD_PAGES_PER_TICK = 2;
+  static constexpr size_t BACKGROUND_BUILD_MIN_FREE_HEAP = 32 * 1024;
+  static constexpr size_t BACKGROUND_BUILD_MIN_MAX_ALLOC = 16 * 1024;
   static constexpr size_t RENDER_MIN_FREE_HEAP = 24 * 1024;
   static constexpr size_t RENDER_MIN_MAX_ALLOC = 24 * 1024;
+  static constexpr int BUILD_WINDOW_AHEAD = 5;
+  static constexpr int PARTIAL_REBUILD_START_MARGIN = 15;
+  static constexpr int BUILD_POPUP_PAGE_THRESHOLD = 20;
+  static constexpr size_t BUILD_POPUP_BYTE_THRESHOLD = 96 * 1024;
+  static constexpr unsigned long BUILD_POPUP_DEADLINE_MS = 1000;
+  bool buildTickHeapGate();
+  void showBuildPopup();
+  bool applyDeferredReposition();
+  ReaderRenderSpec makeRenderSpec(uint16_t viewportWidth, uint16_t viewportHeight) const;
   void silentIndexNextChapterIfNeeded(uint16_t viewportWidth, uint16_t viewportHeight);
   bool saveProgress(int spineIndex, int currentPage, int pageCount);
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
@@ -120,6 +135,7 @@ class EpubReaderActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&& lock) override;
+  bool skipLoopDelay() override { return section && section->isBuilding() && !buildHeapPaused; }
   bool isReaderActivity() const override { return true; }
   ScreenshotInfo getScreenshotInfo() const override;
   CrossPointPosition getCurrentPosition() const;
