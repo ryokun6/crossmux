@@ -210,7 +210,9 @@ flash cache, heap during WeRead download + silent restart into Reader.
 
 ## 10. Implementation status (sync PR)
 
-Branch: `cursor/upstream-sync-1.5.1-2423` — merged `upstream/main` @ 1.5.1.
+**Landed on `main`:** [PR #27](https://github.com/ryokun6/crossmux/pull/27) merge
+`7c67aeec` (2026-07-30). Firmware version **1.5.1**; release tag `1.5.1` on
+`59e016ae`. Branch was `cursor/upstream-sync-1.5.1-2423`.
 
 | Gate | Result |
 |---|---|
