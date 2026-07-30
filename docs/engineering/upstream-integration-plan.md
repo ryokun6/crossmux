@@ -1,6 +1,7 @@
 # Upstream Integration Plan (`0x1abin/crossmux` → ryOS)
 
-> Living plan for absorbing CrossMux upstream `main` (currently **1.5.1**) into
+> Living plan for absorbing CrossMux upstream `main` (currently **1.5.1**; fork
+> tip **1.5.2**) into
 > this fork while preserving ryOS identity: multi-SKU CJK (TC/SC/JA/KO),
 > vertical EPUB, no games, GenSen/SD-font stack, and thin `AGENTS.md`.
 >
@@ -213,6 +214,10 @@ flash cache, heap during WeRead download + silent restart into Reader.
 **Landed on `main`:** [PR #27](https://github.com/ryokun6/crossmux/pull/27) merge
 `7c67aeec` (2026-07-30). Firmware version **1.5.1**; release tag `1.5.1` on
 `59e016ae`. Branch was `cursor/upstream-sync-1.5.1-2423`.
+
+**1.5.2 (fork patch):** [PR #28](https://github.com/ryokun6/crossmux/pull/28)
+async e-ink refresh overlap + incremental/partial Section + HTML cache. Version
+`1.5.2` in `platformio.ini`; tag `1.5.2` after merge to `main`.
 
 | Gate | Result |
 |---|---|
