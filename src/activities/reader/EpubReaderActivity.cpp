@@ -1481,6 +1481,12 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   const auto tPrewarm = millis();
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
+  const bool tiledGrayscale = needsAnyGrayscale && renderer.supportsStripGrayscale();
+  // Whole-plane buffering only pays when the BW refresh genuinely runs async
+  // underneath it; on blocking panels (X3 / simulator) it would just spend
+  // ~50 KB for the identical serial timing. Image pages take the blocking
+  // double-FAST path below (no async refresh is ever started).
+  const bool overlapRefresh = tiledGrayscale && renderer.supportsAsyncRefresh() && !pageHasImages;
   auto renderGrayscalePass = [&]() {
     if (needsTextGrayscale) {
       page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
@@ -1526,84 +1532,145 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     // regardless of residue.
     pagesUntilFullRefresh = 1;
   } else {
-    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh);
+    // Async form: start the waveform and return so the grayscale plane rendering
+    // below overlaps the panel's refresh time instead of following it.
+    ReaderUtils::displayWithRefreshCycle(renderer, pagesUntilFullRefresh, overlapRefresh);
   }
   const auto tDisplay = millis();
 
-  // Tiled grayscale: render each plane band-by-band into a small scratch and
-  // stream straight to the controller, leaving the BW framebuffer intact so no
-  // full-frame storeBwBuffer is needed; controller RAM is re-synced from the
-  // live framebuffer afterward. Text AA uses GRAYSCALE_DUAL so each strip is
-  // filled once (LSB+MSB together) instead of re-walking the page twice —
-  // dense CJK pages were spending most of their time in those extra walks.
-  // Glyphs still cull out-of-band before decode. Both text (DirectPixelWriter)
-  // and images honor the active strip target.
-  if (needsAnyGrayscale && renderer.supportsStripGrayscale()) {
+  // Tiled grayscale leaves the BW framebuffer intact so no full-frame
+  // storeBwBuffer is needed; controller RAM is re-synced from the live
+  // framebuffer afterward. When the BW refresh above went out async and heap
+  // allows, whole-plane buffers hide CPU plane rendering inside the refresh
+  // wait. Text AA still uses GRAYSCALE_DUAL (one walk) when both plane buffers
+  // (or dual strip scratch) are available. Glyphs cull out-of-band before
+  // decode. Both text and images honor the active strip target.
+  if (tiledGrayscale) {
     constexpr int STRIP_ROWS = 80;
     const int gh = renderer.getDisplayHeight();
     const int gwBytes = renderer.getDisplayWidthBytes();
+    const size_t planeBytes = static_cast<size_t>(gwBytes) * gh;
     const size_t stripBytes = static_cast<size_t>(gwBytes) * STRIP_ROWS;
 
-    // Dual scratch: ~8 KB × 2 temporary page-render buffers (stack too small;
-    // freed at end of this scope). Single-plane fallback uses one buffer.
-    auto scratchLsb = makeUniqueNoThrow<uint8_t[]>(stripBytes);
-    auto scratchMsb = needsTextGrayscale ? makeUniqueNoThrow<uint8_t[]>(stripBytes) : nullptr;
-    if (!scratchLsb || (needsTextGrayscale && !scratchMsb)) {
-      LOG_ERR("ERS", "OOM: grayscale strip scratch (%u bytes); skipping AA this page",
-              static_cast<unsigned>(stripBytes * (needsTextGrayscale ? 2 : 1)));
-    } else {
-      const auto tGrayStart = millis();
-      if (needsTextGrayscale) {
+    constexpr size_t PLANE_BUF_HEADROOM = 60000;
+    constexpr size_t PLANE_BUF_MAX_ALLOC_RESERVE = 16 * 1024;
+    const auto planeBufFits = [planeBytes] {
+      return ESP.getFreeHeap() >= planeBytes + PLANE_BUF_HEADROOM &&
+             ESP.getMaxAllocHeap() >= planeBytes + PLANE_BUF_MAX_ALLOC_RESERVE;
+    };
+    auto lsbPlaneBuf = (overlapRefresh && planeBufFits()) ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
+    auto msbPlaneBuf = (lsbPlaneBuf && planeBufFits()) ? makeUniqueNoThrow<uint8_t[]>(planeBytes) : nullptr;
+
+    if (lsbPlaneBuf) {
+      if (needsTextGrayscale && msbPlaneBuf) {
         renderer.setRenderMode(GfxRenderer::GRAYSCALE_DUAL);
-        for (int y = 0; y < gh; y += STRIP_ROWS) {
-          const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
-          renderer.beginDualStripTarget(scratchLsb.get(), scratchMsb.get(), y, rows);
-          renderer.clearScreen(0x00);
-          renderGrayscalePass();
-          renderer.endStripTarget();
-          renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
-          renderer.writeGrayscalePlaneStrip(false, scratchMsb.get(), y, rows);
-        }
+        renderer.beginDualStripTarget(lsbPlaneBuf.get(), msbPlaneBuf.get(), 0, gh);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
       } else {
-        // Images only: keep the legacy single-plane passes (image writers already
-        // honor strip banding; dual would need gray-level mapping they already do
-        // via LSB then MSB modes).
         renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
-        for (int y = 0; y < gh; y += STRIP_ROWS) {
-          const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
-          renderer.beginStripTarget(scratchLsb.get(), y, rows);
-          renderer.clearScreen(0x00);
-          renderGrayscalePass();
-          renderer.endStripTarget();
-          renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
-        }
-        renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
-        for (int y = 0; y < gh; y += STRIP_ROWS) {
-          const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
-          renderer.beginStripTarget(scratchLsb.get(), y, rows);
-          renderer.clearScreen(0x00);
-          renderGrayscalePass();
-          renderer.endStripTarget();
-          renderer.writeGrayscalePlaneStrip(false, scratchLsb.get(), y, rows);
-        }
+        renderer.beginStripTarget(lsbPlaneBuf.get(), 0, gh);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
       }
-      const auto tGrayPlanes = millis();
+      const auto tGrayRender = millis();
+
+      renderer.waitRefreshComplete();
+      const auto tWait = millis();
+
+      renderer.writeGrayscalePlaneStrip(true, lsbPlaneBuf.get(), 0, gh);
+      if (msbPlaneBuf && needsTextGrayscale) {
+        renderer.writeGrayscalePlaneStrip(false, msbPlaneBuf.get(), 0, gh);
+      } else {
+        renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+        renderer.beginStripTarget(lsbPlaneBuf.get(), 0, gh);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
+        renderer.writeGrayscalePlaneStrip(false, lsbPlaneBuf.get(), 0, gh);
+      }
+      const auto tGrayWrite = millis();
 
       renderer.setRenderMode(GfxRenderer::BW);
       renderer.displayGrayBuffer();
       const auto tGrayDisplay = millis();
 
-      // BW framebuffer is intact; re-sync controller RAM for the next
-      // differential page turn directly from it.
       renderer.cleanupGrayscaleWithFrameBuffer();
-      const auto tCleanup = millis();
-
       const auto tEnd = millis();
+
       LOG_DBG("ERS",
-              "Page render (tiled): prewarm=%lums bw_render=%lums display=%lums gray_planes=%lums "
-              "gray_display=%lums cleanup=%lums total=%lums",
-              tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayPlanes - tGrayStart,
-              tGrayDisplay - tGrayPlanes, tCleanup - tGrayDisplay, tEnd - t0);
+              "Page render (tiled async): prewarm=%lums bw_render=%lums display=%lums gray_render=%lums "
+              "wait=%lums gray_write=%lums gray_display=%lums cleanup=%lums total=%lums (planes buffered: %d)",
+              tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayRender - tDisplay, tWait - tGrayRender,
+              tGrayWrite - tWait, tGrayDisplay - tGrayWrite, tEnd - tGrayDisplay, tEnd - t0, msbPlaneBuf ? 2 : 1);
+    } else {
+      // Dual-strip / per-strip scratch: blocking panels (X3, simulator) and the
+      // OOM fallback. Strip writes need the panel idle, so wait out any pending
+      // async refresh first (no-op on blocking panels).
+      renderer.waitRefreshComplete();
+      auto scratchLsb = makeUniqueNoThrow<uint8_t[]>(stripBytes);
+      auto scratchMsb = needsTextGrayscale ? makeUniqueNoThrow<uint8_t[]>(stripBytes) : nullptr;
+      if (!scratchLsb || (needsTextGrayscale && !scratchMsb)) {
+        LOG_ERR("ERS", "OOM: grayscale strip scratch (%u bytes); skipping AA this page",
+                static_cast<unsigned>(stripBytes * (needsTextGrayscale ? 2 : 1)));
+        if (overlapRefresh) {
+          // The BW refresh ran the shadow-free async path, so controller RAM's
+          // differential baseline was never rebuilt. Even with AA skipped it must
+          // be re-synced from the intact BW framebuffer, or the next differential
+          // update diffs against stale contents.
+          renderer.cleanupGrayscaleWithFrameBuffer();
+        }
+      } else {
+        const auto tGrayStart = millis();
+        if (needsTextGrayscale) {
+          renderer.setRenderMode(GfxRenderer::GRAYSCALE_DUAL);
+          for (int y = 0; y < gh; y += STRIP_ROWS) {
+            const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+            renderer.beginDualStripTarget(scratchLsb.get(), scratchMsb.get(), y, rows);
+            renderer.clearScreen(0x00);
+            renderGrayscalePass();
+            renderer.endStripTarget();
+            renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
+            renderer.writeGrayscalePlaneStrip(false, scratchMsb.get(), y, rows);
+          }
+        } else {
+          renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+          for (int y = 0; y < gh; y += STRIP_ROWS) {
+            const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+            renderer.beginStripTarget(scratchLsb.get(), y, rows);
+            renderer.clearScreen(0x00);
+            renderGrayscalePass();
+            renderer.endStripTarget();
+            renderer.writeGrayscalePlaneStrip(true, scratchLsb.get(), y, rows);
+          }
+          renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+          for (int y = 0; y < gh; y += STRIP_ROWS) {
+            const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+            renderer.beginStripTarget(scratchLsb.get(), y, rows);
+            renderer.clearScreen(0x00);
+            renderGrayscalePass();
+            renderer.endStripTarget();
+            renderer.writeGrayscalePlaneStrip(false, scratchLsb.get(), y, rows);
+          }
+        }
+        const auto tGrayPlanes = millis();
+
+        renderer.setRenderMode(GfxRenderer::BW);
+        renderer.displayGrayBuffer();
+        const auto tGrayDisplay = millis();
+
+        renderer.cleanupGrayscaleWithFrameBuffer();
+        const auto tCleanup = millis();
+
+        const auto tEnd = millis();
+        LOG_DBG("ERS",
+                "Page render (tiled): prewarm=%lums bw_render=%lums display=%lums gray_planes=%lums "
+                "gray_display=%lums cleanup=%lums total=%lums",
+                tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayPlanes - tGrayStart,
+                tGrayDisplay - tGrayPlanes, tCleanup - tGrayDisplay, tEnd - t0);
+      }
     }
   } else {
     // Fallback path for a controller without strip support. grayscale rendering

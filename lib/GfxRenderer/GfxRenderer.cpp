@@ -1510,6 +1510,25 @@ void GfxRenderer::displayBuffer(const HalDisplay::RefreshMode refreshMode) const
   display.displayBuffer(effectiveRefreshMode, fadingFix);
 }
 
+void GfxRenderer::displayBufferAsync(const HalDisplay::RefreshMode refreshMode) const {
+  HalDisplay::RefreshMode effectiveRefreshMode = refreshMode;
+  if (nextRefreshOverridePending) {
+    effectiveRefreshMode = nextRefreshOverride;
+    nextRefreshOverridePending = false;
+  }
+  // The async path has no turn-off-screen hook, which the sunlight fading fix
+  // relies on; keep those users on the blocking path.
+  if (fadingFix) {
+    display.displayBuffer(effectiveRefreshMode, fadingFix);
+    return;
+  }
+  display.displayBufferAsync(effectiveRefreshMode);
+}
+
+void GfxRenderer::waitRefreshComplete() const { display.waitRefreshComplete(); }
+
+bool GfxRenderer::supportsAsyncRefresh() const { return !fadingFix && display.supportsAsyncRefresh(); }
+
 std::string GfxRenderer::truncatedText(const int fontId, const char* text, const int maxWidth,
                                        const EpdFontFamily::Style style) const {
   if (!text || maxWidth <= 0) return "";
