@@ -437,8 +437,10 @@ void EpubReaderActivity::loop() {
       fcm->canIdlePrewarm(SETTINGS.getReaderFontId()) &&
       (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
     RenderLock lock;
-    if (section && !section->isBuilding() &&
-        (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage)) {
+    // Outer gate already checked section + !isBuilding. Re-check only page
+    // identity — cppcheck cannot see cross-task mutation between peek() and
+    // lock acquire (same pattern as 2dca7845).
+    if (idlePrewarmSpine != currentSpineIndex || idlePrewarmPage != section->currentPage) {
       idlePrewarmSpine = currentSpineIndex;
       idlePrewarmPage = section->currentPage;
       const int nextPage = section->currentPage + 1;
