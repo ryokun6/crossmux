@@ -248,6 +248,13 @@ Landed after `main` 1.5.1 (async + incremental Section PR):
 - Incremental/partial `Section::startBuild` / `suspendBuild` + HTML cache
 - `FrameBufferLoan` + `buildscratch` during chapter inflate
 
+Verification (cloud VM, no device waveform):
+- `pio run` default SUCCESS — Flash **88.0%** (5764813 / 6553600)
+- `pio run -e gh_release_tc` SUCCESS — Flash **98.1%** (6431173 / 6553600), unchanged vs post-#44 gate
+- `ctest` 230/230; `pio check` clean
+- Intl sim: Alice incremental open + page turns; `html/` + `sections/*.bin` v56
+- TC sim: 吶喊 vertical incremental + silent next-chapter index; section v85; reopen skipped rebuild
+
 Landed after the 1.5.1 pin on this branch:
 - Page deserialize reserve clamp + null TextBlock check
 - ImageBlock row-buffer RAII (`makeUniqueNoThrow`)
