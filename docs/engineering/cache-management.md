@@ -9,7 +9,7 @@
 
 **Location**: `.crosspoint/` directory on SD card root
 
-**Structure**: `.crosspoint/epub_<hash>/{book.bin, progress.bin, cover.bmp, sections/*.bin}`
+**Structure**: `.crosspoint/epub_<hash>/{book.bin, progress.bin, cover.bmp, sections/*.bin, html/<spine>.html}`
 
 **Hash**: `std::hash<std::string>{}(filepath)` → Moving/renaming file = new hash = lost progress
 
@@ -40,6 +40,10 @@ rm -rf /path/to/sd/.crosspoint/epub_<hash>/
 
 # Keep progress, delete only rendered sections
 rm -rf /path/to/sd/.crosspoint/epub_<hash>/sections/
+
+# Drop unzipped HTML + in-progress .part files (forces re-inflate / re-index)
+rm -rf /path/to/sd/.crosspoint/epub_<hash>/html/
+rm -f  /path/to/sd/.crosspoint/epub_<hash>/sections/*.part
 ```
 
 **When to Clear Cache**:
@@ -56,8 +60,8 @@ rm -rf /path/to/sd/.crosspoint/epub_<hash>/sections/
 **Source**: `lib/Epub/Epub/Section.cpp`, `lib/Epub/Epub/BookMetadataCache.cpp`
 
 **Current Versions** (as of [../file-formats.md](../file-formats.md)):
-- `book.bin`: **Version 11** (metadata structure) — includes NFC-composed titles and ignores ambiguous EPUB guide text references while remaining above every version shipped by either lineage.
-- `section.bin`: **per-flavor** — Latin builds **Version 46**, Chinese builds (`ENABLE_CHINESE_VERSION`) **Version 47**. Versions 46/47 invalidate pagination after oversized tokens began using UTF-8-safe emergency wrapping without synthetic hyphens. The two flavors emit different word streams (per-character CJK tokenization), so each carries an independent counter; numbers stay distinct and above every previously shipped value so a firmware flavor swap never reuses the other's cache.
+- `book.bin`: **Version 10** — NFC-composed titles plus OPF `page-progression-direction="rtl"` (`pageProgressionRtl`).
+- `section.bin`: **per-SKU** — Latin **56**; TC **85**; SC **86**; JA **87**; KO **88**. Layout includes TextBlock arena, CJK writing-mode/kinsoku/punct, and `<br>` margin strip. Incremental builds do **not** bump these integers: finalized files keep the same layout; mid-build crashes leave version `0` (rejected); suspended builds write paired sentinel `0xFE - (SECTION_FILE_VERSION - 28)` plus a watermark trailer. Unzipped chapter HTML lives under `html/<spine>.html` (settings-independent; reused across layout rebuilds).
 
 **Version Increment Rules**:
 1. **ALWAYS increment version** BEFORE changing binary structure
