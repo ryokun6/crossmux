@@ -242,7 +242,7 @@ Deferred items completed on this branch:
 - Adopted `freeink-sdk` + WeRead wolfSSL (plan originally preferred staying on open-x4)
 
 Follow-ups still open:
-- TC flash headroom (~98.0%) before more CN-only growth
+- TC flash headroom was ~98.0%; EN-only hyphen on CJK SKUs brought TC to **93.2%**
 - Full ruby layout pipeline (arena already serializes empty ruby strings)
 - Host `HalOtaSlot` completeness for inactive-slot sim paths
 - Post-1.5.1 still deferred: AirPage standalone app, Nightly OTA, Lyra theme, SDK bump `e514a868`
