@@ -157,10 +157,13 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
         static_cast<OtaUpdater*>(ctx)->recordAsset(asset.name, asset.url, asset.size, asset.digest, asset.digestValid);
       },
       this);
-  if (HttpDownloader::fetchUrl(latestReleaseUrl, [&releaseParser](const uint8_t* data, size_t len) {
+  // fetchUrl returns bool (true on success). Do not compare to DownloadError::OK
+  // (which is 0): a successful fetch returns true (== 1), and `true != OK` would
+  // mis-report every check as HTTP_ERROR — the 1.5.1/1.5.2 "Update failed" bug.
+  if (!HttpDownloader::fetchUrl(latestReleaseUrl, [&releaseParser](const uint8_t* data, size_t len) {
         releaseParser.feed(reinterpret_cast<const char*>(data), len);
         return true;
-      }) != HttpDownloader::OK) {
+      })) {
     LOG_ERR("OTA", "Release check fetch failed");
     return HTTP_ERROR;
   }
