@@ -110,9 +110,9 @@ const fui::KeyboardLayout URL_SHIFT_LAYOUT{URL_SHIFT_ROWS, 5};
 const fui::KeyboardLayout URL_SNIPPET_LAYOUT{URL_SNIP_ROWS, 4};
 
 fui::KeyboardLayoutId layoutForLanguage(const Language language) {
-#ifdef ENABLE_CHINESE_VERSION
-  // The CN firmware intentionally generates only EN and ZH_CN enum values.
-  // Neither language needs one of the Latin alternate keyboard layouts.
+#ifdef ENABLE_CJK_VERSION
+  // CJK SKUs generate only EN + one locale (ZH_TW / ZH_CN / JA / KO).
+  // FR/DE/ES are omitted from the Language enum, so do not reference them.
   (void)language;
   return fui::KeyboardLayoutId::QwertyEn;
 #else
