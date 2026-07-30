@@ -238,10 +238,15 @@ Deferred items completed on this branch:
 
 Follow-ups still open:
 - TC flash headroom (~98.0%) before more CN-only growth
-- Incremental/partial section build (`Section::startBuild` / `suspendBuild`)
 - Full ruby layout pipeline (arena already serializes empty ruby strings)
 - Host `HalOtaSlot` completeness for inactive-slot sim paths
 - Post-1.5.1 still deferred: AirPage standalone app, Nightly OTA, Lyra theme, SDK bump `e514a868`
+
+Landed after `main` 1.5.1 (async + incremental Section PR):
+- Real `GfxRenderer::displayBufferAsync` / `waitRefreshComplete` / `supportsAsyncRefresh`
+- Reader grayscale overlap (whole-plane + dual-strip `GRAYSCALE_DUAL` fallback)
+- Incremental/partial `Section::startBuild` / `suspendBuild` + HTML cache
+- `FrameBufferLoan` + `buildscratch` during chapter inflate
 
 Landed after the 1.5.1 pin on this branch:
 - Page deserialize reserve clamp + null TextBlock check

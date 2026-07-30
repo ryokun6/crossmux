@@ -340,6 +340,25 @@ class GfxRenderer {
   // Low level functions
   uint8_t* getFrameBuffer() const;
   bool hasFrameBuffer() const { return frameBuffer != nullptr; }
+  // Lend framebuffer storage in place to a build phase (never frees the
+  // allocation). Bytes are published via buildscratch::lend() for consumers
+  // like InflateStream. restore returns the buffer white; redraw fully.
+  void releaseFrameBufferForBuild();
+  bool restoreFrameBufferAfterBuild();
+  // RAII form of the loan above. Display the popup/screen the panel should hold
+  // BEFORE constructing one. Nesting-safe (inert if already lent).
+  class FrameBufferLoan {
+   public:
+    explicit FrameBufferLoan(GfxRenderer& renderer);
+    ~FrameBufferLoan() { end(); }
+    void end();
+    FrameBufferLoan(const FrameBufferLoan&) = delete;
+    FrameBufferLoan& operator=(const FrameBufferLoan&) = delete;
+
+   private:
+    GfxRenderer& renderer_;
+    bool active_ = false;
+  };
   size_t getBufferSize() const;
   uint16_t getDisplayWidth() const { return panelWidth; }
   uint16_t getDisplayHeight() const { return panelHeight; }
