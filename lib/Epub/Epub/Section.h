@@ -116,7 +116,9 @@ class Section {
   // Unified page read: from the active build if it has reached the page, otherwise from
   // the on-disk file (finalized section, or a partial the rebuild hasn't caught up to).
   std::unique_ptr<Page> loadPage(int page);
-  std::unique_ptr<Page> loadPageFromSectionFile() { return loadPage(currentPage); }
+  // Out-of-line: Page is only forward-declared here and unique_ptr destruction needs a
+  // complete type (inlining this wrapper broke ProgressMapper / ReaderActivity TUs).
+  std::unique_ptr<Page> loadPageFromSectionFile();
 
   std::string getTextFromSectionFile();
 

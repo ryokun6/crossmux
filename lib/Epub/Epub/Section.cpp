@@ -763,6 +763,8 @@ std::unique_ptr<Page> Section::loadPageAt(const int page) const {
   // No f.close() needed -- DESTRUCTOR_CLOSES_FILE=1 handles it at scope exit
 }
 
+std::unique_ptr<Page> Section::loadPageFromSectionFile() { return loadPage(currentPage); }
+
 std::unique_ptr<Page> Section::loadPage(const int page) {
   if (page < 0) {
     return nullptr;
