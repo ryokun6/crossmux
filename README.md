@@ -15,7 +15,11 @@ Current firmware version: **1.5.3**
 
 ![ryOS CrossMux running on an Xteink device](./docs/images/xteink-vertical-reading.jpg)
 
+<<<<<<< HEAD
 ## What this fork adds
+=======
+- **Reader engine**: EPUB 2/3 rendering with embedded-style option, image handling, hyphenation, kerning, chapter navigation, footnotes, bookmarks, go-to-percent, auto page turn, orientation control, focus reading, KOReader progress sync and more. 
+>>>>>>> upstream/master
 
 ### Vertical CJK EPUB reading
 
@@ -42,7 +46,21 @@ setting is vertical.
 
 ### Localized CJK firmware (TC / SC / JA / KO)
 
+<<<<<<< HEAD
 Four CJK SKUs ship alongside international:
+=======
+- **Wireless workflows**:
+  
+  - File transfer web UI
+  - EPUB Optimizer
+  - Web settings UI/API (edit many device settings from browser)
+  - WebSocket fast uploads
+  - WebDAV handler
+  - AP mode (hotspot) and STA mode (join existing Wi-Fi), both with QR helpers
+  - Calibre wireless connect flow
+  - OPDS browser with saved servers (up to 8), search, pagination, and direct download
+  - OTA update checks and installs from GitHub releases
+>>>>>>> upstream/master
 
 | Env | Locale | UI | OTA asset |
 | --- | --- | --- | --- |
@@ -51,10 +69,14 @@ Four CJK SKUs ship alongside international:
 | `gh_release_ja` | `ja-JP` | Japanese | `firmware-ja.bin` |
 | `gh_release_ko` | `ko-KR` | Korean | `firmware-ko.bin` |
 
+<<<<<<< HEAD
 **Chinese SKUs** include English + Chinese UI, CJK line-breaking, WeRead,
 dual-slot OTA from `ryokun6/crossmux`, and embedded CJK bitmap fonts from
 GenSen Rounded TW (Traditional SKU stores TC-keyed bitmaps; Simplified SKU
 subsets the same OTF by SC codepoints so glyph shapes stay Simplified).
+=======
+- **Localization**: 24 UI languages and counting. RTL support.
+>>>>>>> upstream/master
 
 **Automatic text conversion while reading (Chinese SKUs only):** book
 codepoints are remapped at glyph lookup so you can open the same EPUB/TXT on
@@ -63,6 +85,7 @@ bitmaps; the Simplified build maps Traditional → Simplified. UI strings are
 converted at build time — the SC SKU runs OpenCC `tw2sp` on the shared Taiwan
 YAML (e.g. 檔案 → 文件).
 
+<<<<<<< HEAD
 **Japanese / Korean SKUs** use GenSen Rounded 2 JP and Resource Han Rounded KR
 respectively, with **no** OpenCC Han conversion. WeRead and the Chinese
 calendar face are Chinese-SKU only. See
@@ -74,6 +97,9 @@ and [docs/engineering/chinese-build.md](./docs/engineering/chinese-build.md).
 `.cpfont` families can live in either `/.fonts/` or `/fonts/` on the SD card.
 The loader indexes large CJK families on demand, prewarms upcoming page glyphs,
 and falls back to the regular style when a CJK bold or italic glyph is absent.
+=======
+- Dictionary lookup — inline word lookup without leaving the reader.
+>>>>>>> upstream/master
 
 The repo also includes an EB Garamond plus regional Source Han Serif builder
 for locale families `EBGaramondSHS-{TC,SC,JA,KO}` (vendored sources under
@@ -326,4 +352,84 @@ and [diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader).
 
 The project is not affiliated with Xteink or any device manufacturer.
 
+<<<<<<< HEAD
 Licensed under the [MIT License](./LICENSE).
+=======
+# For macOS
+python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
+```
+
+Minor adjustments may be required for Windows.
+
+---
+
+## Internals
+
+CrossPoint Reader is pretty aggressive about caching data down to the SD card to minimise RAM usage. The ESP32-C3 only has ~380KB of usable RAM, so we have to be careful. A lot of the decisions made in the design of the firmware were based on this constraint.
+
+### Data caching
+
+The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
+cache. This cache directory exists at `.crosspoint` on the SD card. The structure is as follows:
+
+```text
+.crosspoint/
+├── epub_<hash>/         # one directory per book, named by content hash
+│   ├── progress.bin     # reading position (chapter, page, etc.)
+│   ├── cover.bmp        # generated cover image
+│   ├── book.bin         # metadata: title, author, spine, TOC
+│   ├── css_rules.cache  # parsed CSS rule cache
+│   ├── img_*            # rendered image cache files
+│   └── sections/        # per-chapter layout cache
+│       ├── 0.bin
+│       ├── 1.bin
+│       └── ...
+├── settings.json        # device settings
+├── state.json           # resume/runtime state
+└── recent.json          # recent books list
+```
+
+Removing `/.crosspoint` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
+
+For more details on the internal file structures, see the [file formats document](./docs/file-formats.md).
+
+---
+
+## Contributing
+
+Contributions are welcome. If you're new to the codebase, start with the [contributing docs](./docs/contributing/README.md). For things to work on, check the [ideas discussion board](https://github.com/crosspoint-reader/crosspoint-reader/discussions/categories/ideas) — leave a comment before starting so we don't duplicate effort.
+
+Everyone here is a volunteer, so please be respectful and patient. For governance and community expectations, see [GOVERNANCE.md](./GOVERNANCE.md).
+
+---
+
+## Community forks
+
+One of the best things about open source is that anyone can take the code in a different direction. If you need something outside CrossPoint's [scope](./SCOPE.md), check out the community forks:
+
+- [CrossInk](https://github.com/uxjulia/CrossInk) — Typography and reading tracking: Bionic Reading (bolds word stems to create fixation points), guide dots between words, improved paragraph indents, and replaces the default fonts with ChareInk/Lexend/Bitter.
+
+- [papyrix-reader](https://github.com/bigbag/papyrix-reader) — Adds FB2 and MD format support. Actively maintained with Arabic script support. Custom themes via SD card.
+
+- [crosspet](https://github.com/trilwu/crosspet) — A Vietnamese fork that adds a Tamagotchi-style virtual chicken that grows based on your reading milestones (pages read, streaks, care). Also: Flashcards, Weather, Pomodoro timer, and mini-games.
+
+- [crosspoint-reader-cjk](https://github.com/aBER0724/crosspoint-reader-cjk) — Purpose-built for Chinese, Japanese, and Korean reading.
+
+- [inx](https://github.com/obijuankenobiii/inx) — Completely reimagines the user interface with tabbed navigation.
+
+- ~~[PlusPoint](https://github.com/ngxson/pluspoint-reader) — custom JS apps support.~~ (Unmaintained)
+
+- [crosspoint-reader-papers3](https://github.com/juicecultus/crosspoint-reader-papers3) — Crosspoint port for M5Stack Paper S3. 
+
+- [t5s3-reader](https://github.com/ShallowGreen123/t5s3-reader) — Crosspoint port for LilyGo T5 ePaper S3 / T5S3 4.7-inch e-paper device.
+
+**Note:** Many of these features will make their way into CrossPoint over time. We maintain a slower pace to ensure rock-solid stability and squash bugs before they reach your device.
+
+Want to build your own device? Be sure to check out the [de-link](https://github.com/iandchasse/de-link) project.
+
+---
+
+CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.
+
+Huge shoutout to [diy-esp32-epub-reader](https://github.com/atomic14/diy-esp32-epub-reader), which inspired this project.
+>>>>>>> upstream/master

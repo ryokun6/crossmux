@@ -58,6 +58,7 @@ class HalDisplay {
   // Access to frame buffer
   uint8_t* getFrameBuffer() const;
 
+<<<<<<< HEAD
   // Lend the framebuffer's ~48 KB STORAGE to a memory-hungry phase (chapter
   // builds) without freeing it: the allocation never moves, so repeated loans
   // cannot fragment the heap (free+realloc measurably did). No display calls
@@ -66,6 +67,8 @@ class HalDisplay {
   uint8_t* lendFrameBufferStorage(uint32_t* sizeOut);
   void returnFrameBufferStorage();
 
+=======
+>>>>>>> upstream/master
   // X3 grayscale preconditioning (OEM "AA-pre-BW(mid)" settle pass), windowed
   // to the gray region in physical panel coordinates (no-arg = full frame).
   // Call after the BW base frame is displayed and before the grayscale planes

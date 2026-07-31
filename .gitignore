@@ -21,6 +21,7 @@ build
 lib/EpdFont/scripts/downloaded_fonts/
 lib/EpdFont/scripts/instanced_fonts/
 lib/EpdFont/scripts/output/
+<<<<<<< HEAD
 # Legacy WeRead API key files may still contain secrets — never commit them.
 weread_apikey*.txt
 weread_apikey*.bin
@@ -37,12 +38,17 @@ lib/EpdFont/builtinFonts/source/
 /CMakeLists.txt
 /dependencies.lock
 
+=======
+>>>>>>> upstream/master
 # Claude Code: share project skills with the team, keep local agent state
 # (worktrees, scheduled-task locks, settings.local, scout CLEANUP.md) out.
 .claude/*
 !.claude/skills/
+<<<<<<< HEAD
 /managed_components
 /.dummy
 /CMakeLists.txt
 /dependencies.lock
 /sdkconfig.*
+=======
+>>>>>>> upstream/master

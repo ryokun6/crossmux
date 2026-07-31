@@ -724,6 +724,7 @@ SavedProgressPosition ProgressMapper::toSavedProgress(const std::shared_ptr<Epub
   return result;
 }
 
+<<<<<<< HEAD
 std::optional<CrossPointPosition> ProgressMapper::fromRichPosition(const std::shared_ptr<Epub>& epub,
                                                                    const KOReaderRichPosition& rich,
                                                                    GfxRenderer& renderer) {
@@ -800,6 +801,11 @@ CrossPointPosition ProgressMapper::toCrossPointImpl(const std::shared_ptr<Epub>&
                                                     const int currentSpineIndex, const int totalPagesInCurrentSpine,
                                                     const int fallbackTotalPages, const int exactSpineIndex,
                                                     const float exactIntraSpine) {
+=======
+CrossPointPosition ProgressMapper::toCrossPoint(const std::shared_ptr<Epub>& epub, const SavedProgressPosition& koPos,
+                                                GfxRenderer& renderer, int currentSpineIndex,
+                                                int totalPagesInCurrentSpine, int fallbackTotalPages) {
+>>>>>>> upstream/master
   CrossPointPosition result{};
   const size_t bookSize = epub->getBookSize();
   if (bookSize == 0) return result;
@@ -858,10 +864,14 @@ CrossPointPosition ProgressMapper::toCrossPointImpl(const std::shared_ptr<Epub>&
 
   float intra = 0.0f;
   bool resolvedIntra = false;
+<<<<<<< HEAD
   if (exactIntraSpine >= 0.0f) {
     intra = exactIntraSpine;
     resolvedIntra = true;
   } else if (useAncestry) {
+=======
+  if (useAncestry) {
+>>>>>>> upstream/master
     ParagraphStreamer s(xpathSteps, xpathStepCount, xpathChar, xpathTextNode);
     if (streamSpine(epub, result.spineIndex, s) && s.found()) {
       intra = s.progress();

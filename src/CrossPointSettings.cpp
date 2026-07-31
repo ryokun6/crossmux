@@ -192,6 +192,7 @@ uint8_t CrossPointSettings::sleepTimeoutEnumToMinutes(const uint8_t legacyValue)
   }
 }
 
+<<<<<<< HEAD
 void CrossPointSettings::toJson(JsonDocument& doc) const {
   const CrossPointSettings& s = *this;
 
@@ -386,6 +387,11 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   LOG_DBG("CPS", "Settings loaded from file");
 
   return true;
+=======
+bool CrossPointSettings::saveToFile() const {
+  Storage.mkdir("/.crosspoint");
+  return JsonSettingsIO::saveSettings(*this, SETTINGS_FILE_JSON);
+>>>>>>> upstream/master
 }
 
 bool CrossPointSettings::loadFromFile() {
@@ -414,10 +420,17 @@ bool CrossPointSettings::migrateLanguageBinaryFile() {
   // frozen enum order from the original binary format.
   if (!Storage.exists(LANG_FILE_BIN)) return false;
 
+<<<<<<< HEAD
   HalFile file;
   if (Storage.openFileForRead("CPS", LANG_FILE_BIN, file)) {
     uint8_t version = 0;
     serialization::readPod(file, version);
+=======
+  HalFile f;
+  if (Storage.openFileForRead("CPS", LANG_FILE_BIN, f)) {
+    uint8_t version;
+    serialization::readPod(f, version);
+>>>>>>> upstream/master
     if (version == 1) {
       uint8_t oldIndex = 0;
       serialization::readPod(file, oldIndex);
@@ -467,13 +480,22 @@ bool CrossPointSettings::loadFromBinaryFile() {
     readAndValidate(inputFile, sideButtonLayout, SIDE_BUTTON_LAYOUT_COUNT);
     if (++settingsRead >= fileSettingsCount) break;
     {
+<<<<<<< HEAD
       uint8_t legacyFontFamily = NOTOSERIF;
+=======
+      uint8_t legacyFontFamily;
+>>>>>>> upstream/master
       serialization::readPod(inputFile, legacyFontFamily);
       if (legacyFontFamily < BUILTIN_FONT_COUNT) {
         fontFamily = legacyFontFamily;
       } else if (legacyFontFamily == LEGACY_OPENDYSLEXIC) {
         fontFamily = NOTOSERIF;
+<<<<<<< HEAD
         copyToField(sdFontFamilyName, "OpenDyslexic", sizeof(sdFontFamilyName));
+=======
+        strncpy(sdFontFamilyName, "OpenDyslexic", sizeof(sdFontFamilyName) - 1);
+        sdFontFamilyName[sizeof(sdFontFamilyName) - 1] = '\0';
+>>>>>>> upstream/master
       }
     }
     if (++settingsRead >= fileSettingsCount) break;
@@ -626,7 +648,10 @@ float CrossPointSettings::getReaderLineCompression() const {
         case WIDE:
           return 1.0f;
       }
+<<<<<<< HEAD
 #endif
+=======
+>>>>>>> upstream/master
   }
 }
 
@@ -635,6 +660,7 @@ unsigned long CrossPointSettings::getSleepTimeoutMs() const {
   const uint8_t minutes =
       std::clamp(sleepTimeoutMinutes, MIN_SLEEP_TIMEOUT_MINUTES, static_cast<uint8_t>(SLEEP_TIMEOUT_NEVER_MINUTES - 1));
   return static_cast<unsigned long>(minutes) * 60UL * 1000UL;
+<<<<<<< HEAD
 }
 
 uint64_t CrossPointSettings::getDailyGoalMs() const {
@@ -649,6 +675,8 @@ uint64_t CrossPointSettings::getDailyGoalMs() const {
     case DAILY_GOAL_60_MIN:
       return 60ULL * 60ULL * 1000ULL;
   }
+=======
+>>>>>>> upstream/master
 }
 
 int CrossPointSettings::getRefreshFrequency() const {
@@ -708,6 +736,32 @@ int CrossPointSettings::getBuiltinReaderFontId() const {
       return sans ? NOTOSANS_18_FONT_ID : NOTOSERIF_18_FONT_ID;
     case 14:
     default:
+<<<<<<< HEAD
       return sans ? NOTOSANS_14_FONT_ID : NOTOSERIF_14_FONT_ID;
+=======
+      switch (fontSize) {
+        case SMALL:
+          return NOTOSERIF_12_FONT_ID;
+        case MEDIUM:
+        default:
+          return NOTOSERIF_14_FONT_ID;
+        case LARGE:
+          return NOTOSERIF_16_FONT_ID;
+        case EXTRA_LARGE:
+          return NOTOSERIF_18_FONT_ID;
+      }
+    case NOTOSANS:
+      switch (fontSize) {
+        case SMALL:
+          return NOTOSANS_12_FONT_ID;
+        case MEDIUM:
+        default:
+          return NOTOSANS_14_FONT_ID;
+        case LARGE:
+          return NOTOSANS_16_FONT_ID;
+        case EXTRA_LARGE:
+          return NOTOSANS_18_FONT_ID;
+      }
+>>>>>>> upstream/master
   }
 }

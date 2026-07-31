@@ -16,7 +16,11 @@ This document shows common issues and possible solutions while using the device 
 
 1. Verify both devices are on the correct network
    - Check your computer/phone Wi-Fi settings
+<<<<<<< HEAD
    - In **Join Network** mode, your computer/phone and ryOS CrossMux must be on the same Wi-Fi network
+=======
+   - In **Join Network** mode, your computer/phone and CrossPoint Reader must be on the same Wi-Fi network
+>>>>>>> upstream/master
    - In **Create Hotspot** mode, your computer/phone must be connected to the `CrossPoint-Reader` hotspot
 2. Double-check the IP address
    - Make sure you typed it correctly

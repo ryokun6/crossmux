@@ -102,6 +102,7 @@ struct ThemeMetrics {
   int textFieldLineEndOffset;
 };
 
+<<<<<<< HEAD
 enum UIIcon {
   None = 0,
   Folder,
@@ -128,6 +129,11 @@ enum UIIcon {
   Standby,
   Game2048,
 };
+=======
+enum UIIcon { None = 0, Folder, Text, Image, Book, File, Recent, Settings, Transfer, Library, Wifi, Hotspot, Bookmark };
+
+enum class KeyboardKeyType { Normal, Shift, Mode, Space, Del, Ok, Disabled };
+>>>>>>> upstream/master
 
 // Default theme implementation (Classic Theme)
 // Additional themes can inherit from this and override methods as needed
@@ -214,10 +220,14 @@ class BaseTheme {
   virtual void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                const char* btn4) const;
   virtual void drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const;
+<<<<<<< HEAD
   virtual int getListRowStep(bool hasSubtitle) const;
   virtual int getListPageItems(int contentHeight, bool hasSubtitle) const;
   void drawSideScrollBar(const GfxRenderer& renderer, Rect rect, int itemCount, int pageStartIndex,
                          int pageItems) const;
+=======
+  virtual int getListPageItems(int contentHeight, bool hasSubtitle) const;
+>>>>>>> upstream/master
   virtual void drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
                         const std::function<std::string(int index)>& rowTitle,
                         const std::function<std::string(int index)>& rowSubtitle = nullptr,
@@ -246,8 +256,12 @@ class BaseTheme {
   virtual void fillPopupProgress(const GfxRenderer& renderer, const Rect& layout, const int progress) const;
   void drawStatusBar(GfxRenderer& renderer, const float bookProgress, const int currentPage, const int pageCount,
                      std::string title, const int paddingBottom = 0, const int textYOffset = 0,
+<<<<<<< HEAD
                      const bool fillMargin = true, const bool isPageBookmarked = false,
                      const bool pageCountEstimated = false) const;
+=======
+                     const bool fillMargin = true, const bool isPageBookmarked = false) const;
+>>>>>>> upstream/master
   void drawHelpText(const GfxRenderer& renderer, Rect rect, const char* label) const;
   virtual void drawTextField(const GfxRenderer& renderer, Rect rect, const int textWidth, bool cursorMode = false,
                              int contentStartX = 0, int contentWidth = 0) const;

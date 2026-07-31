@@ -6,15 +6,22 @@ All POD fields are written in the ESP32 little-endian representation used by
 
 ## `book.bin`
 
+<<<<<<< HEAD
 ### Version 10
+=======
+### Version 7
+>>>>>>> upstream/master
 
 `book.bin` stores EPUB metadata plus lookup tables for spine and TOC entries.
 The current firmware writes this version from `BookMetadataCache`.
 
+<<<<<<< HEAD
 > Version 10 adds `pageProgressionRtl`, parsed from the OPF spine's
 > `page-progression-direction="rtl"` attribute. Version 9 added NFC-composed
 > titles. `BookMetadataCache.cpp` is the source of truth.
 
+=======
+>>>>>>> upstream/master
 ImHex pattern:
 
 ```c++
@@ -22,7 +29,11 @@ import std.mem;
 import std.string;
 import std.core;
 
+<<<<<<< HEAD
 #define EXPECTED_VERSION 10
+=======
+#define EXPECTED_VERSION 7
+>>>>>>> upstream/master
 #define MAX_STRING_LENGTH 65535
 
 struct String {
@@ -41,7 +52,10 @@ struct Metadata {
     String title [[comment("Book title")]];
     String author [[comment("Book author")]];
     String language [[comment("Book language code")]];
+<<<<<<< HEAD
     bool pageProgressionRtl [[comment("OPF spine page progression is right-to-left")]];
+=======
+>>>>>>> upstream/master
     String coverItemHref [[comment("Path to cover image")]];
     String textReferenceHref [[comment("Path to guided first text reference")]];
 };
@@ -95,6 +109,7 @@ if (parsedSize != fileSize) {
 
 ## `section.bin`
 
+<<<<<<< HEAD
 ### Version 32
 
 > Chinese builds (`ENABLE_CHINESE_VERSION`) carry independent version counters:
@@ -164,15 +179,26 @@ if (parsedSize != fileSize) {
 > live in `lib/Epub/Epub/CjkKinsoku.h`.
 
 
+=======
+### Version 25
+
+>>>>>>> upstream/master
 Each file in `sections/*.bin` stores one laid-out spine section. The header is
 also the cache-busting key: if any layout-affecting setting differs from the
 current reader settings, the section is discarded and rebuilt.
 
+<<<<<<< HEAD
 Version 32 includes:
 
 - cache-busting fields for paragraph alignment, effective writing mode
   (vertical-rl only for `zh`/`ja`/`ko` EPUB metadata), hyphenation, embedded CSS,
   image rendering mode, Focus Reading, and punctuation compression (TC/SC/JA)
+=======
+Version 25 includes:
+
+- cache-busting fields for paragraph alignment, hyphenation, embedded CSS,
+  image rendering mode, and Focus Reading
+>>>>>>> upstream/master
 - page offset LUT
 - anchor-to-page map for fragment and footnote navigation
 - paragraph and list-item LUTs used by KOReader sync page refinement
@@ -186,7 +212,11 @@ import std.mem;
 import std.string;
 import std.core;
 
+<<<<<<< HEAD
 #define EXPECTED_VERSION 32
+=======
+#define EXPECTED_VERSION 25
+>>>>>>> upstream/master
 #define MAX_STRING_LENGTH 65535
 #define FOOTNOTE_NUMBER_LEN 32
 #define FOOTNOTE_HREF_LEN 96
@@ -217,8 +247,12 @@ enum WordStyle : u8 {
     UNDERLINE = 4,
     STRIKETHROUGH = 8,
     SUP = 16,
+<<<<<<< HEAD
     SUB = 32,
     RUBY_CONTINUE = 64
+=======
+    SUB = 32
+>>>>>>> upstream/master
 };
 
 enum TextAlign : u8 {
@@ -244,11 +278,15 @@ struct BlockStyle {
     bool textIndentDefined;
     bool isRtl;
     bool directionDefined;
+<<<<<<< HEAD
     bool isVerticalRtl;
+=======
+>>>>>>> upstream/master
 };
 
 struct TextBlock {
     u16 wordCount;
+<<<<<<< HEAD
     u8 hasFocus;
     u16 textBytes;
     // Arena mirrors RAM layout (see lib/Epub/Epub/blocks/TextBlock.h):
@@ -256,6 +294,18 @@ struct TextBlock {
     // styles[u8]*N, [focusBoundary[u8]*N if hasFocus], text[char]*textBytes.
     u8 arena[/* arenaSize(wordCount, hasFocus, textBytes) */];
     String rubyTexts[wordCount];
+=======
+    String words[wordCount];
+    s16 wordXPos[wordCount];
+    WordStyle wordStyle[wordCount];
+
+    u8 hasFocus;
+    if (hasFocus != 0) {
+        u8 wordFocusBoundary[wordCount] [[comment("UTF-8 byte boundary between bold prefix and suffix")]];
+        u16 wordFocusSuffixX[wordCount] [[comment("Suffix x offset from word start")]];
+    }
+
+>>>>>>> upstream/master
     BlockStyle blockStyle;
 };
 

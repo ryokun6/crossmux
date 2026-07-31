@@ -6,8 +6,12 @@
 #include <Logging.h>
 #include <WiFi.h>
 
+<<<<<<< HEAD
 #include <algorithm>
 
+=======
+#include "CrossPointSettings.h"
+>>>>>>> upstream/master
 #include "MappedInputManager.h"
 #include "WifiCredentialStore.h"
 #include "activities/util/KeyboardEntryActivity.h"

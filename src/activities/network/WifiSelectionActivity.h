@@ -20,8 +20,12 @@ struct WifiNetworkInfo {
   std::string ssid;
   int32_t rssi;
   bool isEncrypted;
+<<<<<<< HEAD
   bool hasSavedPassword;             // Whether we have saved credentials for this network
   bool isHiddenPlaceholder = false;  // Synthetic "Add hidden network..." list entry
+=======
+  bool hasSavedPassword;  // Whether we have saved credentials for this network
+>>>>>>> upstream/master
 };
 
 // WiFi selection states

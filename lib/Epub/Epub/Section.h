@@ -119,6 +119,7 @@ class Section {
   // Out-of-line: Page is only forward-declared here and unique_ptr destruction needs a
   // complete type (inlining this wrapper broke ProgressMapper / ReaderActivity TUs).
   std::unique_ptr<Page> loadPageFromSectionFile();
+  std::string getTextFromSectionFile();
 
   std::string getTextFromSectionFile();
 
@@ -133,11 +134,14 @@ class Section {
   // Look up the page number for an anchor id from the section cache file.
   std::optional<uint16_t> getPageForAnchor(const std::string& anchor) const;
 
+<<<<<<< HEAD
   // Look up an anchor among the pages built so far by the in-progress build, so an anchor jump
   // (TOC / chapter select, usually the chapter top = page 0) can resolve without laying out the
   // whole chapter. Returns nullopt if the anchor hasn't been reached yet (build more) or no build.
   std::optional<uint16_t> findAnchorDuringBuild(const std::string& anchor) const;
 
+=======
+>>>>>>> upstream/master
   // Get the page count from the section cache file without fully loading it.
   std::optional<uint16_t> getCachedPageCount() const;
 

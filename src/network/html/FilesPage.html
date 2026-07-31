@@ -2201,7 +2201,19 @@
       advancedOptionsToggle.style.opacity = '0.5';
       advancedOptionsToggle.style.pointerEvents = 'none';
     }
+<<<<<<< HEAD
     applyUploadSettings();
+=======
+    // Reset to defaults
+    document.getElementById('qualitySlider').value = 85;
+    document.getElementById('qualityInput').value = 85;
+    const autoCropToggle = document.getElementById('autoCropToggle');
+    if (autoCropToggle) autoCropToggle.checked = false;
+    setHandedness('right');
+    setOverlap(5);
+    // Update converter variables
+    updateQualitySettings();
+>>>>>>> upstream/master
   }
 
   function updateBatchModeUI(isBatch) {
@@ -2299,7 +2311,10 @@
     if (isImagePickerVisible()) {
       renderImageGrid();
     }
+<<<<<<< HEAD
     updateUploadSettingsPersistence();
+=======
+>>>>>>> upstream/master
   }
 
   function setHandedness(value) {
@@ -2322,6 +2337,47 @@
       btn.classList.toggle('active', parseInt(btn.dataset.value) === value);
     });
     updateUploadSettingsPersistence();
+  }
+
+  function isImagePickerVisible() {
+    const pickerSection = document.getElementById('imagePickerSection');
+    return pickerSection && pickerSection.style.display !== 'none';
+  }
+
+  function loadPreviewImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Preview image load failed'));
+      img.src = dataUrl;
+    });
+  }
+
+  async function createAutoCropPreview(dataUrl, imagePath, width, height) {
+    const img = await loadPreviewImage(dataUrl);
+    const cropped = createAutoCroppedCanvas(img, imagePath, width, height, true);
+    if (!cropped.crop) return null;
+
+    const maxPreviewW = 220;
+    const maxPreviewH = 160;
+    const scale = Math.min(maxPreviewW / cropped.width, maxPreviewH / cropped.height, 1);
+    const previewW = Math.max(1, Math.round(cropped.width * scale));
+    const previewH = Math.max(1, Math.round(cropped.height * scale));
+    const previewCanvas = document.createElement('canvas');
+    previewCanvas.width = previewW;
+    previewCanvas.height = previewH;
+    const previewCtx = previewCanvas.getContext('2d');
+    previewCtx.imageSmoothingEnabled = true;
+    previewCtx.imageSmoothingQuality = 'high';
+    previewCtx.fillStyle = '#FFF';
+    previewCtx.fillRect(0, 0, previewW, previewH);
+    previewCtx.drawImage(cropped.canvas, 0, 0, previewW, previewH);
+
+    return {
+      dataUrl: previewCanvas.toDataURL('image/jpeg', 0.82),
+      width: cropped.width,
+      height: cropped.height
+    };
   }
 
   function isImagePickerVisible() {
@@ -5400,7 +5456,11 @@ function uploadFileHTTP(file, onProgress, onComplete, onError) {
   });
 }
 
+<<<<<<< HEAD
 async function uploadFile() {
+=======
+function uploadFile() {
+>>>>>>> upstream/master
   if (isUploadInProgress) return;
 
   const fileInput = document.getElementById('fileInput');

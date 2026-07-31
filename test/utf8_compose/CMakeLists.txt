@@ -1,6 +1,9 @@
 add_executable(Utf8ComposeTest
   Utf8ComposeTest.cpp
+<<<<<<< HEAD
   Utf8CjkWhitespaceTest.cpp
+=======
+>>>>>>> upstream/master
   ${REPO_ROOT}/lib/Utf8/Utf8.cpp
 )
 

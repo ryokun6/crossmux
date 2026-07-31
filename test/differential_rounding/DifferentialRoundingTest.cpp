@@ -75,6 +75,7 @@ const EpdFontData kTestFontData = {
   .ligaturePairCount = 0,
   .glyphMissHandler  = nullptr,
   .glyphMissCtx      = nullptr,
+<<<<<<< HEAD
 };
 
 const EpdGlyph kReplacementGlyphs[] = {
@@ -108,6 +109,8 @@ const EpdFontData kReplacementFontData = {
   .ligaturePairCount = 0,
   .glyphMissHandler  = nullptr,
   .glyphMissCtx      = nullptr,
+=======
+>>>>>>> upstream/master
 };
 // clang-format on
 
@@ -116,11 +119,14 @@ EpdFont& testFont() {
   return font;
 }
 
+<<<<<<< HEAD
 EpdFont& replacementFont() {
   static EpdFont font(&kReplacementFontData);
   return font;
 }
 
+=======
+>>>>>>> upstream/master
 int textWidth(const char* str) {
   int w = 0, h = 0;
   testFont().getTextDimensions(str, &w, &h);
@@ -139,6 +145,7 @@ int absoluteGap(int32_t startFP, int32_t advanceFP, int32_t kernFP) {
   return fp4::toPixel(nextFP) - fp4::toPixel(startFP);
 }
 
+<<<<<<< HEAD
 // --- SD-card-font advance measurement models (ASCII-only test strings) ---
 //
 // These three helpers reproduce, in pure fixed-point, the three ways the
@@ -195,6 +202,8 @@ int renderAdvanceWithKern(const char* s) {
   return widthPx;
 }
 
+=======
+>>>>>>> upstream/master
 }  // namespace
 
 // ============================================================================
@@ -283,6 +292,7 @@ TEST(EpdFont, GlyphLookup) {
   // No U+FFFD in font, so unknown codepoints return nullptr
   EXPECT_EQ(testFont().getGlyph('Z'), nullptr);
   EXPECT_EQ(testFont().getGlyph('b'), nullptr);
+<<<<<<< HEAD
 }
 
 TEST(EpdFont, CoveredGlyphDoesNotReportReplacement) {
@@ -301,6 +311,8 @@ TEST(EpdFont, MissingGlyphWithoutReplacementStillReportsMissing) {
   bool usedReplacement = false;
   EXPECT_EQ(testFont().getGlyph(0x749F, &usedReplacement), nullptr);
   EXPECT_TRUE(usedReplacement);
+=======
+>>>>>>> upstream/master
 }
 
 // Known-value regression tests.  Expected widths are computed by hand using
@@ -382,6 +394,7 @@ TEST(EpdFont, HeightCalculation) {
   EXPECT_EQ(textHeight("T"), 12);
   EXPECT_EQ(textHeight("To"), 12);
   EXPECT_EQ(textHeight("oo"), 8);
+<<<<<<< HEAD
 }
 
 // ============================================================================
@@ -421,4 +434,6 @@ TEST(SdCardMeasure, MeasureNeverNarrowerThanRenderWithKern) {
   for (const char* s : {"To", "Ta", "oo", "ooo", "Too", "oa", "xo", "Taoo"}) {
     EXPECT_GE(newSdMeasure(s), renderAdvanceWithKern(s)) << "s=" << s;
   }
+=======
+>>>>>>> upstream/master
 }

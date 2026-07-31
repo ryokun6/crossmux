@@ -253,7 +253,11 @@ STR_BOOKMARKS: "Lesezeichen"
 STR_BOOKMARK_ADDED: "Lesezeichen hinzugefügt."
 STR_BOOKMARK_REMOVED: "Lesezeichen entfernt."
 STR_SEARCH: "Suche"
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "OPDS-Browser"
+>>>>>>> upstream/master
 STR_COVER_CUSTOM: "Cover + Eigenes"
 STR_QUICK_RESUME: "Schnelles Fortsetzen"
 STR_MENU_RECENT_BOOKS: "Zuletzt gelesen"
@@ -314,7 +318,11 @@ STR_UPLOAD: "Hochladen"
 STR_BOOK_S_STYLE: "Buch-Stil"
 STR_EMBEDDED_STYLE: "Eingebetteter Stil"
 STR_FOCUS_READING: "Fokus-Lesen"
+<<<<<<< HEAD
 STR_OPDS_SERVER_URL: "Server URL"
+=======
+STR_OPDS_SERVER_URL: "OPDS-Server-URL"
+>>>>>>> upstream/master
 STR_SET_SLEEP_COVER: "Wähle Cover"
 STR_SCREENSHOT_BUTTON: "Screenshot aufnehmen"
 STR_FOOTNOTES: "Fußnoten"
@@ -325,9 +333,15 @@ STR_SLEEP_NEVER: "Nie"
 STR_SLEEP_TIMER_STEP_HINT: "Links/Rechts: 1 Min.  Hoch/Runter: 5 Min."
 STR_ADD_SERVER: "Server hinzufügen"
 STR_SERVER_NAME: "Servername"
+<<<<<<< HEAD
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Server entfernen"
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_NO_SERVERS: "Keine OPDS-Server konfiguriert"
+STR_DELETE_SERVER: "Server entfernen"
+STR_OPDS_SERVERS: "OPDS-Server"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "Auto-Umblättern aktiv: "
 STR_AUTO_TURN_PAGES_PER_MIN: "Auto-Umblättern (Seiten/Min.)"
 STR_IMAGES: "Bilder"
@@ -381,6 +395,7 @@ STR_FIRMWARE_WRITE_FAILED: "Schreiben der Firmware-Datei ist fehlgeschlagen"
 STR_FIRMWARE_UPDATE_DO_NOT_POWER_OFF: "Nicht ausschalten!"
 STR_RECOVERY_MODE: "Wiederherstellungsmodus"
 STR_RECOVERY_MODE_HINT: "Lege firmware.bin im SD-Kartenwurzelverzeichnis ab und wähle es aus"
+<<<<<<< HEAD
 STR_CALIBRE_URL_HINT: "Calibre: URL um /opds ergänzen"
 STR_TOUCH_READER_CONTROLS: "Touch-Steuerung beim Lesen"
 STR_TEXT_SETTINGS: "Texteinstellungen"
@@ -401,3 +416,5 @@ STR_FMT_TITLE_AUTHOR: "Titel - Autor"
 STR_FMT_TITLE: "Titel"
 STR_ADD_HIDDEN_NETWORK: "Verstecktes Netzwerk hinzufügen..."
 STR_ENTER_WIFI_SSID: "Netzwerknamen eingeben (SSID)"
+=======
+>>>>>>> upstream/master

@@ -578,7 +578,10 @@ def rasterize_font_style(fontfile, size, intervals, style_id=0, force_autohint=F
     # it before set_char_size() would waste work at the default size and risk
     # Invalid_Size_Handle on some fonts.
     face.set_char_size(size << 6, size << 6, 150, 150)
+<<<<<<< HEAD
     ligature_glyph_indices = extract_ligature_glyph_indices_fonttools(fontfile)
+=======
+>>>>>>> upstream/master
     fallback_face = None
     if fallback_fontfile:
         fallback_face = freetype.Face(fallback_fontfile)
@@ -611,7 +614,11 @@ def rasterize_font_style(fontfile, size, intervals, style_id=0, force_autohint=F
     for i_start, i_end in intervals:
         start = i_start
         for code_point in range(i_start, i_end + 1):
+<<<<<<< HEAD
             has_primary = face.get_char_index(code_point) != 0 or code_point in ligature_glyph_indices
+=======
+            has_primary = face.get_char_index(code_point) != 0
+>>>>>>> upstream/master
             has_fallback = fallback_face and fallback_face.get_char_index(code_point) != 0
             if not has_primary and not has_fallback:
                 if start < code_point:
@@ -824,14 +831,21 @@ def style_sections_total_size(sections):
 # --- File writers ---
 
 def generate_cpfont_multistyle(style_fonts, size, intervals, output_path,
+<<<<<<< HEAD
                                force_autohint=False, fallback_style_fonts=None,
                                intervals_by_style=None):
+=======
+                               force_autohint=False, fallback_style_fonts=None):
+>>>>>>> upstream/master
     """Generate a multi-style v4 .cpfont file.
 
     style_fonts: dict of {style_id: fontfile_path} e.g. {0: "Regular.ttf", 2: "Italic.ttf"}
     fallback_style_fonts: optional dict of {style_id: fallback_fontfile_path}
+<<<<<<< HEAD
     intervals_by_style: optional dict of {style_id: intervals}; styles not listed use `intervals`.
       Used to put CJK only in regular while bold/italic stay Latin-only.
+=======
+>>>>>>> upstream/master
     """
     MAGIC = b"CPFONT\x00\x00"
     HEADER_SIZE = 32
@@ -842,6 +856,7 @@ def generate_cpfont_multistyle(style_fonts, size, intervals, output_path,
     # Rasterize each style
     raster_data = {}  # style_id -> StyleRasterData
     fallback_style_fonts = fallback_style_fonts or {}
+<<<<<<< HEAD
     intervals_by_style = intervals_by_style or {}
     for style_id in sorted(style_fonts.keys()):
         fontfile = style_fonts[style_id]
@@ -850,6 +865,14 @@ def generate_cpfont_multistyle(style_fonts, size, intervals, output_path,
         print(f"  Rasterizing style {style_id}...", file=sys.stderr)
         raster_data[style_id] = rasterize_font_style(
             fontfile, size, style_intervals, style_id=style_id,
+=======
+    for style_id in sorted(style_fonts.keys()):
+        fontfile = style_fonts[style_id]
+        fallback_fontfile = fallback_style_fonts.get(style_id)
+        print(f"  Rasterizing style {style_id}...", file=sys.stderr)
+        raster_data[style_id] = rasterize_font_style(
+            fontfile, size, intervals, style_id=style_id,
+>>>>>>> upstream/master
             force_autohint=force_autohint,
             fallback_fontfile=fallback_fontfile)
 
@@ -1089,8 +1112,12 @@ def main():
         total_size += generate_cpfont_multistyle(
             style_fonts, sz, intervals, output_path,
             force_autohint=args.force_autohint,
+<<<<<<< HEAD
             fallback_style_fonts=fallback_style_fonts,
             intervals_by_style=intervals_by_style)
+=======
+            fallback_style_fonts=fallback_style_fonts)
+>>>>>>> upstream/master
     print(f"\nTotal: {len(sizes)} files, {total_size / 1024 / 1024:.2f} MB", file=sys.stderr)
 
 

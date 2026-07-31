@@ -128,6 +128,7 @@ ucschar mirror(ucschar c) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+<<<<<<< HEAD
  * Arabic contextual shaping — do_shape()
  *
  * Ported from mintty src/minibidi.c (https://github.com/mintty/mintty),
@@ -467,6 +468,8 @@ int do_shape(bidi_char* line, bidi_char* to, int count) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
+=======
+>>>>>>> upstream/master
  * Directional Status Stack
  * (replaces GCC nested functions — ESP32C3 has no executable stack)
  * ═══════════════════════════════════════════════════════════════════════ */

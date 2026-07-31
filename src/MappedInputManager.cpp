@@ -2,9 +2,12 @@
 
 #include <GfxRenderer.h>
 
+<<<<<<< HEAD
 #include <algorithm>
 #include <cstdlib>
 
+=======
+>>>>>>> upstream/master
 #include "CrossPointSettings.h"
 #include "components/UITheme.h"
 
@@ -16,11 +19,14 @@ bool MappedInputManager::isNavDirectionSwapped() const {
   return SETTINGS.frontButtonFollowOrientation &&
          (orientation == GfxRenderer::PortraitInverted || orientation == GfxRenderer::LandscapeCounterClockwise);
 }
+<<<<<<< HEAD
 
 bool MappedInputManager::isPageTurnDirectionReversed() const {
   // Spine RTL and vertical-rl both reverse page-turn mapping.
   return pageProgressionRtl || verticalWritingRtl;
 }
+=======
+>>>>>>> upstream/master
 
 bool MappedInputManager::mapButton(const Button button, bool (HalGPIO::*fn)(uint8_t) const) const {
   const auto sideLayout = SETTINGS.sideButtonLayout;

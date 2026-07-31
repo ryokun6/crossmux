@@ -1,7 +1,10 @@
 #include "IntervalSelectionActivity.h"
 
 #include <GfxRenderer.h>
+<<<<<<< HEAD
 #include <HalGPIO.h>
+=======
+>>>>>>> upstream/master
 #include <I18n.h>
 
 #include <algorithm>
@@ -26,6 +29,7 @@ void IntervalSelectionActivity::adjustValue(const int delta) {
   requestUpdate();
 }
 
+<<<<<<< HEAD
 void IntervalSelectionActivity::drawStepHintLine(const int y, const StrId labelId, const int step) {
   char stepText[24];
   if (valueFormatId != StrId::STR_NONE_OPT) {
@@ -38,6 +42,8 @@ void IntervalSelectionActivity::drawStepHintLine(const int y, const StrId labelI
   renderer.drawCenteredText(SMALL_FONT_ID, y, line, true);
 }
 
+=======
+>>>>>>> upstream/master
 void IntervalSelectionActivity::loop() {
   if (ignoreConfirmRelease) {
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
@@ -49,6 +55,7 @@ void IntervalSelectionActivity::loop() {
     }
   }
 
+<<<<<<< HEAD
   int tx = 0;
   int ty = 0;
   const int screenWidth = renderer.getScreenWidth();
@@ -79,6 +86,8 @@ void IntervalSelectionActivity::loop() {
     return;
   }
 
+=======
+>>>>>>> upstream/master
   if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
     ActivityResult result;
     result.isCancelled = true;
@@ -93,6 +102,7 @@ void IntervalSelectionActivity::loop() {
     return;
   }
 
+<<<<<<< HEAD
   if (mappedInput.wasScreenTapped(tx, ty)) {
     if (ty >= barY - 20 && ty < barY + barHeight + 20 && tx >= barX && tx < barX + barWidth) {
       const int range = std::max(1, maxValue - minValue);
@@ -125,6 +135,12 @@ void IntervalSelectionActivity::loop() {
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this, upDelta] { adjustValue(upDelta); });
   buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down},
                                        [this, downDelta] { adjustValue(downDelta); });
+=======
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left}, [this] { adjustValue(-smallStep); });
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right}, [this] { adjustValue(smallStep); });
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [this] { adjustValue(largeStep); });
+  buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down}, [this] { adjustValue(-largeStep); });
+>>>>>>> upstream/master
 }
 
 void IntervalSelectionActivity::render(RenderLock&&) {
@@ -159,11 +175,15 @@ void IntervalSelectionActivity::render(RenderLock&&) {
   const int knobX = std::max(barX + 2, barX + 2 + fillWidth - 2);
   renderer.fillRect(knobX, barY - 4, 4, barHeight + 8, true);
 
+<<<<<<< HEAD
   // Two-line step hint: front buttons do the small step, side buttons the large step. Built from
   // separate label + value strings (rather than splitting one localized sentence) so the layout
   // doesn't depend on translators preserving a hidden separator.
   drawStepHintLine(barY + 30, StrId::STR_STEP_HINT_FRONT, smallStep);
   drawStepHintLine(barY + 52, StrId::STR_STEP_HINT_SIDE, largeStep);
+=======
+  renderer.drawCenteredText(SMALL_FONT_ID, barY + 30, I18N.get(stepHintId), true);
+>>>>>>> upstream/master
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), "-", "+");
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

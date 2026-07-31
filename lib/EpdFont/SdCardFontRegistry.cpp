@@ -69,6 +69,7 @@ const SdCardFontFileInfo* SdCardFontFamilyInfo::findClosestReaderSize(const uint
   return best;
 }
 
+<<<<<<< HEAD
 const SdCardFontFileInfo* SdCardFontFamilyInfo::findNearestSize(const uint8_t pointSize, const uint8_t style) const {
   // Map point size onto the legacy enum slots used by findClosestReaderSize.
   uint8_t fontSizeEnum = 1;
@@ -84,6 +85,8 @@ const SdCardFontFileInfo* SdCardFontFamilyInfo::findNearestSize(const uint8_t po
   return findClosestReaderSize(fontSizeEnum, style);
 }
 
+=======
+>>>>>>> upstream/master
 bool SdCardFontFamilyInfo::hasSize(uint8_t size) const {
   for (const auto& f : files) {
     if (f.pointSize == size) return true;

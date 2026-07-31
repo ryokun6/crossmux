@@ -51,6 +51,7 @@ struct JpegContext {
 // File I/O callbacks use pFile->fHandle to access the HalFile*,
 // avoiding the need for global file state.
 void* jpegOpen(const char* filename, int32_t* size) {
+<<<<<<< HEAD
   // Held by unique_ptr until it is handed to JPEGDEC, so the failure paths below cannot leak.
   // Ownership then transfers to JPEGDEC, which returns it to jpegClose() for deletion.
   auto f = makeUniqueNoThrow<HalFile>();
@@ -58,6 +59,9 @@ void* jpegOpen(const char* filename, int32_t* size) {
     LOG_ERR("JPG", "OOM allocating file handle for %s", filename);
     return nullptr;
   }
+=======
+  HalFile* f = new HalFile();
+>>>>>>> upstream/master
   if (!Storage.openFileForRead("JPG", std::string(filename), *f)) {
     return nullptr;
   }
@@ -371,7 +375,11 @@ int jpegDrawCallback(JPEGDRAW* pDraw) {
 bool JpegToFramebufferConverter::getDimensionsStatic(const std::string& imagePath, ImageDimensions& out) {
   if (!hasHeapForJpegDecoder("dimensions")) return false;
 
+<<<<<<< HEAD
   auto jpeg = makeUniqueNoThrow<JPEGDEC>();
+=======
+  std::unique_ptr<JPEGDEC> jpeg(new (std::nothrow) JPEGDEC());
+>>>>>>> upstream/master
   if (!jpeg) {
     LOG_ERR("JPG", "Failed to allocate JPEG decoder for dimensions");
     return false;
@@ -397,7 +405,11 @@ bool JpegToFramebufferConverter::decodeToFramebuffer(const std::string& imagePat
 
   if (!hasHeapForJpegDecoder("decode")) return false;
 
+<<<<<<< HEAD
   auto jpeg = makeUniqueNoThrow<JPEGDEC>();
+=======
+  std::unique_ptr<JPEGDEC> jpeg(new (std::nothrow) JPEGDEC());
+>>>>>>> upstream/master
   if (!jpeg) {
     LOG_ERR("JPG", "Failed to allocate JPEG decoder");
     return false;

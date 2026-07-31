@@ -5,10 +5,15 @@
  * minibidi.h — standalone header for ESP32C3 BiDi calculations
  *
  * Derived from [mintty](https://github.com/mintty/mintty/) (Thomas Wolff, MIT licence).
+<<<<<<< HEAD
  * Includes: UAX#9 bidi (do_bidi) and Arabic contextual shaping (do_shape),
  * both ported from mintty src/minibidi.c (Ahmad Khalifa, Thomas Wolff).
  * Stripped of: box-drawing mirror, terminal dependencies, GCC nested
  * functions, VLAs, and Unicode data for scripts CrossPoint doesn't render.
+=======
+ * Stripped of: Arabic shaping, box-drawing mirror, terminal dependencies,
+ * GCC nested functions, VLAs, and non-Hebrew/English Unicode data.
+>>>>>>> upstream/master
  */
 
 #include <stdbool.h>
@@ -36,6 +41,7 @@ typedef uint32_t ucschar; /* Unicode codepoint; BMP-only content fits uint16_t
 #define BIDI_MAX_LINE 128
 
 /* ── bidi_char ───────────────────────────────────────────────────────── */
+<<<<<<< HEAD
 /* origwc:  the codepoint as it came from the epub text stream
    wc:      working codepoint (may be replaced by mirrored form after
             do_bidi, or by an Arabic contextual form after do_shape)
@@ -43,11 +49,19 @@ typedef uint32_t ucschar; /* Unicode codepoint; BMP-only content fits uint16_t
    joiners: ZWJ/ZWNJ context for Arabic shaping, mintty layout:
             low nibble  = joiners that logically FOLLOW this character,
             high nibble = joiners that logically PRECEDE this character */
+=======
+/* origwc: the codepoint as it came from the epub text stream
+   wc:     working codepoint (may be replaced by mirrored form after do_bidi)
+   index:  original logical position, so the caller can reorder glyphs */
+>>>>>>> upstream/master
 typedef struct {
   ucschar origwc;
   ucschar wc;
   uint16_t index;
+<<<<<<< HEAD
   uint8_t joiners;
+=======
+>>>>>>> upstream/master
 } bidi_char;
 
 /* ── Bidi character classes (UAX #9) ────────────────────────────────── */
@@ -78,6 +92,7 @@ enum {
   PDI, /* Pop Directional Isolate */
 };
 
+<<<<<<< HEAD
 /* ── Arabic joining formatter flags (bidi_char.joiners nibbles) ─────── */
 /* Values match mintty's minibidi.h: ZWNJ 0x01, ZWJ 0x02.  do_shape()
    compares nibble values directly, so these must not be changed. */
@@ -92,6 +107,8 @@ enum {
    a proportional-text renderer must drop the character entirely.) */
 #define LIGATURE_PLACEHOLDER 0xFFFFu
 
+=======
+>>>>>>> upstream/master
 /* ── Public API ──────────────────────────────────────────────────────── */
 
 /*
@@ -116,6 +133,7 @@ bool is_rtl_class(uchar bc);
 ucschar mirror(ucschar ch);
 
 /*
+<<<<<<< HEAD
  * do_shape(line, to, count)
  *
  *   Applies Arabic contextual shaping (and Lam-Alef ligation) to
@@ -142,6 +160,8 @@ ucschar mirror(ucschar ch);
 int do_shape(bidi_char* line, bidi_char* to, int count);
 
 /*
+=======
+>>>>>>> upstream/master
  * do_bidi(autodir, paragraphLevel, line, count)
  *
  *   Applies UAX#9 Bidirectional Algorithm (rules P–L) to `line[0..count-1]`.

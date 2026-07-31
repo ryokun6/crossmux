@@ -144,6 +144,7 @@ void Page::renderImages(GfxRenderer& renderer, const int fontId, const int xOffs
                              [](const PageElement& element) { return element.getTag() == TAG_PageImage; });
 }
 
+<<<<<<< HEAD
 void Page::renderImagesNeedingDecode(GfxRenderer& renderer, const int fontId, const int xOffset,
                                      const int yOffset) const {
   renderFilteredPageElements(elements, renderer, fontId, xOffset, yOffset, [](const PageElement& element) {
@@ -151,6 +152,8 @@ void Page::renderImagesNeedingDecode(GfxRenderer& renderer, const int fontId, co
   });
 }
 
+=======
+>>>>>>> upstream/master
 bool Page::serialize(HalFile& file) const {
   const uint16_t count = elements.size();
   serialization::writePod(file, count);
@@ -180,11 +183,15 @@ bool Page::serialize(HalFile& file) const {
 }
 
 std::unique_ptr<Page> Page::deserialize(HalFile& file) {
+<<<<<<< HEAD
   auto page = makeUniqueNoThrow<Page>();
   if (!page) {
     LOG_ERR("PGE", "OOM allocating Page");
     return nullptr;
   }
+=======
+  auto page = std::unique_ptr<Page>(new Page());
+>>>>>>> upstream/master
 
   uint16_t count;
   serialization::readPod(file, count);

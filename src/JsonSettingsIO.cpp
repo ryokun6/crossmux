@@ -9,8 +9,14 @@
 #include <string>
 #include <utility>
 
+<<<<<<< HEAD
 #include "AchievementsStore.h"
 #include "BookmarkEntry.h"
+=======
+#include "BookmarkEntry.h"
+#include "CrossPointSettings.h"
+#include "CrossPointState.h"
+>>>>>>> upstream/master
 #include "OpdsServerStore.h"
 #include "ReadingStatsStore.h"
 #include "util/BookIdentity.h"
@@ -71,6 +77,51 @@ bool saveJsonDocumentToFile(const char* moduleName, const char* path, const Json
     return false;
   }
 
+<<<<<<< HEAD
+=======
+  if (doc["sleepTimeoutMinutes"].isNull() && !doc["sleepTimeout"].isNull()) {
+    const uint8_t legacyValue =
+        clamp(doc["sleepTimeout"] | (uint8_t)CrossPointSettings::SLEEP_10_MIN, CrossPointSettings::SLEEP_TIMEOUT_COUNT,
+              (uint8_t)CrossPointSettings::SLEEP_10_MIN);
+    s.sleepTimeoutMinutes = CrossPointSettings::sleepTimeoutEnumToMinutes(legacyValue);
+    if (needsResave) *needsResave = true;
+  }
+  // Front button remap — managed by RemapFrontButtons sub-activity, not in SettingsList.
+  using S = CrossPointSettings;
+  s.frontButtonBack =
+      clamp(doc["frontButtonBack"] | (uint8_t)S::FRONT_HW_BACK, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_BACK);
+  s.frontButtonConfirm = clamp(doc["frontButtonConfirm"] | (uint8_t)S::FRONT_HW_CONFIRM, S::FRONT_BUTTON_HARDWARE_COUNT,
+                               S::FRONT_HW_CONFIRM);
+  s.frontButtonLeft =
+      clamp(doc["frontButtonLeft"] | (uint8_t)S::FRONT_HW_LEFT, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_LEFT);
+  s.frontButtonRight =
+      clamp(doc["frontButtonRight"] | (uint8_t)S::FRONT_HW_RIGHT, S::FRONT_BUTTON_HARDWARE_COUNT, S::FRONT_HW_RIGHT);
+  CrossPointSettings::validateFrontButtonMapping(s);
+
+  // Font family — uses dynamic getter/setter in SettingsList so the generic loop skips it.
+  const uint8_t storedFontFamily = doc["fontFamily"] | (uint8_t)0;
+  s.fontFamily = clamp(storedFontFamily, CrossPointSettings::BUILTIN_FONT_COUNT, 0);
+  // SD card font family name — not in SettingsList, load manually
+  const char* sfn = doc["sdFontFamilyName"] | "";
+  strncpy(s.sdFontFamilyName, sfn, sizeof(s.sdFontFamilyName) - 1);
+  s.sdFontFamilyName[sizeof(s.sdFontFamilyName) - 1] = '\0';
+  if (storedFontFamily == CrossPointSettings::LEGACY_OPENDYSLEXIC && s.sdFontFamilyName[0] == '\0') {
+    s.fontFamily = CrossPointSettings::NOTOSERIF;
+    strncpy(s.sdFontFamilyName, "OpenDyslexic", sizeof(s.sdFontFamilyName) - 1);
+    s.sdFontFamilyName[sizeof(s.sdFontFamilyName) - 1] = '\0';
+    if (needsResave) *needsResave = true;
+  } else if (storedFontFamily >= CrossPointSettings::BUILTIN_FONT_COUNT) {
+    if (needsResave) *needsResave = true;
+  }
+
+  // Language -- stored as code string for stability across enum reorders.
+  if (doc["language"].is<const char*>()) {
+    s.language = static_cast<uint8_t>(I18n::languageFromCode(doc["language"].as<const char*>()));
+  }
+
+  LOG_DBG("CPS", "Settings loaded from file");
+
+>>>>>>> upstream/master
   return true;
 }
 
@@ -463,5 +514,52 @@ bool JsonSettingsIO::loadOpds(OpdsServerStore& store, const char* json, bool* ne
   }
 
   LOG_DBG("OPS", "Loaded %zu OPDS servers from file", store.servers.size());
+  return true;
+}
+
+// ---- Bookmarks ----
+
+bool JsonSettingsIO::saveBookmarks(const std::vector<BookmarkEntry>& bookmarks, const char* path) {
+  JsonDocument doc;
+  JsonArray arr = doc["bookmarks"].to<JsonArray>();
+  LOG_DBG("BKM", "Saving %zu bookmarks to file", bookmarks.size());
+  for (const auto& bookmark : bookmarks) {
+    JsonObject obj = arr.add<JsonObject>();
+    obj["xpath"] = bookmark.xpath;
+    obj["percentage"] = bookmark.percentage;
+    obj["summary"] = bookmark.summary;
+    obj["si"] = bookmark.computedSpineIndex;
+    obj["pc"] = bookmark.computedChapterPageCount;
+    obj["pp"] = bookmark.computedChapterProgress;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  return Storage.writeFile(path, json);
+}
+
+bool JsonSettingsIO::loadBookmarks(std::vector<BookmarkEntry>& bookmarks, const char* json) {
+  JsonDocument doc;
+  auto error = deserializeJson(doc, json);
+  if (error) {
+    LOG_ERR("BKM", "JSON parse error: %s", error.c_str());
+    return false;
+  }
+
+  JsonArray arr = doc["bookmarks"].as<JsonArray>();
+  bookmarks.clear();
+  bookmarks.reserve(arr.size());
+  for (JsonObject obj : arr) {
+    bookmarks.emplace_back();
+    auto& bookmark = bookmarks.back();
+    bookmark.xpath = obj["xpath"] | std::string("");
+    bookmark.percentage = obj["percentage"] | static_cast<float>(0);
+    bookmark.summary = obj["summary"] | std::string("");
+    bookmark.computedSpineIndex = obj["si"] | static_cast<uint16_t>(0);
+    bookmark.computedChapterPageCount = obj["pc"] | static_cast<uint16_t>(0);
+    bookmark.computedChapterProgress = obj["pp"] | static_cast<uint16_t>(0);
+  }
+
+  LOG_DBG("BKM", "Loaded %zu bookmarks from file", bookmarks.size());
   return true;
 }

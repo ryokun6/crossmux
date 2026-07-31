@@ -1,7 +1,12 @@
 _language_name: "Valencià"
 _language_code: "CAV"
 _order: "22"
+<<<<<<< HEAD
 STR_CROSSPOINT: "ryOS CrossMux"
+=======
+
+STR_CROSSPOINT: "CrossPoint"
+>>>>>>> upstream/master
 STR_BOOTING: "ARRENCANT"
 STR_SLEEPING: "ENTRANT EN REPÒS"
 STR_ENTERING_SLEEP: "Entrant en repòs"
@@ -44,7 +49,10 @@ STR_OPEN_URL_HINT: "Obriu este URL al navegador"
 STR_OR_HTTP_PREFIX: "o http://"
 STR_SCAN_QR_HINT: "o escanegeu el codi QR amb el telèfon:"
 STR_CALIBRE_WIRELESS: "Calibre sense fils"
+<<<<<<< HEAD
 STR_CALIBRE_WEB_URL: "OPDS URL"
+=======
+>>>>>>> upstream/master
 STR_NETWORK_LEGEND: "* = Encriptat | + = Guardat"
 STR_MAC_ADDRESS: "Adreça MAC:"
 STR_CHECKING_WIFI: "S'està comprovant el Wi-Fi..."
@@ -62,7 +70,10 @@ STR_CAT_CONTROLS: "Controls"
 STR_CAT_SYSTEM: "Sistema"
 STR_SLEEP_SCREEN: "Pantalla de repòs"
 STR_QUICK_RESUME_TIMEOUT: "Represa ràpida després del temps"
+<<<<<<< HEAD
 STR_AFTER_TIMEOUT: "Després del temps"
+=======
+>>>>>>> upstream/master
 STR_SLEEP_COVER_MODE: "Mode de pantalla de repòs"
 STR_HIDE_BATTERY: "Oculta el % de bateria"
 STR_EXTRA_SPACING: "Espaiat de paràgraf extra"
@@ -71,7 +82,10 @@ STR_IMAGES: "Imatges"
 STR_IMAGES_DISPLAY: "Mostrar"
 STR_IMAGES_PLACEHOLDER: "Text de mostra"
 STR_IMAGES_SUPPRESS: "Eliminar"
+<<<<<<< HEAD
 STR_IMAGES_LARGE: "Només grans"
+=======
+>>>>>>> upstream/master
 STR_SHORT_PWR_BTN: "Clic curt del botó d'engegada"
 STR_ORIENTATION: "Orientació de lectura"
 STR_SIDE_BTN_LAYOUT: "Disposició botons laterals"
@@ -96,7 +110,11 @@ STR_SHOW_HIDDEN_FILES: "Mostra arxius ocults"
 STR_REMOVE_READ_FROM_RECENTS: "Esborra els llibres llegits de la llista de recents"
 STR_MOVE_FINISHED_TO_READ: "Mou els llibres acabats a la carpeta Read"
 STR_REFRESH_FREQ: "Freqüència de refresc"
+<<<<<<< HEAD
 STR_KOREADER_SYNC: "ryOS Cloud Sync"
+=======
+STR_KOREADER_SYNC: "Sincronització del KOReader"
+>>>>>>> upstream/master
 STR_CHECK_UPDATES: "Comprova si hi ha actualitzacions"
 STR_LANGUAGE: "Idioma"
 STR_CLEAR_READING_CACHE: "Esborra la memòria cau de lectura"
@@ -105,16 +123,26 @@ STR_PASSWORD: "Contrasenya"
 STR_SYNC_SERVER_URL: "URL del servidor de sincronització"
 STR_DOCUMENT_MATCHING: "Coincidència de documents"
 STR_AUTHENTICATE: "Autentica"
+<<<<<<< HEAD
 STR_KOREADER_USERNAME: "Username"
 STR_KOREADER_PASSWORD: "Password"
+=======
+STR_KOREADER_USERNAME: "Nom d'usuari del KOReader"
+STR_KOREADER_PASSWORD: "Contrasenya del KOReader"
+>>>>>>> upstream/master
 STR_FILENAME: "Nom d'arxiu"
 STR_BINARY: "Binari"
 STR_SET_CREDENTIALS_FIRST: "Estableix les credencials primer"
 STR_WIFI_CONN_FAILED: "Connexió Wi-Fi fallida"
 STR_AUTHENTICATING: "S'està autenticant..."
 STR_AUTH_SUCCESS: "Autenticació correcta!"
+<<<<<<< HEAD
 STR_KOREADER_AUTH: "Cloud Sync Auth"
 STR_SYNC_READY: "ryOS Cloud Sync is ready to use"
+=======
+STR_KOREADER_AUTH: "Autenticació del KOReader"
+STR_SYNC_READY: "La sincronització del KOReader està preparada per a usar-se"
+>>>>>>> upstream/master
 STR_AUTH_FAILED: "Autenticació fallida"
 STR_DONE: "Fet"
 STR_CLEAR_CACHE_WARNING_1: "Això esborrarà totes les dades de lectura de la memòria cau."
@@ -147,12 +175,20 @@ STR_ORIENTATION_INVERTED: "Vertical 180°"
 STR_LANDSCAPE_CCW: "Horitzontal antihorari"
 STR_PREV_NEXT: "Anterior/Següent"
 STR_NEXT_PREV: "Següent/Anterior"
+<<<<<<< HEAD
 STR_KOSYNC: "Cloud Sync"
 STR_BOOKMARK_OPTION: "Punt de llibre"
 STR_NOTO_SERIF: "Noto Serif"
 STR_NOTO_SANS: "Noto Sans"
 STR_OPEN_DYSLEXIC: "Open Dyslexic"
 STR_DISABLED: "Desactivats"
+=======
+STR_KOSYNC: "KOSync"
+STR_BOOKMARK_OPTION: "Punt de llibre"
+STR_DISABLED: "Desactivats"
+STR_NOTO_SERIF: "Noto Serif"
+STR_NOTO_SANS: "Noto Sans"
+>>>>>>> upstream/master
 STR_SMALL: "Petita"
 STR_MEDIUM: "Mitjana"
 STR_LARGE: "Gran"
@@ -164,12 +200,15 @@ STR_JUSTIFY: "Justificat"
 STR_ALIGN_LEFT: "Esquerra"
 STR_CENTER: "Centre"
 STR_ALIGN_RIGHT: "Dreta"
+<<<<<<< HEAD
 STR_MIN_1: "1 min"
 STR_MIN_3: "3 min"
 STR_MIN_5: "5 min"
 STR_MIN_10: "10 min"
 STR_MIN_15: "15 min"
 STR_MIN_30: "30 min"
+=======
+>>>>>>> upstream/master
 STR_PAGES_1: "1 pàgina"
 STR_PAGES_5: "5 pàgines"
 STR_PAGES_10: "10 pàgines"
@@ -251,7 +290,11 @@ STR_REMAP_FRONT_BUTTONS: "Reassigna els botons frontals"
 STR_BOOKMARKS: "Punts de llibre"
 STR_BOOKMARK_ADDED: "S'ha afegit el punt de llibre."
 STR_BOOKMARK_REMOVED: "S'ha eliminat el punt de llibre."
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "Navegador OPDS"
+>>>>>>> upstream/master
 STR_COVER_CUSTOM: "Portada + Personalitzat"
 STR_QUICK_RESUME: "Represa ràpida"
 STR_MENU_RECENT_BOOKS: "Llibres recents"
@@ -284,16 +327,25 @@ STR_DISPLAY_QR: "Mostra la pàgina com a QR"
 STR_CHAPTER_PREFIX: "Capítol: "
 STR_PAGES_SEPARATOR: " pàgines  |  "
 STR_BOOK_PREFIX: "Llibre: "
+<<<<<<< HEAD
 STR_RYOS_ACCOUNT_HINT: "Registra't a https://os.ryo.lu"
+=======
+STR_CALIBRE_URL_HINT: "Per al Calibre, afegiu /opds a la URL"
+>>>>>>> upstream/master
 STR_PERCENT_STEP_HINT: "Esquerra/Dreta: 1% Amunt/Avall: 10%"
 STR_SYNCING_TIME: "S'està sincronitzant el temps..."
 STR_CALC_HASH: "S'està calculant el hash del document..."
 STR_HASH_FAILED: "No s'ha pogut calcular el hash del document"
 STR_FETCH_PROGRESS: "S'està obtenint el progrés remot..."
 STR_UPLOAD_PROGRESS: "S'està pujant el progrés..."
+<<<<<<< HEAD
 STR_NO_CREDENTIALS_MSG: "No s'ha iniciat sessió al compte ryOS"
 STR_KOREADER_SETUP_HINT: "Sincronitza llibres i progrés des del teu compte ryOS."
 STR_LOGIN_SETTINGS_HINT: "Sincronitza llibres i progrés des del teu compte ryOS."
+=======
+STR_NO_CREDENTIALS_MSG: "No s'han configurat credencials"
+STR_KOREADER_SETUP_HINT: "Configureu el compte de KOReader en Configuració"
+>>>>>>> upstream/master
 STR_PROGRESS_FOUND: "S'ha trobat progrés!"
 STR_REMOTE_LABEL: "Remot:"
 STR_LOCAL_LABEL: "Local:"
@@ -312,7 +364,11 @@ STR_UPLOAD: "Puja"
 STR_BOOK_S_STYLE: "Estil del llibre"
 STR_EMBEDDED_STYLE: "Estil incrustat"
 STR_FOCUS_READING: "Lectura enfocada"
+<<<<<<< HEAD
 STR_OPDS_SERVER_URL: "Server URL"
+=======
+STR_OPDS_SERVER_URL: "URL del servidor OPDS"
+>>>>>>> upstream/master
 STR_PWR_BTN_FOOTNOTE_BACK: "Retorn ràpid des de les notes al peu"
 STR_FOOTNOTES: "Notes al peu"
 STR_NO_FOOTNOTES: "No hi ha notes al peu en esta pàgina"
@@ -348,10 +404,16 @@ STR_SEARCH: "Busca"
 STR_SET_SLEEP_COVER: "Fixa portada"
 STR_ADD_SERVER: "Afig servidor"
 STR_SERVER_NAME: "Nom del servidor"
+<<<<<<< HEAD
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Elimina el servidor"
 STR_DELETE_CONFIRM: "Voleu eliminar este servidor?"
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_NO_SERVERS: "No hi ha servidors OPDS configurats"
+STR_DELETE_SERVER: "Elimina el servidor"
+STR_OPDS_SERVERS: "Servidors OPDS"
+>>>>>>> upstream/master
 STR_MANAGE_FONTS: "Gestiona les fonts"
 STR_FONT_BROWSER: "Navegador de fonts"
 STR_LOADING_FONT_LIST: "S'està carregant la llista de fonts..."
@@ -359,6 +421,7 @@ STR_NO_FONTS_AVAILABLE: "No hi ha fonts disponibles"
 STR_FONT_INSTALLED: "Font instal·lada!"
 STR_FONT_INSTALL_FAILED: "Ha fallat la instal·lació de la font"
 STR_INSTALLED: "Instal·lat"
+<<<<<<< HEAD
 STR_CONFIRM_DOWNLOAD_PROMPT: "Voleu descarregar?"
 STR_SD_CARD_FULL: "Espai insuficient a la targeta SD"
 STR_FILES_LABEL: "Arxius: "
@@ -367,6 +430,10 @@ STR_REDOWNLOAD: "Torna a descarregar"
 STR_DOWNLOAD_ALL: "Descarrega-ho tot"
 STR_UPDATE_ALL: "Actualitza-ho tot"
 STR_ALL_FONTS_INSTALLED: "Totes les fonts estan instal·lades!"
+=======
+STR_DOWNLOAD_ALL: "Descarrega-ho tot"
+STR_UPDATE_ALL: "Actualitza-ho tot"
+>>>>>>> upstream/master
 STR_UPDATE_AVAILABLE: "Actualitza"
 STR_CRASH_TITLE: "Bloqueig del sistema"
 STR_CRASH_DESCRIPTION: "S'ha guardat un informe detallat a crash_report.txt. Incloeu este arxiu en l'informe d'errors."
@@ -400,6 +467,7 @@ STR_FIRMWARE_WRITE_FAILED: "Ha fallat l'escriptura del firmware"
 STR_FIRMWARE_UPDATE_DO_NOT_POWER_OFF: "No apagueu el dispositiu!"
 STR_RECOVERY_MODE: "Mode de recuperació"
 STR_RECOVERY_MODE_HINT: "Poseu firmware.bin a l'arrel de la targeta SD i seleccioneu-lo"
+<<<<<<< HEAD
 STR_CALIBRE_URL_HINT: "Per al Calibre, afegiu /opds a la URL"
 STR_RESUME: "Continua"
 STR_INDEX_FAILED: "No s'ha pogut indexar: llibre no vàlid"
@@ -448,3 +516,5 @@ STR_FMT_TITLE: "Títol"
 STR_OPDS_SD_ROOT: "Arrel de la targeta SD"
 STR_ADD_HIDDEN_NETWORK: "Afig una xarxa oculta..."
 STR_ENTER_WIFI_SSID: "Introduïx el nom de la xarxa (SSID)"
+=======
+>>>>>>> upstream/master

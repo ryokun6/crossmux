@@ -49,8 +49,12 @@ void onArrayStart(void* ctx) { static_cast<TestContext*>(ctx)->events.push_back(
 void onArrayEnd(void* ctx) { static_cast<TestContext*>(ctx)->events.push_back({EventType::ARRAY_END, {}}); }
 
 JsonCallbacks makeCallbacks(TestContext* ctx) {
+<<<<<<< HEAD
   return {ctx,           onKey,       onString,     onNumber,   onBool, onNull,
           onObjectStart, onObjectEnd, onArrayStart, onArrayEnd, nullptr};
+=======
+  return {ctx, onKey, onString, onNumber, onBool, onNull, onObjectStart, onObjectEnd, onArrayStart, onArrayEnd};
+>>>>>>> upstream/master
 }
 
 std::vector<Event> parse(const char* json) {
@@ -88,6 +92,7 @@ TEST(StreamingJsonParser, SimpleObject) {
   EXPECT_EQ(events[5].type, EventType::OBJECT_END);
 }
 
+<<<<<<< HEAD
 TEST(StreamingJsonParser, StreamsOnlyOverflowingStringValues) {
   struct ChunkContext {
     std::string shortValue;
@@ -121,6 +126,8 @@ TEST(StreamingJsonParser, StreamsOnlyOverflowingStringValues) {
   EXPECT_TRUE(ctx.final);
 }
 
+=======
+>>>>>>> upstream/master
 TEST(StreamingJsonParser, NestedObjects) {
   auto events = parse(R"({"a": {"b": "c"}})");
 

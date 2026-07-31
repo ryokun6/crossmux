@@ -2,6 +2,7 @@
 
 #include <cstdio>
 
+<<<<<<< HEAD
 namespace UrlUtils {
 namespace {
 bool isHexDigit(const char c) { return (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'); }
@@ -25,6 +26,8 @@ bool shouldEncode(const unsigned char c) {
 }
 }  // namespace
 
+=======
+>>>>>>> upstream/master
 std::string ensureProtocol(const std::string& url) {
   if (url.find("://") == std::string::npos) {
     return "http://" + url;

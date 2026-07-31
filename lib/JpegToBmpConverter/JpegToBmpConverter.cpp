@@ -171,6 +171,7 @@ constexpr uint32_t FP_ONE = 1UL << 16;
 // Static file pointer for JPEGDEC open callback.
 // Safe in single-threaded embedded context; never accessed concurrently.
 static HalFile* s_jpegFile = nullptr;
+<<<<<<< HEAD
 static uint8_t s_jpegIoSinceYield = 0;
 
 static void yieldToIdle() { vTaskDelay(1); }
@@ -180,6 +181,8 @@ static void yieldDuringJpegIo() {
   s_jpegIoSinceYield = 0;
   yieldToIdle();
 }
+=======
+>>>>>>> upstream/master
 
 void* bmpJpegOpen(const char* /*filename*/, int32_t* size) {
   if (!s_jpegFile || !*s_jpegFile) return nullptr;
@@ -304,6 +307,88 @@ static void writeOutputRow(BmpConvertCtx* ctx, const uint8_t* srcRow, int outY) 
 
   ctx->bmpOut->write(ctx->bmpRow.get(), ctx->bytesPerRow);
   yieldDuringDecode(ctx);
+}
+
+// Matches the progressive-JPEG smoothing used by JpegToFramebufferConverter, but stays
+// local because cover generation streams dithered BMP rows instead of framebuffer pixels.
+static uint32_t interpolationStep(const int srcSize, const int outSize) {
+  if (srcSize <= 1 || outSize <= 1) return 0;
+  return (static_cast<uint32_t>(srcSize - 1) << 16) / static_cast<uint32_t>(outSize - 1);
+}
+
+static uint32_t interpolatedSourceFp(const int outIndex, const int outSize, const int srcSize, const uint32_t step) {
+  if (srcSize <= 1 || outSize <= 1) return 0;
+  if (outIndex >= outSize - 1) return static_cast<uint32_t>(srcSize - 1) << 16;
+  return static_cast<uint32_t>(outIndex) * step;
+}
+
+static void scaleRowLinear(BmpConvertCtx* ctx, const uint8_t* srcRow, uint8_t* dstRow) {
+  for (int outX = 0; outX < ctx->outWidth; outX++) {
+    const uint32_t srcX_fp = interpolatedSourceFp(outX, ctx->outWidth, ctx->srcWidth, ctx->smoothScaleX_fp);
+    const int x0 = srcX_fp >> 16;
+    const int x1 = (x0 + 1 < ctx->srcWidth) ? (x0 + 1) : x0;
+    const uint32_t fx = srcX_fp & (FP_ONE - 1);
+    dstRow[outX] = static_cast<uint8_t>((srcRow[x0] * (FP_ONE - fx) + srcRow[x1] * fx) >> 16);
+  }
+}
+
+static void writeBlendedRow(BmpConvertCtx* ctx, const uint8_t* row0, const uint8_t* row1, const uint32_t fy,
+                            const int outY) {
+  const uint32_t invFy = FP_ONE - fy;
+  for (int outX = 0; outX < ctx->outWidth; outX++) {
+    ctx->smoothOutRow[outX] = static_cast<uint8_t>((row0[outX] * invFy + row1[outX] * fy) >> 16);
+  }
+  writeOutputRow(ctx, ctx->smoothOutRow, outY);
+}
+
+static void processSmoothSourceRow(BmpConvertCtx* ctx, const uint8_t* srcRow, const int srcY) {
+  scaleRowLinear(ctx, srcRow, ctx->smoothCurrRow);
+
+  if (ctx->smoothPrevY < 0) {
+    uint8_t* tmp = ctx->smoothPrevRow;
+    ctx->smoothPrevRow = ctx->smoothCurrRow;
+    ctx->smoothCurrRow = tmp;
+    ctx->smoothPrevY = srcY;
+    if (ctx->srcHeight <= 1) {
+      while (ctx->smoothNextOutY < ctx->outHeight) {
+        writeOutputRow(ctx, ctx->smoothPrevRow, ctx->smoothNextOutY);
+        ctx->smoothNextOutY++;
+      }
+      return;
+    }
+    return;
+  }
+
+  while (ctx->smoothNextOutY < ctx->outHeight) {
+    const uint32_t srcY_fp =
+        interpolatedSourceFp(ctx->smoothNextOutY, ctx->outHeight, ctx->srcHeight, ctx->smoothScaleY_fp);
+    const int y0 = srcY_fp >> 16;
+    const int y1 = (y0 + 1 < ctx->srcHeight) ? (y0 + 1) : y0;
+    if (y1 > srcY) break;
+
+    const uint8_t* row0 = (y0 == srcY) ? ctx->smoothCurrRow : ctx->smoothPrevRow;
+    const uint8_t* row1 = (y1 == srcY) ? ctx->smoothCurrRow : ctx->smoothPrevRow;
+    writeBlendedRow(ctx, row0, row1, srcY_fp & (FP_ONE - 1), ctx->smoothNextOutY);
+    ctx->smoothNextOutY++;
+  }
+
+  uint8_t* tmp = ctx->smoothPrevRow;
+  ctx->smoothPrevRow = ctx->smoothCurrRow;
+  ctx->smoothCurrRow = tmp;
+  ctx->smoothPrevY = srcY;
+}
+
+static void finishSmoothUpscale(BmpConvertCtx* ctx) {
+  if (ctx->smoothPrevY < 0) {
+    LOG_ERR("JPG", "No progressive rows decoded for smoothing");
+    ctx->error = true;
+    return;
+  }
+
+  while (ctx->smoothNextOutY < ctx->outHeight) {
+    writeOutputRow(ctx, ctx->smoothPrevRow, ctx->smoothNextOutY);
+    ctx->smoothNextOutY++;
+  }
 }
 
 // Matches the progressive-JPEG smoothing used by JpegToFramebufferConverter, but stays
@@ -631,8 +716,11 @@ bool JpegToBmpConverter::jpegFileToBmpStreamInternal(HalFile& jpegFile, Print& b
   ctx.smoothScaleY_fp = interpolationStep(ctx.srcHeight, outHeight);
   ctx.smoothNextOutY = 0;
   ctx.smoothPrevY = -1;
+<<<<<<< HEAD
   ctx.rowsSinceYield = 0;
   ctx.blocksSinceYield = 0;
+=======
+>>>>>>> upstream/master
   ctx.error = false;
 
   // MCU row buffer: MAX_MCU_HEIGHT rows × decoded srcWidth columns of grayscale

@@ -183,7 +183,11 @@ void writeBmpHeader2bit(Print& bmpOut, const int width, const int height) {
 
 // Context for streaming PNG decompression
 struct PngDecodeContext {
+<<<<<<< HEAD
   InflateStream reader;
+=======
+  InflateReader reader;  // Must be first — callback casts uzlib_uncomp* to PngDecodeContext*
+>>>>>>> upstream/master
   HalFile* file;
 
   // PNG image properties

@@ -58,8 +58,11 @@ class EpubReaderActivity final : public Activity {
   bool skipNextButtonCheck = false;  // Skip button processing for one frame after subactivity exit
   bool automaticPageTurnActive = false;
   bool showBookmarkMessage = false;
+<<<<<<< HEAD
   bool showDictionaryMessage = false;
   unsigned long dictionaryMessageTime = 0UL;
+=======
+>>>>>>> upstream/master
   bool ignoreNextConfirmRelease = false;
   bool currentPageBookmarked = false;
   bool bookmarkRemoved = false;  // true when last toggle removed (controls popup text)
@@ -108,12 +111,18 @@ class EpubReaderActivity final : public Activity {
   // Jump to a percentage of the book (0-100), mapping it to spine and page.
   void jumpToPercent(int percent);
   void onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction action);
+<<<<<<< HEAD
   // Returns true if sync acted (launched sync, showed credentials hint, or surfaced a
   // save error). CrossMux always acts on no-credentials by opening the hint screen.
   void launchKOReaderSync();
 #ifdef ENABLE_CHINESE_VERSION
   bool launchWeReadSync();
 #endif
+=======
+  // Returns true if sync acted (launched, or surfaced a save error); false if it was a no-op
+  // because no KOReader credentials are stored.
+  bool launchKOReaderSync();
+>>>>>>> upstream/master
   void applyOrientation(uint8_t orientation);
   void applyWritingMode(uint8_t writingMode);
   uint8_t effectiveWritingMode() const;
@@ -122,7 +131,10 @@ class EpubReaderActivity final : public Activity {
   void loadCachedBookmarks();
   void addBookmark();
   void updateBookmarkFlag();
+<<<<<<< HEAD
   void openDictionaryWordSelect();
+=======
+>>>>>>> upstream/master
 
   // Footnote navigation
   void navigateToHref(const std::string& href, bool savePosition = false);

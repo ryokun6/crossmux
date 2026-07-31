@@ -9,6 +9,7 @@
 #include <Logging.h>
 #include <ReleaseJsonParser.h>
 #include <esp_wifi.h>
+<<<<<<< HEAD
 #include <mbedtls/sha256.h>
 // clang-format on
 
@@ -20,10 +21,16 @@
 #include <string>
 
 #include "FirmwareFlasher.h"
+=======
+// clang-format on
+
+#include <string>
+>>>>>>> upstream/master
 
 namespace {
 constexpr char latestReleaseUrl[] = "https://api.github.com/repos/ryokun6/crossmux/releases/latest";
 
+<<<<<<< HEAD
 // The staged image lands on SD, not in a spare partition: partitions.csv has no
 // free room (dual 6.25 MiB app slots plus the rest fill the 16 MiB map), and the
 // largest SKU image is already 93% of one app slot.
@@ -44,6 +51,11 @@ struct StagedFileCleanup {
     }
   }
 };
+=======
+esp_err_t http_client_set_header_cb(esp_http_client_handle_t http_client) {
+  return esp_http_client_set_header(http_client, "User-Agent", "CrossPoint-ESP32-" CROSSPOINT_VERSION);
+}
+>>>>>>> upstream/master
 }  // namespace
 
 const char* OtaUpdater::skuAssetName(const Sku sku) {
@@ -139,14 +151,18 @@ void OtaUpdater::adoptTarget(const SkuAsset& asset) {
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   LOG_DBG("OTA", "Checking for update (current: %s)", CROSSPOINT_VERSION);
 
+<<<<<<< HEAD
   std::fill(std::begin(skuAssets), std::end(skuAssets), SkuAsset{});
   userSelectedInstall = false;
 
+=======
+>>>>>>> upstream/master
   // Stream the ~32KB release JSON straight into the parser as it arrives.
   // Buffering the whole body in a std::string would add a growing allocation
   // on top of the TLS session's heap during the fetch; with -fno-exceptions an
   // OOM there aborts. fetchUrl handles the verified-https GET, redirects, and
   // User-Agent (see HttpDownloader).
+<<<<<<< HEAD
   const char* runningAssetName = skuAssetName(runningSku());
   ReleaseJsonParser releaseParser(runningAssetName);
   // Every asset is offered to recordAsset, which keeps the five it recognizes.
@@ -164,6 +180,14 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
         releaseParser.feed(reinterpret_cast<const char*>(data), len);
         return true;
       })) {
+=======
+  ReleaseJsonParser releaseParser;
+  const bool ok = HttpDownloader::fetchUrl(latestReleaseUrl, [&releaseParser](const uint8_t* data, size_t len) {
+    releaseParser.feed(reinterpret_cast<const char*>(data), len);
+    return true;
+  });
+  if (!ok) {
+>>>>>>> upstream/master
     LOG_ERR("OTA", "Release check fetch failed");
     return HTTP_ERROR;
   }

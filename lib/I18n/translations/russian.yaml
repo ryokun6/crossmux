@@ -144,7 +144,11 @@ STR_ORIENTATION_INVERTED: "Портрет 180°"
 STR_LANDSCAPE_CCW: "Ландшафт (CCW)"
 STR_PREV_NEXT: "Назад/Вперёд"
 STR_NEXT_PREV: "Вперёд/Назад"
+<<<<<<< HEAD
 STR_KOSYNC: "Cloud Sync"
+=======
+STR_KOSYNC: "KOSync"
+>>>>>>> upstream/master
 STR_BOOKMARK_OPTION: "Закладка"
 STR_DISABLED: "Выключено"
 STR_NOTO_SERIF: "Noto Serif"
@@ -263,7 +267,11 @@ STR_REMAP_FRONT_BUTTONS: "Переназначить передние кнопк
 STR_BOOKMARKS: "Закладки"
 STR_BOOKMARK_ADDED: "Закладка добавлена"
 STR_BOOKMARK_REMOVED: "Закладка удалена"
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "OPDS браузер"
+>>>>>>> upstream/master
 STR_SEARCH: "Поиск"
 STR_COVER_CUSTOM: "Обложка + Свой"
 STR_QUICK_RESUME: "Быстрое возобновление"
@@ -338,7 +346,11 @@ STR_ADD_SERVER: "Добавить сервер"
 STR_SERVER_NAME: "Имя сервера"
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Удалить сервер"
+<<<<<<< HEAD
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_OPDS_SERVERS: "Серверы OPDS"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "Автоперелистывание: "
 STR_AUTO_TURN_PAGES_PER_MIN: "Автоперелистывание (стр./мин)"
 STR_MANAGE_FONTS: "Управление шрифтами"

@@ -43,6 +43,7 @@ struct PngContext {
 // File I/O callbacks use pFile->fHandle to access the HalFile*,
 // avoiding the need for global file state.
 void* pngOpenWithHandle(const char* filename, int32_t* size) {
+<<<<<<< HEAD
   // Held by unique_ptr until it is handed to PNGdec, so the failure paths below cannot leak.
   // Ownership then transfers to PNGdec, which returns it to pngCloseWithHandle() for deletion.
   auto f = makeUniqueNoThrow<HalFile>();
@@ -50,6 +51,9 @@ void* pngOpenWithHandle(const char* filename, int32_t* size) {
     LOG_ERR("PNG", "OOM allocating file handle for %s", filename);
     return nullptr;
   }
+=======
+  HalFile* f = new HalFile();
+>>>>>>> upstream/master
   if (!Storage.openFileForRead("PNG", std::string(filename), *f)) {
     return nullptr;
   }
@@ -243,10 +247,27 @@ int pngDrawCallback(PNGDRAW* pDraw) {
   DirectPixelWriter pw;
   pw.init(*ctx->renderer);
 
+<<<<<<< HEAD
   for (int dstY = firstDstY; dstY < endDstY; dstY++) {
     ctx->lastDstY = dstY;
     int outY = ctx->config->y + dstY;
     if (outY >= ctx->screenHeight) continue;
+=======
+  // The cache streams to disk one row at a time. Flushing rows below this one
+  // (PNGdec delivers scanlines top to bottom) repositions the single-row band.
+  // A flush failure stops caching for the rest of the decode so we never write
+  // past the band buffer; finalize() then drops the partial file.
+  DirectCacheWriter cw;
+  if (caching) {
+    if (!ctx->cache.advanceTo(dstY)) {
+      caching = false;
+      ctx->caching = false;
+    } else {
+      cw.init(ctx->cache.buffer, ctx->cache.bytesPerRow, ctx->cache.bandRows, ctx->cache.originX);
+      cw.beginRow(outY, ctx->config->y + ctx->cache.bandStart);
+    }
+  }
+>>>>>>> upstream/master
 
     pw.beginRow(outY);
 

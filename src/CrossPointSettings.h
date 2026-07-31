@@ -116,6 +116,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   enum SIDE_BUTTON_LAYOUT { PREV_NEXT = 0, NEXT_PREV = 1, SIDE_BUTTONS_DISABLED = 2, SIDE_BUTTON_LAYOUT_COUNT };
 
   // Font family options (built-in fonts only; SD card fonts use sdFontFamilyName)
+<<<<<<< HEAD
   //
   // CJK SKUs embed a single bitmap face per size and main.cpp aliases every
   // Latin EpdFont global onto it, so "Noto Serif" and "Noto Sans" drew the
@@ -127,6 +128,9 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
 #else
   enum FONT_FAMILY { NOTOSERIF = 0, NOTOSANS = 1, FONT_FAMILY_COUNT };
 #endif
+=======
+  enum FONT_FAMILY { NOTOSERIF = 0, NOTOSANS = 1, FONT_FAMILY_COUNT };
+>>>>>>> upstream/master
   static constexpr uint8_t LEGACY_OPENDYSLEXIC = 2;
   static constexpr uint8_t BUILTIN_FONT_COUNT = FONT_FAMILY_COUNT;
   // Reader font size is a point size, not an enum slot — see fontPointSize.
@@ -175,7 +179,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     LP_MENU_KOSYNC = 0,
     LP_MENU_DISABLED = 1,
     LP_MENU_BOOKMARK = 2,
+<<<<<<< HEAD
     LP_MENU_DICTIONARY = 3,
+=======
+>>>>>>> upstream/master
     LONG_PRESS_MENU_FUNCTION_COUNT
   };
 
@@ -238,7 +245,11 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t statusBarTitle = CHAPTER_TITLE;
   uint8_t statusBarBattery = 1;
   uint8_t xtcStatusBarMode = XTC_STATUS_BAR_HIDE;
+<<<<<<< HEAD
   // Clock display in the reader status bar.
+=======
+  // Clock display in status bar (X3 only, requires DS3231 RTC)
+>>>>>>> upstream/master
   uint8_t statusBarClock = STATUS_BAR_CLOCK_HIDE;
   // Clock UTC offset in quarter-hour steps, biased by 48 so it fits in uint8_t.
   // Value 48 = UTC+0, 0 = UTC-12:00, 104 = UTC+14:00.
@@ -289,9 +300,13 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // available size (and persists the snap) whenever the family changes.
   uint8_t fontPointSize = DEFAULT_FONT_POINT_SIZE;
   uint8_t lineSpacing = NORMAL;
+<<<<<<< HEAD
   // Left-aligned by default: justification stretches inter-word gaps on a
   // 480px-wide page, and the alignment is ignored entirely in vertical-rl.
   uint8_t paragraphAlignment = LEFT_ALIGN;
+=======
+  uint8_t paragraphAlignment = JUSTIFIED;
+>>>>>>> upstream/master
   // Auto-sleep timeout setting (default 10 minutes). Legacy sleepTimeout enum values are migration-only.
   uint8_t sleepTimeoutMinutes = 10;
   // E-ink refresh frequency (default 15 pages)
@@ -381,6 +396,10 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
   static constexpr uint8_t MAX_SLEEP_TIMEOUT_MINUTES = SLEEP_TIMEOUT_NEVER_MINUTES;
 
+  static constexpr uint8_t MIN_SLEEP_TIMEOUT_MINUTES = 1;
+  static constexpr uint8_t SLEEP_TIMEOUT_NEVER_MINUTES = 31;
+  static constexpr uint8_t MAX_SLEEP_TIMEOUT_MINUTES = SLEEP_TIMEOUT_NEVER_MINUTES;
+
   // Callback to resolve SD card font IDs. Set by SdCardFontSystem::begin().
   // Returns font ID or 0 if not found.
   using SdFontIdResolver = int (*)(void* ctx, const char* familyName, uint8_t pointSize);
@@ -395,11 +414,16 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   /// selection. Used as the glyph fallback when a Latin-only SD font lacks CJK.
   int getBuiltinReaderFontId() const;
 
+<<<<<<< HEAD
   // Drop the SD font selection and fall back to the built-in family. The reader
   // point size comes back into BUILTIN_READER_POINT_SIZES with it, since that is
   // the only set a built-in family ships — otherwise the settings UI would keep
   // offering a size nothing renders at. Both fields are persisted in one write.
   void clearSdFontFamily();
+=======
+  // If count_only is true, returns the number of settings items that would be written.
+  uint8_t writeSettings(HalFile& file, bool count_only = false) const;
+>>>>>>> upstream/master
 
   // Resolved status-bar composition. Consumers read the spec; only settings
   // editors read the raw fields.

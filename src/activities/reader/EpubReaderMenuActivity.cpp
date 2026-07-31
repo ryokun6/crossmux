@@ -10,8 +10,12 @@
 EpubReaderMenuActivity::EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                                                const std::string& title, const int currentPage, const int totalPages,
                                                const int bookProgressPercent, const uint8_t currentOrientation,
+<<<<<<< HEAD
                                                const uint8_t currentWritingMode, const bool hasFootnotes,
                                                const bool hasBookmarks)
+=======
+                                               const bool hasFootnotes, const bool hasBookmarks)
+>>>>>>> upstream/master
     : Activity("EpubReaderMenu", renderer, mappedInput),
       menuItems(buildMenuItems(hasFootnotes, hasBookmarks)),
       title(title),
@@ -33,7 +37,10 @@ std::vector<EpubReaderMenuActivity::MenuItem> EpubReaderMenuActivity::buildMenuI
     items.push_back({MenuAction::BOOKMARKS, StrId::STR_BOOKMARKS});
   }
   items.push_back({MenuAction::TOGGLE_BOOKMARK, StrId::STR_TOGGLE_BOOKMARK});
+<<<<<<< HEAD
   items.push_back({MenuAction::DICTIONARY, StrId::STR_LOOKUP});
+=======
+>>>>>>> upstream/master
   items.push_back({MenuAction::ROTATE_SCREEN, StrId::STR_ORIENTATION});
   items.push_back({MenuAction::TOGGLE_WRITING_MODE, StrId::STR_WRITING_MODE});
   items.push_back({MenuAction::AUTO_PAGE_TURN, StrId::STR_AUTO_TURN_PAGES_PER_MIN});

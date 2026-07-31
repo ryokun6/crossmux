@@ -25,6 +25,7 @@ static uint8_t fontSizeEnumFromSettings() {
 
 }  // namespace
 
+<<<<<<< HEAD
 void SdCardFontSystem::wireBuiltinGlyphFallback(GfxRenderer& renderer, const char* familyName) {
   const int sdId = manager_.getFontId(familyName);
   const int builtinId = SETTINGS.getBuiltinReaderFontId();
@@ -34,6 +35,8 @@ void SdCardFontSystem::wireBuiltinGlyphFallback(GfxRenderer& renderer, const cha
   }
 }
 
+=======
+>>>>>>> upstream/master
 void SdCardFontSystem::begin(GfxRenderer& renderer) {
   registry_.discover();
 
@@ -104,11 +107,15 @@ void SdCardFontSystem::ensureLoaded(GfxRenderer& renderer, bool allowFlashCache)
     }
     const auto* selected = family->findClosestReaderSize(sizeEnum);
     const uint8_t wantedPt = selected ? selected->pointSize : 0;
+<<<<<<< HEAD
     if (!registryWasDirty && wantedPt == manager_.currentPointSize()) {
       // Still refresh fallback in case the builtin family preference changed.
       wireBuiltinGlyphFallback(renderer, wantedFamily);
       return;
     }
+=======
+    if (!registryWasDirty && wantedPt == manager_.currentPointSize()) return;
+>>>>>>> upstream/master
     LOG_DBG("SDFS", "Reloading %s: size %u -> %u (enum %u)%s", wantedFamily, manager_.currentPointSize(), wantedPt,
             sizeEnum, registryWasDirty ? " [registry dirty]" : "");
   }

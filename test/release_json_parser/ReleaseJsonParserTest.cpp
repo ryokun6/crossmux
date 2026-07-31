@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+<<<<<<< HEAD
 #include <cctype>
 #include <cstdint>
 #include <cstdio>
+=======
+>>>>>>> upstream/master
 #include <cstring>
 #include <string>
 #include <vector>
@@ -188,6 +191,7 @@ TEST(ReleaseJsonParser, FirmwareNotFirstAsset) {
   EXPECT_EQ(p.getFirmwareSize(), 987654u);
 }
 
+<<<<<<< HEAD
 TEST(ReleaseJsonParser, SelectsRequestedTraditionalChineseFirmwareAsset) {
   const char* json = R"({
       "tag_name": "1.4.14",
@@ -266,6 +270,8 @@ TEST(ReleaseJsonParser, SelectsRequestedKoreanFirmwareAsset) {
   EXPECT_EQ(p.getFirmwareSize(), 5900000u);
 }
 
+=======
+>>>>>>> upstream/master
 TEST(ReleaseJsonParser, FieldOrderUrlBeforeName) {
   const char* json = R"({
       "tag_name": "v3.0",
@@ -662,6 +668,7 @@ TEST(ReleaseJsonParser, MinimalValidJson) {
   EXPECT_EQ(p.getFirmwareSize(), 1u);
 }
 
+<<<<<<< HEAD
 // --- Asset digest ("digest": "sha256:<64 hex>") --------------------------------
 
 namespace {
@@ -991,6 +998,8 @@ TEST(ReleaseJsonParser, AssetCallbackSurvivesReset) {
   EXPECT_EQ(collector.assets.size(), 7u);
 }
 
+=======
+>>>>>>> upstream/master
 TEST(ReleaseJsonParser, ChunkedRealisticEveryBoundary) {
   // Two-chunk split at every byte boundary on a compact JSON
   const char* json =

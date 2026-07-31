@@ -3,11 +3,15 @@
 #include <Arduino.h>
 #include <Logging.h>
 #include <Memory.h>
+<<<<<<< HEAD
 #include <Stream.h>
+=======
+>>>>>>> upstream/master
 #include <base64.h>
 #include <esp_crt_bundle.h>
 #include <esp_http_client.h>
 
+<<<<<<< HEAD
 #include <functional>
 #include <string>
 
@@ -25,13 +29,31 @@ namespace {
 constexpr int HTTP_RX_BUF = 2048;
 constexpr int HTTP_TX_BUF = 512;
 #endif
+=======
+#include <cstring>
+#include <functional>
+#include <string>
+
+namespace {
+// RX holds the response headers. 4096 fits real OPDS servers; GitHub's release
+// CDN sends more and logs HTTP_HEADER "Buffer length is small", but that's
+// non-fatal: the headers we read (Location, Content-Length) come first and
+// survive. Smaller keeps contiguous heap free while WiFi and TLS are up. TX
+// only carries our GET; the body streams in READ_CHUNK pieces.
+constexpr int HTTP_RX_BUF = 4096;
+constexpr int HTTP_TX_BUF = 1024;
+>>>>>>> upstream/master
 // Per-socket-op timeout. Some OPDS download endpoints are slow to send headers
 // (>15s) and chunked catalogs stall mid-body, so 15s killed them. 60s gives
 // slow servers room. esp_http_client's timeout_ms is uint32, so unlike Arduino
 // HTTPClient's uint16 setTimeout it doesn't silently truncate.
 constexpr int HTTP_TIMEOUT_MS = 60000;
+<<<<<<< HEAD
 constexpr size_t READ_CHUNK = 1024;
 constexpr int MAX_REDIRECTS = 5;
+=======
+constexpr size_t READ_CHUNK = 2048;
+>>>>>>> upstream/master
 
 struct Sink {
   std::function<bool(const uint8_t*, size_t)> write;  // returns false to abort the transfer
@@ -45,6 +67,7 @@ bool isRedirect(int status) {
   return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 }
 
+<<<<<<< HEAD
 #if defined(FREEINK_NET_WOLFSSL)
 HttpDownloader::DownloadError runGetWolf(const std::string& startUrl, const std::string& username,
                                          const std::string& password, Sink& sink) {
@@ -110,6 +133,8 @@ HttpDownloader::DownloadError runGetWolf(const std::string& startUrl, const std:
 #endif
 
 #if !defined(FREEINK_NET_WOLFSSL)
+=======
+>>>>>>> upstream/master
 // Streams a GET body through sink.write in READ_CHUNK pieces. Uses the manual
 // open/fetch_headers/read path rather than esp_http_client_perform(): perform()
 // pushes the whole body through an event callback and reports a chunked body
@@ -156,9 +181,14 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   }
   int64_t contentLength = esp_http_client_fetch_headers(client);
   int status = esp_http_client_get_status_code(client);
+<<<<<<< HEAD
   for (int hop = 0; isRedirect(status) && hop < MAX_REDIRECTS; ++hop) {
     if (esp_http_client_set_redirection(client) != ESP_OK) break;
     esp_http_client_close(client);
+=======
+  for (int hop = 0; isRedirect(status) && hop < 5; ++hop) {
+    if (esp_http_client_set_redirection(client) != ESP_OK) break;
+>>>>>>> upstream/master
     err = esp_http_client_open(client, 0);
     if (err != ESP_OK) {
       LOG_ERR("HTTP", "redirect open failed: %s", esp_err_to_name(err));
@@ -168,12 +198,22 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
     contentLength = esp_http_client_fetch_headers(client);
     status = esp_http_client_get_status_code(client);
   }
+<<<<<<< HEAD
   if (status != 200) {
     LOG_ERR("HTTP", "unexpected status: %d", status);
     esp_http_client_cleanup(client);
     return HttpDownloader::HTTP_ERROR;
   }
 
+=======
+
+  if (status != 200) {
+    LOG_ERR("HTTP", "unexpected status: %d", status);
+    esp_http_client_cleanup(client);
+    return HttpDownloader::HTTP_ERROR;
+  }
+
+>>>>>>> upstream/master
   // fetch_headers returns 0 for a chunked response (no Content-Length); leave
   // total at 0 so progress stays silent and the size check is skipped.
   sink.total = contentLength > 0 ? static_cast<size_t>(contentLength) : 0;
@@ -213,6 +253,7 @@ HttpDownloader::DownloadError runGet(const std::string& url, const std::string& 
   }
   return HttpDownloader::OK;
 }
+<<<<<<< HEAD
 #endif  // !FREEINK_NET_WOLFSSL
 
 // All HTTP(S) fetches go through wolfSSL when it is the active TLS stack: it
@@ -227,6 +268,8 @@ HttpDownloader::DownloadError runGetSecure(const std::string& url, const std::st
   return runGet(url, username, password, sink);
 #endif
 }
+=======
+>>>>>>> upstream/master
 }  // namespace
 
 bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const std::string& username,
@@ -234,7 +277,11 @@ bool HttpDownloader::fetchUrl(const std::string& url, Stream& outContent, const 
   LOG_DBG("HTTP", "Fetching: %s", url.c_str());
   Sink sink;
   sink.write = [&outContent](const uint8_t* data, size_t len) { return outContent.write(data, len) == len; };
+<<<<<<< HEAD
   return runGetSecure(url, username, password, sink) == OK;
+=======
+  return runGet(url, username, password, sink) == OK;
+>>>>>>> upstream/master
 }
 
 bool HttpDownloader::fetchUrl(const std::string& url, std::string& outContent, const std::string& username,
@@ -246,7 +293,11 @@ bool HttpDownloader::fetchUrl(const std::string& url, std::string& outContent, c
     outContent.append(reinterpret_cast<const char*>(data), len);
     return true;
   };
+<<<<<<< HEAD
   return runGetSecure(url, username, password, sink) == OK;
+=======
+  return runGet(url, username, password, sink) == OK;
+>>>>>>> upstream/master
 }
 
 bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData, const std::string& username,
@@ -254,7 +305,11 @@ bool HttpDownloader::fetchUrl(const std::string& url, const DataCallback& onData
   LOG_DBG("HTTP", "Fetching: %s", url.c_str());
   Sink sink;
   sink.write = onData;
+<<<<<<< HEAD
   return runGetSecure(url, username, password, sink) == OK;
+=======
+  return runGet(url, username, password, sink) == OK;
+>>>>>>> upstream/master
 }
 
 HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& url, const std::string& destPath,
@@ -276,7 +331,11 @@ HttpDownloader::DownloadError HttpDownloader::downloadToFile(const std::string& 
   sink.cancelFlag = cancelFlag;
   sink.write = [&file](const uint8_t* data, size_t len) { return file.write(data, len) == len; };
 
+<<<<<<< HEAD
   const DownloadError result = runGetSecure(url, username, password, sink);
+=======
+  const DownloadError result = runGet(url, username, password, sink);
+>>>>>>> upstream/master
   // Close before any remove() on the same path; DESTRUCTOR_CLOSES_FILE would
   // otherwise close only after the remove.
   file.close();

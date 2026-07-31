@@ -67,6 +67,7 @@ class ProgressMapper {
   static CrossPointPosition toCrossPoint(const std::shared_ptr<Epub>& epub, const SavedProgressPosition& savedPos,
                                          GfxRenderer& renderer, int currentSpineIndex = -1,
                                          int totalPagesInCurrentSpine = 0, int fallbackTotalPages = 0);
+<<<<<<< HEAD
 
   /**
    * Map a known spine and its intra-spine progress directly to a rendered page.
@@ -89,6 +90,8 @@ class ProgressMapper {
    */
   static std::optional<CrossPointPosition> fromRichPosition(const std::shared_ptr<Epub>& epub,
                                                             const KOReaderRichPosition& rich, GfxRenderer& renderer);
+=======
+>>>>>>> upstream/master
 
  private:
   static CrossPointPosition toCrossPointImpl(const std::shared_ptr<Epub>& epub, const SavedProgressPosition& savedPos,

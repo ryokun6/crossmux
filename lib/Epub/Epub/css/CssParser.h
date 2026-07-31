@@ -33,7 +33,11 @@
 class CssParser {
  public:
   // Bump when CSS cache format or rules change; section caches are invalidated when this changes
+<<<<<<< HEAD
   static constexpr uint8_t CSS_CACHE_VERSION = 8;
+=======
+  static constexpr uint8_t CSS_CACHE_VERSION = 6;
+>>>>>>> upstream/master
 
   explicit CssParser(std::string cachePath) : cachePath(std::move(cachePath)) {}
   ~CssParser() = default;

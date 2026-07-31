@@ -187,6 +187,10 @@ bool FontDownloadActivity::fetchAndParseManifest() {
     }
   }
 
+<<<<<<< HEAD
+=======
+  // HTTP client is now closed — TLS buffers freed. Parse JSON from file.
+>>>>>>> upstream/master
   HalFile manifestFile;
   if (!Storage.openFileForRead("FONT", MANIFEST_TMP, manifestFile)) {
     LOG_ERR("FONT", "Failed to open temp manifest");

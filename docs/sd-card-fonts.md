@@ -9,7 +9,11 @@ There are three ways to install fonts:
 
 ### Option 1: Download from device (recommended)
 
+<<<<<<< HEAD
 1. Connect your ryOS CrossMux reader to Wi-Fi
+=======
+1. Connect your CrossPoint reader to Wi-Fi
+>>>>>>> upstream/master
 2. Go to **Settings > System > Manage Fonts**
 3. Browse available font families and tap to download
 4. Downloaded fonts appear immediately in **Settings > Reader > Font Family**
@@ -205,6 +209,7 @@ To list all presets with codepoint counts:
 
 `--force-autohint` — force FreeType's auto-hinter instead of the font's native hinting (useful when a font's built-in hints produce poor results at small sizes).
 
+<<<<<<< HEAD
 ### CJK `.cpfont` size notes
 
 Full-range `--intervals cjk` on a **complete** pan-CJK OTF can produce
@@ -293,4 +298,6 @@ the global build they are Latin-only, so missing glyphs remain blank/tofu.
 This also avoids an indexing hang: absent codepoints are no longer mapped onto
 U+FFFD in the SD advance table (which previously caused thousands of SPI seeks).
 
+=======
+>>>>>>> upstream/master
 Install custom fonts via the web interface or manual SD card copy.

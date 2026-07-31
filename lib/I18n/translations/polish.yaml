@@ -315,7 +315,11 @@ STR_ADD_SERVER: "Dodaj serwer"
 STR_SERVER_NAME: "Nazwa serwera"
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Usuń serwer"
+<<<<<<< HEAD
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_OPDS_SERVERS: "Serwery OPDS"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "Auto-kartkowanie: "
 STR_AUTO_TURN_PAGES_PER_MIN: "Auto-kartkowanie (str./min)"
 STR_DOWNLOAD_FONTS: "Pobierz czcionki"

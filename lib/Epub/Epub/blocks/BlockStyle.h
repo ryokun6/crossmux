@@ -31,11 +31,14 @@ struct BlockStyle {
   bool textAlignDefined = false;   // true if text-align was explicitly set in CSS
   bool isRtl = false;              // true if resolved direction is RTL
   bool directionDefined = false;   // true if direction was explicitly set in CSS/HTML
+<<<<<<< HEAD
   bool isVerticalRtl = false;      // true when user writing mode is vertical-rl (tategaki)
   // Set on TextBlocks created from <br>. Consumed by startNewTextBlock to inject
   // a full line-height gap when the <br> block stays empty (section-break use case).
   // NOT propagated through getCombinedBlockStyle so it can't leak into sibling blocks.
   bool fromBrElement = false;
+=======
+>>>>>>> upstream/master
 
   // Combined insets (margin + padding)
   [[nodiscard]] int16_t leftInset() const { return marginLeft + paddingLeft; }
@@ -105,10 +108,13 @@ struct BlockStyle {
       result.directionDefined = true;
     }
 
+<<<<<<< HEAD
     // fromBrElement is consumed by startNewTextBlock when an empty <br> block
     // is merged with the following paragraph; never propagate it further.
     result.fromBrElement = false;
 
+=======
+>>>>>>> upstream/master
     return result;
   }
 

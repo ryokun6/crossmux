@@ -1,7 +1,13 @@
 _language_name: "עברית"
 _language_code: "HE"
+<<<<<<< HEAD
 _order: "26"
 STR_CROSSPOINT: "ryOS CrossMux"
+=======
+_order: "23"
+
+STR_CROSSPOINT: "CrossPoint"
+>>>>>>> upstream/master
 STR_BOOTING: "מפעיל..."
 STR_SLEEPING: "מצב שינה"
 STR_ENTERING_SLEEP: "עובר למצב שינה"
@@ -69,7 +75,10 @@ STR_IMAGES: "תמונות"
 STR_IMAGES_DISPLAY: "הצג תמונות"
 STR_IMAGES_PLACEHOLDER: "סמן"
 STR_IMAGES_SUPPRESS: "הסתר תמונות"
+<<<<<<< HEAD
 STR_IMAGES_LARGE: "גדולות בלבד"
+=======
+>>>>>>> upstream/master
 STR_SHORT_PWR_BTN: "לחיצה קצרה על כפתור ההפעלה"
 STR_ORIENTATION: "כיוון קריאה (מסך)"
 STR_SIDE_BTN_LAYOUT: "פריסת כפתורי צד (בקריאה)"
@@ -87,7 +96,11 @@ STR_HYPHENATION: "מיקוף"
 STR_TIME_TO_SLEEP: "זמן עד לשינה"
 STR_SHOW_HIDDEN_FILES: "הצג קבצים נסתרים"
 STR_REFRESH_FREQ: "תדירות רענון מסך"
+<<<<<<< HEAD
 STR_KOREADER_SYNC: "ryOS Cloud Sync"
+=======
+STR_KOREADER_SYNC: "סנכרון KOReader"
+>>>>>>> upstream/master
 STR_CHECK_UPDATES: "בדוק עדכונים"
 STR_LANGUAGE: "שפה"
 STR_CLEAR_READING_CACHE: "מחק קבצי מטמון"
@@ -96,16 +109,26 @@ STR_PASSWORD: "סיסמה"
 STR_SYNC_SERVER_URL: "כתובת שרת סנכרון"
 STR_DOCUMENT_MATCHING: "התאמת מסמכים"
 STR_AUTHENTICATE: "התחבר"
+<<<<<<< HEAD
 STR_KOREADER_USERNAME: "Username"
 STR_KOREADER_PASSWORD: "Password"
+=======
+STR_KOREADER_USERNAME: "שם משתמש ב-KOReader"
+STR_KOREADER_PASSWORD: "סיסמת KOReader"
+>>>>>>> upstream/master
 STR_FILENAME: "שם קובץ"
 STR_BINARY: "בינארי"
 STR_SET_CREDENTIALS_FIRST: "הגדר תחילה פרטי התחברות"
 STR_WIFI_CONN_FAILED: "חיבור הרשת נכשל"
 STR_AUTHENTICATING: "מאמת נתונים..."
 STR_AUTH_SUCCESS: "ההתחברות הצליחה!"
+<<<<<<< HEAD
 STR_KOREADER_AUTH: "Cloud Sync Auth"
 STR_SYNC_READY: "ryOS Cloud Sync is ready to use"
+=======
+STR_KOREADER_AUTH: "התחברות ל-KOReader"
+STR_SYNC_READY: "סנכרון KOReader מוכן לשימוש"
+>>>>>>> upstream/master
 STR_AUTH_FAILED: "ההתחברות נכשלה"
 STR_DONE: "סיום"
 STR_CLEAR_CACHE_WARNING_1: "פעולה זו תמחק את כל נתוני הספרים השמורים."
@@ -236,7 +259,11 @@ STR_THEME_ROUNDEDRAFF: "RoundedRaff"
 STR_THEME_LYRA_EXTENDED: "Lyra מורחב"
 STR_SUNLIGHT_FADING_FIX: "תיקון דהיית מסך בשמש"
 STR_REMAP_FRONT_BUTTONS: "שנה תפקיד לכפתורים קדמיים"
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "דפדפן OPDS"
+>>>>>>> upstream/master
 STR_SEARCH: "חיפוש"
 STR_COVER_CUSTOM: "כריכה + מותאם אישית"
 STR_MENU_RECENT_BOOKS: "ספרים אחרונים"
@@ -267,16 +294,25 @@ STR_DISPLAY_QR: "הצג כקוד QR"
 STR_CHAPTER_PREFIX: "פרק: "
 STR_PAGES_SEPARATOR: " דפים  |  "
 STR_BOOK_PREFIX: "ספר: "
+<<<<<<< HEAD
 STR_RYOS_ACCOUNT_HINT: "הרשמה: https://os.ryo.lu"
+=======
+STR_CALIBRE_URL_HINT: "עבור Calibre, הוסף /opds לכתובת ה-URL"
+>>>>>>> upstream/master
 STR_PERCENT_STEP_HINT: "שמאל/ימין: 1%  למעלה/למטה: 10%"
 STR_SYNCING_TIME: "מסנכרן שעון..."
 STR_CALC_HASH: "מחשב האש..."
 STR_HASH_FAILED: "חישוב האש נכשל"
 STR_FETCH_PROGRESS: "מושך התקדמות מהשרת..."
 STR_UPLOAD_PROGRESS: "מעלה התקדמות לשרת..."
+<<<<<<< HEAD
 STR_NO_CREDENTIALS_MSG: "לא מחוברים לחשבון ryOS"
 STR_KOREADER_SETUP_HINT: "סנכרנו ספרים והתקדמות מחשבון ryOS."
 STR_LOGIN_SETTINGS_HINT: "סנכרנו ספרים והתקדמות מחשבון ryOS."
+=======
+STR_NO_CREDENTIALS_MSG: "לא הוגדרו פרטי התחברות"
+STR_KOREADER_SETUP_HINT: "הגדר חשבון KOReader במסך ההגדרות"
+>>>>>>> upstream/master
 STR_PROGRESS_FOUND: "נמצאה התקדמות קודמת!"
 STR_REMOTE_LABEL: "בשרת:"
 STR_LOCAL_LABEL: "במכשיר:"
@@ -295,7 +331,11 @@ STR_UPLOAD: "העלה"
 STR_BOOK_S_STYLE: "עיצוב הספר המקורי"
 STR_EMBEDDED_STYLE: "סגנון מוטמע"
 STR_FOCUS_READING: "קריאה ממוקדת"
+<<<<<<< HEAD
 STR_OPDS_SERVER_URL: "Server URL"
+=======
+STR_OPDS_SERVER_URL: "כתובת שרת OPDS"
+>>>>>>> upstream/master
 STR_SET_SLEEP_COVER: "הגדר כריכה"
 STR_FOOTNOTES: "הערות שוליים"
 STR_NO_FOOTNOTES: "אין הערות שוליים בדף זה"
@@ -303,10 +343,17 @@ STR_LINK: "[קישור]"
 STR_SCREENSHOT_BUTTON: "צלם מסך"
 STR_ADD_SERVER: "הוסף שרת"
 STR_SERVER_NAME: "שם השרת"
+<<<<<<< HEAD
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "מחק שרת"
 STR_DELETE_CONFIRM: "למחוק שרת זה?"
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_NO_SERVERS: "לא הוגדרו שרתי OPDS"
+STR_DELETE_SERVER: "מחק שרת"
+STR_DELETE_CONFIRM: "למחוק שרת זה?"
+STR_OPDS_SERVERS: "שרתי OPDS"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "דפדוף אוטומטי פועל: "
 STR_AUTO_TURN_PAGES_PER_MIN: "דפדוף אוטומטי (דפים בדקה)"
 STR_MANAGE_FONTS: "ניהול גופנים"
@@ -386,12 +433,17 @@ STR_QUICK_RESUME: "חזרה מהירה"
 STR_REMOVE_FROM_RECENTS: "להסיר מרשימת הספרים האחרונים?"
 STR_CONFIRM_DELETE_BOOKMARK: "למחוק סימנייה זו?"
 STR_LONG_PRESS_MENU: "לחיצה ארוכה על אישור"
+<<<<<<< HEAD
 STR_KOSYNC: "Cloud Sync"
+=======
+STR_KOSYNC: "KOSync"
+>>>>>>> upstream/master
 STR_BOOKMARK_OPTION: "סימנייה"
 STR_PWR_BTN_FOOTNOTE_BACK: "חזרה מהירה מהערות שוליים"
 STR_SLEEP_TIMER_VALUE_FORMAT: "%u דקות"
 STR_SLEEP_NEVER: "אף פעם"
 STR_SLEEP_TIMER_STEP_HINT: "שמאל/ימין: 1 דק'  למעלה/למטה: 5 דק'"
+<<<<<<< HEAD
 STR_CALIBRE_URL_HINT: "עבור Calibre, הוסף /opds לכתובת ה-URL"
 STR_TOUCH_READER_CONTROLS: "שליטה במגע (קורא)"
 STR_TEXT_SETTINGS: "הגדרות טקסט"
@@ -411,3 +463,5 @@ STR_STEP_HINT_FRONT: "לחצנים קדמיים:"
 STR_STEP_HINT_SIDE: "לחצני צד:"
 STR_ADD_HIDDEN_NETWORK: "הוסף רשת מוסתרת..."
 STR_ENTER_WIFI_SSID: "הזן שם רשת (SSID)"
+=======
+>>>>>>> upstream/master

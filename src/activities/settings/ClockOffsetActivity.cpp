@@ -313,6 +313,7 @@ void ClockOffsetActivity::render(RenderLock&&) {
   x += colonWidth + colonGap;
 
   drawField(minutesStr, x, minutesBoxW, FIELD_MINUTES);
+<<<<<<< HEAD
 
   if (mappedInput.hasTouch()) {
     Rect minusRect;
@@ -328,6 +329,8 @@ void ClockOffsetActivity::render(RenderLock&&) {
     drawTouchButton(minusRect, "-");
     drawTouchButton(plusRect, "+");
   }
+=======
+>>>>>>> upstream/master
 
   // Live preview of the resulting wall-clock time, so users can verify against a watch.
   char timeBuf[9];

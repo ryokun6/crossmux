@@ -10,9 +10,13 @@
 #include "FsHelpers.h"
 
 namespace {
+<<<<<<< HEAD
 // v10: stores the OPF spine's page-progression-direction so RTL publications can
 // reverse page-turn controls. This adds one bool after the language metadata field.
 constexpr uint8_t BOOK_CACHE_VERSION = 10;
+=======
+constexpr uint8_t BOOK_CACHE_VERSION = 8;  // v8: TOC/book titles stored NFC-composed
+>>>>>>> upstream/master
 constexpr char bookBinFile[] = "/book.bin";
 constexpr char tmpSpineBinFile[] = "/spine.bin.tmp";
 constexpr char tmpTocBinFile[] = "/toc.bin.tmp";

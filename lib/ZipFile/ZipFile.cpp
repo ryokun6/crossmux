@@ -7,6 +7,10 @@
 #include <algorithm>
 
 struct ZipInflateCtx {
+<<<<<<< HEAD
+=======
+  InflateReader reader;  // Must be first — callback casts uzlib_uncomp* to ZipInflateCtx*
+>>>>>>> upstream/master
   HalFile* file = nullptr;
   size_t fileRemaining = 0;
   uint8_t* readBuf = nullptr;
@@ -406,18 +410,29 @@ uint8_t* ZipFile::readFileToMemory(const char* filename, size_t* size, const boo
     ctx.readBuf = fileReadBuffer;
     ctx.readBufSize = 1024;
 
+<<<<<<< HEAD
     // One-shot mode: `data` holds the entire output, so back-references
     // resolve inside it and no 32KB window is allocated.
     InflateStream inflate;
     if (!inflate.init(false)) {
       LOG_ERR("ZIP", "Failed to init inflate stream");
+=======
+    if (!ctx.reader.init(true)) {
+      LOG_ERR("ZIP", "Failed to init inflate reader");
+>>>>>>> upstream/master
       free(fileReadBuffer);
       free(data);
       return nullptr;
     }
+<<<<<<< HEAD
     inflate.setFill(zipFillCallback, &ctx);
 
     if (!inflate.read(data, inflatedDataSize)) {
+=======
+    ctx.reader.setReadCallback(zipReadCallback);
+
+    if (!ctx.reader.read(data, inflatedDataSize)) {
+>>>>>>> upstream/master
       LOG_ERR("ZIP", "Failed to inflate file");
       free(fileReadBuffer);
       free(data);

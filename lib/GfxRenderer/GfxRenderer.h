@@ -12,6 +12,14 @@ namespace BidiUtils {
 enum class BidiBaseDir : signed char { AUTO = -1, LTR = 0, RTL = 1 };
 }  // namespace BidiUtils
 
+namespace BidiUtils {
+// Paragraph base direction for the Unicode BiDi algorithm (UAX#9).
+// AUTO: scan text for first strong directional character (P2/P3 rules)
+// LTR:  force left-to-right paragraph embedding level
+// RTL:  force right-to-left paragraph embedding level
+enum class BidiBaseDir : signed char { AUTO = -1, LTR = 0, RTL = 1 };
+}  // namespace BidiUtils
+
 class FontCacheManager;
 class SdCardFont;
 
@@ -77,13 +85,18 @@ class GfxRenderer {
   // planes render band-by-band straight to the controller without destroying
   // the BW framebuffer (no storeBwBuffer). Mutable because the render path is
   // const. See beginStripTarget()/endStripTarget().
+<<<<<<< HEAD
   // _stripBufMsb is set only by beginDualStripTarget() for GRAYSCALE_DUAL.
   mutable uint8_t* _stripBuf = nullptr;
   mutable uint8_t* _stripBufMsb = nullptr;
+=======
+  mutable uint8_t* _stripBuf = nullptr;
+>>>>>>> upstream/master
   mutable int _stripY0 = 0;
   mutable int _stripRows = 0;
   mutable bool _stripActive = false;
 
+<<<<<<< HEAD
   // Logical-coordinate clip rectangle (scissor). When active, drawPixel()
   // silently drops pixels whose *logical* (x, y) falls outside [clipX0, clipX1)
   // x [clipY0, clipY1) — without logging "Outside range". Used by scrolling
@@ -98,6 +111,8 @@ class GfxRenderer {
   mutable int clipX1 = 0;
   mutable int clipY1 = 0;
 
+=======
+>>>>>>> upstream/master
   void renderChar(const EpdFontFamily& fontFamily, uint32_t cp, int* x, int* y, bool pixelState,
                   EpdFontFamily::Style style) const;
   void freeBwBufferChunks();
@@ -194,9 +209,12 @@ class GfxRenderer {
   // after the orientation rotate, so it is orientation-agnostic. Used to render
   // grayscale planes band-by-band without a full second buffer.
   void beginStripTarget(uint8_t* scratch, int stripY0, int stripRows) const;
+<<<<<<< HEAD
   // Dual-plane strip for GRAYSCALE_DUAL: one page walk fills LSB + MSB. Both
   // buffers are panelWidthBytes * stripRows; clearScreen() clears both.
   void beginDualStripTarget(uint8_t* scratchLsb, uint8_t* scratchMsb, int stripY0, int stripRows) const;
+=======
+>>>>>>> upstream/master
   void endStripTarget() const;
 
   // Band culling for tiled grayscale. Takes a glyph bounding box in logical
@@ -212,6 +230,7 @@ class GfxRenderer {
   // framebuffer ([0, panelHeight)). Writers subtract the origin and clip to the
   // extent, so they honor tiled-grayscale banding without per-pixel method calls.
   uint8_t* getWriteTarget() const { return _stripActive ? _stripBuf : frameBuffer; }
+<<<<<<< HEAD
   // MSB plane buffer during beginDualStripTarget(); nullptr otherwise.
   uint8_t* getWriteTargetMsb() const { return _stripActive ? _stripBufMsb : nullptr; }
   int getWriteOriginY() const { return _stripActive ? _stripY0 : 0; }
@@ -244,6 +263,10 @@ class GfxRenderer {
     ClipScope(const ClipScope&) = delete;
     ClipScope& operator=(const ClipScope&) = delete;
   };
+=======
+  int getWriteOriginY() const { return _stripActive ? _stripY0 : 0; }
+  int getWriteRows() const { return _stripActive ? _stripRows : panelHeight; }
+>>>>>>> upstream/master
 
   // Drawing
   void drawPixel(int x, int y, bool state = true) const;

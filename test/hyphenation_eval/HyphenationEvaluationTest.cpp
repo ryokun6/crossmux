@@ -221,6 +221,7 @@ void runLanguageEval(const char* langName, const char* primaryTag, const char* r
   }
 
   EXPECT_GE(averageF1Percent, minF1Percent) << "Hyphenation quality regressed for " << langName;
+<<<<<<< HEAD
 }
 
 }  // namespace
@@ -275,4 +276,17 @@ TEST(HyphenationFallback, LinguisticBreaksRemainAvailableBeforeEmergencyFallback
   ASSERT_FALSE(legalBreaks.empty());
   EXPECT_TRUE(std::any_of(legalBreaks.begin(), legalBreaks.end(),
                           [](const auto& info) { return info.requiresInsertedHyphen; }));
+=======
+>>>>>>> upstream/master
 }
+
+}  // namespace
+
+TEST(HyphenationEval, English) { runLanguageEval("english", "en", "english_hyphenation_tests.txt", 98.10); }
+TEST(HyphenationEval, French) { runLanguageEval("french", "fr", "french_hyphenation_tests.txt", 99.00); }
+TEST(HyphenationEval, German) { runLanguageEval("german", "de", "german_hyphenation_tests.txt", 96.73); }
+TEST(HyphenationEval, Russian) { runLanguageEval("russian", "ru", "russian_hyphenation_tests.txt", 96.22); }
+TEST(HyphenationEval, Spanish) { runLanguageEval("spanish", "es", "spanish_hyphenation_tests.txt", 98.02); }
+TEST(HyphenationEval, Italian) { runLanguageEval("italian", "it", "italian_hyphenation_tests.txt", 98.99); }
+TEST(HyphenationEval, Polish) { runLanguageEval("polish", "pl", "polish_hyphenation_tests.txt", 98.92); }
+TEST(HyphenationEval, Swedish) { runLanguageEval("swedish", "sv", "swedish_hyphenation_tests.txt", 94.01); }

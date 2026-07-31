@@ -24,8 +24,11 @@ STR_EMPTY_FILE: "Empty file"
 STR_OUT_OF_BOUNDS: "Out of bounds"
 STR_LOADING: "Loading..."
 STR_LOADING_POPUP: "Loading"
+<<<<<<< HEAD
 STR_INVALID_BMP_FILE: "Invalid BMP file"
 STR_FILE_OPEN_FAILED: "Cannot open file"
+=======
+>>>>>>> upstream/master
 STR_WIFI_NETWORKS: "Wi-Fi Networks"
 STR_NO_NETWORKS: "No networks found"
 STR_NETWORKS_FOUND: "%zu networks found"
@@ -82,6 +85,10 @@ STR_LONG_PRESS_BEHAVIOR: "Long-press button behavior"
 STR_LONG_PRESS_BEHAVIOR_OFF: "OFF"
 STR_LONG_PRESS_BEHAVIOR_SKIP: "Chapter skip"
 STR_LONG_PRESS_BEHAVIOR_ORIENTATION: "Orientation change"
+<<<<<<< HEAD
+=======
+STR_LONG_PRESS_MENU: "Long-press Menu"
+>>>>>>> upstream/master
 STR_FONT_PREVIEW_TEXT: "The quick brown fox jumps over the lazy dog"
 STR_FONT_FAMILY: "Reader Font Family"
 STR_FONT_SIZE: "Reader Font Size"
@@ -149,10 +156,18 @@ STR_WRITING_HORIZONTAL: "Horizontal"
 STR_WRITING_VERTICAL_RL: "Vertical (RTL)"
 STR_PREV_NEXT: "Prev/Next"
 STR_NEXT_PREV: "Next/Prev"
+<<<<<<< HEAD
 STR_DISABLED: "Disabled"
 STR_NOTO_SERIF: "Noto Serif"
 STR_NOTO_SANS: "Noto Sans"
 STR_SYSTEM_FONT: "System"
+=======
+STR_KOSYNC: "KOSync"
+STR_BOOKMARK_OPTION: "Bookmark"
+STR_DISABLED: "Disabled"
+STR_NOTO_SERIF: "Noto Serif"
+STR_NOTO_SANS: "Noto Sans"
+>>>>>>> upstream/master
 STR_SMALL: "Small"
 STR_MEDIUM: "Medium"
 STR_LARGE: "Large"
@@ -275,11 +290,15 @@ STR_CLOCK_SYNC_OK: "Clock synced"
 STR_CLOCK_SYNC_FAIL: "Sync failed"
 STR_CLOCK_SYNC_NO_WIFI: "Wi-Fi not connected"
 STR_CLOCK_SYNC_NO_WIFI_HINT: "Connect to Wi-Fi first, then try again."
+<<<<<<< HEAD
 STR_CLOCK_SYNCED: "Synced"
 STR_DATE_AND_TIME: "Date & Time"
 STR_SET_DATE_AND_TIME: "Set date and time"
 STR_HOUR: "Hour"
 STR_MINUTE: "Minute"
+=======
+STR_CLOCK_SYNCED: "Clock Synced"
+>>>>>>> upstream/master
 STR_UI_THEME: "UI Theme"
 STR_THEME_CLASSIC: "Classic"
 STR_THEME_LYRA: "Lyra"
@@ -290,7 +309,11 @@ STR_REMAP_FRONT_BUTTONS: "Remap Front Buttons"
 STR_BOOKMARKS: "Bookmarks"
 STR_BOOKMARK_ADDED: "Bookmark added."
 STR_BOOKMARK_REMOVED: "Bookmark removed."
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "OPDS Browser"
+>>>>>>> upstream/master
 STR_SEARCH: "Search"
 STR_COVER_CUSTOM: "Cover + Custom"
 STR_QUICK_RESUME: "Quick Resume"
@@ -352,7 +375,11 @@ STR_UPLOAD: "Upload"
 STR_BOOK_S_STYLE: "Book's Style"
 STR_EMBEDDED_STYLE: "Embedded Style"
 STR_FOCUS_READING: "Focus Reading"
+<<<<<<< HEAD
 STR_OPDS_SERVER_URL: "Server URL"
+=======
+STR_OPDS_SERVER_URL: "OPDS Server URL"
+>>>>>>> upstream/master
 STR_PWR_BTN_FOOTNOTE_BACK: "Quick-return from footnotes"
 STR_SET_SLEEP_COVER: "Set Cover"
 STR_FOOTNOTES: "Footnotes"
@@ -366,7 +393,11 @@ STR_ADD_SERVER: "Add Server"
 STR_SERVER_NAME: "Server Name"
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Delete Server"
+<<<<<<< HEAD
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_OPDS_SERVERS: "OPDS Servers"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "Auto Turn Enabled: "
 STR_AUTO_TURN_PAGES_PER_MIN: "Auto Turn (Pages Per Minute)"
 STR_MANAGE_FONTS: "Manage Fonts"

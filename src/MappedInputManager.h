@@ -7,7 +7,10 @@ class GfxRenderer;
 class MappedInputManager {
  public:
   enum class Button { Back, Confirm, Left, Right, Up, Down, Power, PageBack, PageForward, NavNext, NavPrevious };
+<<<<<<< HEAD
   enum class SwipeDir { None, Left, Right, Up, Down };
+=======
+>>>>>>> upstream/master
 
   struct Labels {
     const char* btn1;
@@ -61,10 +64,13 @@ class MappedInputManager {
   // so portrait UI (home, settings) never swaps while the reader and its menus do.
   [[nodiscard]] bool isNavDirectionSwapped() const;
 
+<<<<<<< HEAD
   void setPageProgressionRtl(const bool rtl) { pageProgressionRtl = rtl; }
   void setVerticalWritingRtl(const bool verticalRtl) { verticalWritingRtl = verticalRtl; }
   [[nodiscard]] bool isPageTurnDirectionReversed() const;
 
+=======
+>>>>>>> upstream/master
  private:
   HalGPIO& gpio;
   // Logical-to-physical button mapping depends on what the user is actually looking at: when the
@@ -73,8 +79,11 @@ class MappedInputManager {
   // read it here instead of CrossPointSettings.orientation, which is just the persisted reader
   // preference and stays "rotated" even while portrait UI like home/settings is on screen.
   const GfxRenderer& renderer;
+<<<<<<< HEAD
   bool pageProgressionRtl = false;
   bool verticalWritingRtl = false;
+=======
+>>>>>>> upstream/master
 
   bool mapButton(Button button, bool (HalGPIO::*fn)(uint8_t) const) const;
   bool wasBackGesture() const;

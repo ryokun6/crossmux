@@ -39,6 +39,7 @@ void EpubReaderBookmarksActivity::onEnter() {
       bookmarks.shrink_to_fit();
     } else {
       JsonSettingsIO::loadBookmarks(bookmarks, json.c_str());
+<<<<<<< HEAD
 
       // Backfill chapter/page info for bookmarks saved before si/pc/pp were
       // persisted (legacy files load them as 0); otherwise those entries render
@@ -51,6 +52,8 @@ void EpubReaderBookmarksActivity::onEnter() {
           bookmark.computedChapterProgress = pos.pageNumber;
         }
       }
+=======
+>>>>>>> upstream/master
     }
   } else {
     LOG_DBG("EPB", "No bookmark file found at %s, starting with empty bookmarks", path.c_str());

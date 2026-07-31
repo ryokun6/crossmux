@@ -19,8 +19,11 @@ struct SdCardFontFamilyInfo {
 
   const SdCardFontFileInfo* findFile(uint8_t size, uint8_t style = 0) const;
   const SdCardFontFileInfo* findClosestReaderSize(uint8_t fontSizeEnum, uint8_t style = 0) const;
+<<<<<<< HEAD
   // Upstream Boot/TextSettings call this with a reader point size.
   const SdCardFontFileInfo* findNearestSize(uint8_t pointSize, uint8_t style = 0) const;
+=======
+>>>>>>> upstream/master
   bool hasSize(uint8_t size) const;
   std::vector<uint8_t> availableSizes() const;
 };

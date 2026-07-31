@@ -20,9 +20,15 @@ Welcome to the **ryOS CrossMux** firmware. This guide outlines the hardware cont
       - [3.6.2 Reader](#362-reader)
       - [3.6.3 Controls](#363-controls)
       - [3.6.4 System](#364-system)
+<<<<<<< HEAD
       - [3.6.5 ryOS Books (Multiple Libraries)](#365-ryos-books-multiple-libraries)
       - [3.6.6 Web Settings (Wi-Fi + ryOS Books)](#366-web-settings-wi-fi--ryos-books)
       - [3.6.7 ryOS Cloud Sync Quick Setup](#367-ryos-cloud-sync-quick-setup)
+=======
+      - [3.6.5 OPDS Servers (Multiple Libraries)](#365-opds-servers-multiple-libraries)
+      - [3.6.6 Web Settings (Wi-Fi + OPDS)](#366-web-settings-wi-fi--opds)
+      - [3.6.7 KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)
+>>>>>>> upstream/master
     - [3.7 Sleep Screen](#37-sleep-screen)
     - [3.8 Custom Fonts (SD Card)](#38-custom-fonts-sd-card)
   - [4. Reading Mode](#4-reading-mode)
@@ -229,6 +235,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Reader Line Spacing**: Adjust the spacing between lines; options are "Tight", "Normal" (default), or "Wide".
 
+<<<<<<< HEAD
 - **Reader Screen Margin**: Controls the screen margins in Reading Mode between 5 and 40 pixels in 5-pixel increments; the default is 20.
 
 - **Reader Paragraph Alignment**: Set the alignment of paragraphs; options are "Justified", "Left" (default), "Center", or "Right". Ignored in vertical writing mode, which lays text out in columns.
@@ -236,6 +243,15 @@ The Settings screen allows you to configure the device's behavior. There are a f
 - **Embedded Style**: Whether to use the EPUB file's embedded HTML and CSS stylisation and formatting; options are "ON" or "OFF".
 
 - **Hyphenation**: Whether to hyphenate text in Reading Mode; options are "ON" (default) or "OFF".
+=======
+- **Reader Screen Margin**: Controls the screen margins in Reading Mode between 5 and 40 pixels in 5-pixel increments.
+
+- **Reader Paragraph Alignment**: Set the alignment of paragraphs; options are "Justified" (default), "Left", "Center", or "Right".
+
+- **Embedded Style**: Whether to use the EPUB file's embedded HTML and CSS stylisation and formatting; options are "ON" or "OFF".
+
+- **Hyphenation**: Whether to hyphenate text in Reading Mode; options are "ON" or "OFF".
+>>>>>>> upstream/master
 
 - **Reading Orientation**: Set the screen orientation for reading EPUB files:
   
@@ -251,7 +267,11 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Text Anti-Aliasing**: Whether to show smooth grey edges (anti-aliasing) on text in reading mode. Note this slows down page turns slightly.
 
+<<<<<<< HEAD
 - **Images**: How to handle embedded images (JPG/PNG) found in EPUB files; options are "Display", "Placeholder", "Hide", or "Large only" (default), which lays out full-size figures and skips small icons and dividers.
+=======
+- **Images**: Whether to display embedded images (JPG/PNG) found in EPUB files; options are "ON" (default) or "OFF".
+>>>>>>> upstream/master
 
 - **Focus Reading**: Bolds the first part of each word to create visual fixation points, similar to Bionic Reading. This can help improve reading speed and focus; options are "ON" or "OFF" (default).
 
@@ -267,7 +287,11 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Page Scroll" - Long-pressing scrolls a page up/down
 - **Long-press Menu**: Selects the function bound to holding the menu button (Confirm) while reading an EPUB. **Cycles through the available functions** each time the setting is selected — additional functions may be added in future releases, so this is not a binary on/off toggle. A short press of Confirm always opens the reader menu as normal:
   - "Bookmark" (default) - Hold Confirm (~0.4 second) to drop a bookmark at the current page.
+<<<<<<< HEAD
   - "Cloud Sync" - Hold Confirm (~1 second) to launch ryOS Cloud Sync directly.
+=======
+  - "KOSync" - Hold Confirm (~1 second) to launch KOReader sync directly.
+>>>>>>> upstream/master
   - "Disabled" - Long-press is ignored; only short-press opens the reader menu.
 
 - **Short Power Button Click**: Controls the effect of a short click of the power button:
@@ -277,6 +301,7 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Page Turn" - A short press in reading mode turns to the next page; a long press turns the device off
   - "Footnotes" - A short press in reading mode opens the footnotes submenu; if only one footnote is present on the page, the referenced page is opened directly. The short press on the power button can be used to select the footnote in the submenu, and to go back to the original page after finish reading the footnote (like the back button).
   - "Refresh" - A short press triggers a manual full-screen refresh, useful for clearing ghosting
+<<<<<<< HEAD
 - **Quick-return from footnotes**: Toggles on and off the quick return functionality from the footnotes. When the functionality is active, a short press of the power button will act as the back button from the footnotes page.
 
 #### 3.6.4 System
@@ -292,6 +317,27 @@ The Settings screen allows you to configure the device's behavior. There are a f
 - **ryOS Books**: Browse and download books from online catalogs. A ryOS Books catalog is prefilled; you can edit it or add more servers (including Calibre OPDS). See [ryOS Books (Multiple Libraries)](#365-ryos-books-multiple-libraries) below.
 
 - **Clear Reading Cache**: Clear the internal SD card cache.
+=======
+- **Quick-return from footnotes**: Toggles on and off the quick return functionality from the footnotes. When the functionality it's active, a short press of the power button will act as the back button from the footnotes page.
+
+#### 3.6.4 System
+
+- **Time to Sleep**: Set the duration of inactivity before the device automatically goes to sleep; options are 1, 3, 5, 10 (default), 15 or 30 minutes.
+
+- **Wi-Fi Networks**: Connect to Wi-Fi networks for file transfers and firmware updates.
+
+- **KOReader Sync**: Options for setting up KOReader for syncing book progress.
+
+- **OPDS Servers**: Manage one or more OPDS [(Open Publication Distribution System)](https://en.wikipedia.org/wiki/Open_Publication_Distribution_System) libraries for browsing and downloading books. See [OPDS Servers (Multiple Libraries)](#365-opds-servers-multiple-libraries) below.
+
+- **Clear Reading Cache**: Clear the internal SD card cache.
+
+- **Check for updates**: Check for Crosspoint firmware updates over Wi-Fi. Firmware can also be updated without a USB connection by placing a `firmware.bin` file on the SD card.
+
+- **Language**: Set the UI language. CrossPoint supports 24 languages: English, Spanish, French, German, Czech, Brazilian Portuguese, Russian, Swedish, Romanian, Catalan, Ukrainian, Belarusian, Italian, Polish, Finnish, Danish, Dutch, Turkish, Kazakh, Hungarian, Lithuanian, Slovenian, Valencian, and Hebrew.
+
+- **Manage Fonts**: Browse, download, and manage custom font families installed from the SD card. See [Custom Fonts (SD Card)](#38-custom-fonts-sd-card) for more information.
+>>>>>>> upstream/master
 
 - **Check for updates**: Check the latest `ryokun6/crossmux` GitHub release and install the firmware asset matching the current international or Chinese build.
 
@@ -307,13 +353,24 @@ ryOS CrossMux supports browsing online book catalogs (OPDS). **ryOS Books** (`ht
 
 1. Open **Settings -> System -> ryOS Books**.
 
+<<<<<<< HEAD
+=======
+1. Open **Settings -> System -> OPDS Servers**.
+
+>>>>>>> upstream/master
 2. Select **Add Server** to create a new entry, or select an existing server to edit it.
 
 3. Configure these fields:
    
+<<<<<<< HEAD
    - **Server Name**: Optional display name (for example, "ryOS Books" or "Home Calibre").
    
    - **Server URL**: Full catalog root URL (for Calibre Content Server, usually ends with `/opds`).
+=======
+   - **Server Name**: Optional display name (for example, "Home Calibre" or "Public Catalog").
+   
+   - **OPDS Server URL**: Full catalog root URL (for Calibre Content Server, usually ends with `/opds`).
+>>>>>>> upstream/master
    
    - **Username / Password**: Optional credentials for authenticated servers.
 
@@ -330,17 +387,29 @@ You can also manage book servers from the web interface while in File Transfer m
 2. Open `http://<device-ip>/settings`.
 3. Use the **ryOS Books** card to add, edit, or delete entries.
 
+<<<<<<< HEAD
 For web-based Wi-Fi network management, see [Web Settings (Wi-Fi + ryOS Books)](#366-web-settings-wi-fi--ryos-books).
 
 #### 3.6.6 Web Settings (Wi-Fi + ryOS Books)
 
 While in **File Transfer** mode, the web settings page includes management cards for **Wi-Fi Networks**, **ryOS Books**, and editable **ryOS Cloud Sync** fields.
+=======
+For web-based Wi-Fi network management, see [Web Settings (Wi-Fi + OPDS)](#366-web-settings-wi-fi--opds).
+
+#### 3.6.6 Web Settings (Wi-Fi + OPDS)
+
+While in **File Transfer** mode, the web settings page includes management cards for both **Wi-Fi Networks** and **OPDS Servers**.
+>>>>>>> upstream/master
 
 1. On device: open **File Transfer** and connect through **Join a Network** or **Create Hotspot**.
 2. In a browser, open `http://<device-ip>/settings` or `http://crosspoint.local`.
 3. In **Wi-Fi Networks**, add, edit, or delete saved network entries (SSID + optional password).
+<<<<<<< HEAD
 4. In **ryOS Books**, add, edit, or delete book catalogs.
 5. In **ryOS Cloud Sync**, set username, password, and sync server URL.
+=======
+4. In **OPDS Servers**, add, edit, or delete OPDS catalogs.
+>>>>>>> upstream/master
 
 Behavior notes:
 
@@ -356,6 +425,7 @@ ryOS CrossMux syncs reading progress with **ryOS Cloud Sync** by default (`https
 
 1. Create a ryOS Cloud Sync account (if you do not already have one) at [https://os.ryo.lu](https://os.ryo.lu), or use credentials you already share with KOReader on the same server.
 
+<<<<<<< HEAD
 2. On each ryOS CrossMux device:
    
    - Go to **Settings -> System -> ryOS Cloud Sync**.
@@ -363,6 +433,30 @@ ryOS CrossMux syncs reading progress with **ryOS Cloud Sync** by default (`https
    - Set **Username** and **Password** (enter the plain password; ryOS CrossMux computes MD5 internally, and use the same values on all devices).
    
    - Confirm **Sync Server URL** is `https://os.ryo.lu/api/kosync` (prefilled; leave as-is unless you use a custom server).
+=======
+```bash
+USERNAME="user"
+PASSWORD="pass"
+PASSWORD_MD5="$(printf '%s' "$PASSWORD" | openssl md5 | awk '{print $2}')"
+
+curl -i "https://sync.koreader.rocks/users/create" \
+  -H "Accept: application/vnd.koreader.v1+json" \
+  -H "Content-Type: application/json" \
+  --data "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD_MD5\"}"
+```
+
+Already have KOReader Sync credentials? Skip registration; basic sync only requires using the same existing username/password on all devices.
+
+When this returns `HTTP 402` with `{"code":2002,"message":"Username is already registered."}`, pick a different username or use that existing account.
+
+2. On each CrossPoint device:
+   
+   - Go to **Settings -> System -> KOReader Sync**.
+   
+   - Set **Username** and **Password** (enter the plain password; CrossPoint computes MD5 internally, and use the same values on all devices).
+   
+   - Set **Sync Server URL** to `https://sync.koreader.rocks`, or leave it empty (both use the same default KOReader sync server).
+>>>>>>> upstream/master
    
    - Run **Authenticate**.
 
@@ -412,7 +506,11 @@ curl -H "Accept: application/vnd.koreader.v1+json" "http://<server-ip>:17200/hea
 ```
 
 3. Register a user once.
+<<<<<<< HEAD
    ryOS CrossMux authenticates against KOReader-compatible sync (`koreader/kosync`) using an MD5 key, so register using the MD5 of your password:
+=======
+   CrossPoint authenticates against KOReader Sync (`koreader/kosync`) using an MD5 key, so register using the MD5 of your password:
+>>>>>>> upstream/master
 
 > [!WARNING]
 > Sending a reusable MD5-derived password over plain HTTP is insecure.
@@ -433,11 +531,19 @@ curl -i "http://<server-ip>:17200/users/create" \
 
 If this returns `HTTP 402` with `{"code":2002,"message":"Username is already registered."}`, the account already exists.
 
+<<<<<<< HEAD
 4. On each ryOS CrossMux device:
    
    - Go to **Settings -> System -> ryOS Cloud Sync**.
    
    - Set **Username** and **Password** (enter the plain password; ryOS CrossMux computes MD5 internally, and use the same values on all devices).
+=======
+4. On each CrossPoint device:
+   
+   - Go to **Settings -> System -> KOReader Sync**.
+   
+   - Set **Username** and **Password** (enter the plain password; CrossPoint computes MD5 internally, and use the same values on all devices).
+>>>>>>> upstream/master
    
    - Set **Sync Server URL** to `http://<server-ip>:17200`.
    
@@ -457,8 +563,13 @@ The **Sleep Screen** setting controls what is displayed when the device goes to 
 
 | Mode               | Behavior                                                                                                                     |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+<<<<<<< HEAD
 | **Dark** (default) | The ryOS CrossMux logo on a dark background.                                                                                    |
 | **Light**          | The ryOS CrossMux logo on a white background.                                                                                   |
+=======
+| **Dark** (default) | The CrossPoint logo on a dark background.                                                                                    |
+| **Light**          | The CrossPoint logo on a white background.                                                                                   |
+>>>>>>> upstream/master
 | **Custom**         | A custom image from the SD card (see below). Falls back to **Dark** if no custom image is found.                             |
 | **Cover**          | The cover of the currently open book. Falls back to **Dark** if no book is open.                                             |
 | **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading. |
@@ -492,13 +603,21 @@ To use custom sleep images, set the sleep screen mode to **Custom** or **Cover +
 
 ### 3.8 Custom Fonts (SD Card)
 
+<<<<<<< HEAD
 ryOS CrossMux supports loading additional fonts from the SD card, extending beyond the two built-in families (Noto Serif, Noto Sans). Custom fonts can include extended Unicode coverage, enabling CJK (Chinese, Japanese, Korean) and other scripts.
+=======
+CrossPoint supports loading additional fonts from the SD card, extending beyond the two built-in families (Noto Serif, Noto Sans). Custom fonts can include extended Unicode coverage, enabling CJK (Chinese, Japanese, Korean) and other scripts.
+>>>>>>> upstream/master
 
 There are three ways to install fonts:
 
 1. **Download from device (recommended):** Go to **Settings -> System -> Manage Fonts**, browse the available font families, and select one to download over Wi-Fi.
 2. **Upload via web interface:** While in **File Transfer** mode, open the web UI in a browser and navigate to the **Fonts** tab to upload `.cpfont` files.
+<<<<<<< HEAD
 3. **Manual SD card copy:** Download font files from this repo’s [Releases](https://github.com/ryokun6/crossmux/releases) (`sd-fonts-*` tags) and copy them to `/.fonts/` (preferred) or `/fonts/` on your SD card.
+=======
+3. **Manual SD card copy:** Download font files from the [crosspoint-fonts repository](https://github.com/crosspoint-reader/crosspoint-fonts) and copy them to `/.fonts/` (preferred) or `/fonts/` on your SD card.
+>>>>>>> upstream/master
 
 Once installed, custom fonts appear in **Settings → Reader → Font Family** alongside the built-in fonts.
 
@@ -547,7 +666,11 @@ If the device goes to sleep or you close the book while viewing a footnote, the 
 * **Return to Home:** Press the **Back** button to close the book and return to the **[Home](#31-home-screen)** screen.
 * **Return to Browse Files:** Press and hold the **Back** button to close the book and return to the **[Browse Files](#33-browse-files-screen)** screen.
 * **Reader Menu:** Press **Confirm** to open the **[Reader Menu](#5-reader-menu)**, which includes chapter navigation, reading options, and more.
+<<<<<<< HEAD
 * **Long-press Confirm (configurable):** Holding **Confirm** runs the function chosen by the **Long-press Menu** setting in **[Controls Settings](#363-controls)** — "Bookmark" (default) drops a bookmark, "Cloud Sync" launches ryOS Cloud Sync, "Disabled" does nothing. A short press always opens the Reader Menu.
+=======
+* **Long-press Confirm (configurable):** Holding **Confirm** runs the function chosen by the **Long-press Menu** setting in **[Controls Settings](#363-controls)** — "Bookmark" (default) drops a bookmark, "KOSync" launches KOReader Sync, "Disabled" does nothing. A short press always opens the Reader Menu.
+>>>>>>> upstream/master
 
 ### Supported Languages
 
@@ -557,7 +680,11 @@ ryOS CrossMux renders text using the following Unicode character blocks, enablin
 * **Cyrillic Script (Standard and Extended):** Covers Russian, Ukrainian, Belarusian, Bulgarian, Serbian, Macedonian, Kazakh, Kyrgyz, Mongolian, and others.
 * **Vietnamese:** Supported via extended Latin glyph coverage in the built-in reader fonts.
 
+<<<<<<< HEAD
 On the **international** build, built-in reader fonts do not cover Chinese, Japanese, Korean, Arabic, Greek, Hebrew, or Farsi — install custom SD card fonts for those scripts (see [Custom Fonts (SD Card)](#38-custom-fonts-sd-card)). The **Chinese** build (`gh_release_tc`) embeds Traditional CJK bitmap fonts and remaps Simplified codepoints at lookup time; its UI language `中文` uses Traditional Chinese strings.
+=======
+What is not supported with built-in reader fonts: Chinese, Japanese, Korean, Arabic, Greek, Hebrew, and Farsi. However, **CJK, Hebrew, Greek, and other extended scripts can be enabled by installing custom SD card fonts** — see [Custom Fonts (SD Card)](#38-custom-fonts-sd-card).
+>>>>>>> upstream/master
 
 ---
 
@@ -575,7 +702,11 @@ Available options include:
 - **Take screenshot** – Save a screenshot of the current page to the `screenshots/` folder.
 - **Show page as QR** – Display a QR code encoding the current reading position.
 - **Go Home** – Close the book and return to the Home screen.
+<<<<<<< HEAD
 - **Sync Progress** – Push or pull reading progress with ryOS Cloud Sync (see [ryOS Cloud Sync Quick Setup](#367-ryos-cloud-sync-quick-setup)).
+=======
+- **Sync Progress** – Push or pull reading progress with a KOReader sync server (see [KOReader Sync Quick Setup](#367-koreader-sync-quick-setup)).
+>>>>>>> upstream/master
 - **Delete Book Cache** – Clear the cached layout data for the current book, forcing a re-index on next open.
 
 Press **Back** at any time to close the menu and return to your current page.
@@ -615,7 +746,11 @@ Please note that this firmware is currently in active development. The following
 
 If an issue or crash is encountered while using Crosspoint, feel free to raise an issue ticket and attach the logs.
 
+<<<<<<< HEAD
 **Crash reports on SD card:** After a crash, ryOS CrossMux automatically saves a crash report to the SD card (no USB connection needed). Check the root of the SD card for a crash log file and include it with any bug report.
+=======
+**Crash reports on SD card:** After a crash, CrossPoint automatically saves a crash report to the SD card (no USB connection needed). Check the root of the SD card for a crash log file and include it with any bug report.
+>>>>>>> upstream/master
 
 **Serial monitor logs:** For more detailed debugging, connect the device to a computer and run the custom debugging monitor script (requires Python 3 with `pyserial`, `colorama`, and `matplotlib`; install via `pip3 install pyserial colorama matplotlib`):
 

@@ -397,11 +397,15 @@ bool Epub::load(const bool buildIfMissing, const bool skipLoadingCss) {
         }
         bookMetadataCache.reset();
         parseCssFiles();
+<<<<<<< HEAD
         bookMetadataCache = makeUniqueNoThrow<BookMetadataCache>(cachePath);
         if (!bookMetadataCache) {
           LOG_ERR("EBP", "OOM allocating BookMetadataCache after CSS rebuild");
           return false;
         }
+=======
+        bookMetadataCache.reset(new BookMetadataCache(cachePath));
+>>>>>>> upstream/master
         if (!bookMetadataCache->load()) {
           LOG_ERR("EBP", "Failed to reload cache after CSS rebuild");
           return false;

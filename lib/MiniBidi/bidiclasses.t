@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 /* bidiclasses.t — bidi class table for CrossPoint RTL (Hebrew/Arabic) epub.
  *
  * Coverage rationale:
@@ -14,6 +15,20 @@
  *   Arabic ranges are sourced from Unicode UCD extracted/DerivedBidiClass.txt
  *   (values verified against Unicode 17.0.0).
  *
+=======
+/* bidiclasses.t — bidi class table for CrossPoint Hebrew/English epub.
+ *
+ * Coverage rationale:
+ *   Hebrew + English is the primary target. However, CrossPoint renders
+ *   Latin and Cyrillic scripts for many other languages, so these MUST be
+ *   classified as L (not fall through to ON) to avoid regression when they
+ *   appear adjacent to Hebrew runs.
+ *
+ *   Scripts NOT in this table fall through to ON — correct per UAX#9 for
+ *   scripts CrossPoint's fonts don't support (CJK, Arabic, Devanagari, etc.)
+ *   ON is the right class for "unknown" — it behaves neutrally.
+ *
+>>>>>>> upstream/master
  * Entries sorted ascending by first (binary search requirement).
  */
 
@@ -88,6 +103,7 @@
 {0x05D0, 0x05EA, R},    /* alef … tav */
 {0x05F0, 0x05F4, R},    /* alternative forms + geresh/gershayim */
 
+<<<<<<< HEAD
 /* ── Arabic / Perso-Arabic (DerivedBidiClass.txt) ───────────────────── */
 /* Letters are AL (Arabic Letter), harakat/marks are NSM, Arabic-Indic
    digits are AN, extended (Farsi/Urdu) digits are EN.
@@ -118,6 +134,8 @@
 {0x06F0, 0x06F9, EN},   /* extended Arabic-Indic digits ۰-۹ (Farsi/Urdu) — EN per UCD */
 {0x06FA, 0x06FF, AL},
 
+=======
+>>>>>>> upstream/master
 /* ── Latin Extended Additional (L) ─────────────────────────────────── */
 /* Covers accented chars for Vietnamese, Welsh, Romanian, etc.
    Not currently rendered by CrossPoint fonts, but costs only 2 table rows. */
@@ -144,6 +162,7 @@
 {0x2069, 0x2069, PDI},
 {0x206A, 0x206F, BN},
 
+<<<<<<< HEAD
 /* ── Arabic presentation forms (output of do_shape()) ───────────────── */
 /* Contextual/ligature forms emitted by the shaper must classify as AL so
    a reshaped line still resolves RTL. Ranges per DerivedBidiClass.txt;
@@ -152,6 +171,8 @@
 {0xFBD3, 0xFBFF, AL},   /* Presentation Forms-A: NG … Farsi Yeh forms */
 {0xFE70, 0xFE74, AL},   /* Presentation Forms-B: harakat isolated forms */
 {0xFE76, 0xFEFC, AL},   /* Presentation Forms-B: contextual forms + Lam-Alef ligatures */
+=======
+>>>>>>> upstream/master
 
 /* ── Byte Order Mark ────────────────────────────────────────────────── */
 {0xFEFF, 0xFEFF, BN},

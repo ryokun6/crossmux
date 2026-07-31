@@ -11,6 +11,7 @@ extern "C" {
 #include <Utf8.h>
 
 #include <cstring>
+<<<<<<< HEAD
 #include <mutex>
 
 // Guards the static bidi_char buffers in applyBidiVisual() and
@@ -18,6 +19,8 @@ extern "C" {
 // this mutex serialises access so multi-core callers don't corrupt each
 // other's intermediate state.
 static std::mutex bidiMutex;
+=======
+>>>>>>> upstream/master
 
 namespace {
 
@@ -75,6 +78,7 @@ int detectParagraphLevel(const char* utf8, const int fallbackLevel, const int ma
   return fallbackLevel & 1;
 }
 
+<<<<<<< HEAD
 bool isTransparentMark(const uint32_t cp) {
   // RTL-script combining marks: Hebrew niqqud/cantillation and Arabic
   // harakat/Quranic annotation.  Transparent for Arabic joining (do_shape
@@ -94,6 +98,13 @@ bool applyBidiVisual(const char* utf8, std::string& out, int paragraphLevel) {
   int count = 0;
   int lastBase = -1;           // last non-formatter character (mintty's ibase)
   uint8_t pendingJoiners = 0;  // ZWJ/ZWNJ seen since lastBase
+=======
+bool applyBidiVisual(const char* utf8, std::string& out, int paragraphLevel) {
+  if (!utf8 || !*utf8) return false;
+
+  static bidi_char line[BIDI_MAX_LINE];
+  int count = 0;
+>>>>>>> upstream/master
   auto* p = reinterpret_cast<const unsigned char*>(utf8);
   while (*p) {
     if (count >= BIDI_MAX_LINE) {
@@ -105,6 +116,7 @@ bool applyBidiVisual(const char* utf8, std::string& out, int paragraphLevel) {
     if (!cp || cp == REPLACEMENT_GLYPH) break;
     line[count].origwc = line[count].wc = cp;
     line[count].index = static_cast<uint16_t>(count);
+<<<<<<< HEAD
     line[count].joiners = 0;
 
     // Flag Arabic joining formatters mintty-style (termline.c): the ZWJ/ZWNJ
@@ -120,12 +132,15 @@ bool applyBidiVisual(const char* utf8, std::string& out, int paragraphLevel) {
       pendingJoiners = 0;
       lastBase = count;
     }
+=======
+>>>>>>> upstream/master
     count++;
   }
   if (!count) return false;
 
   const bool autodir = (paragraphLevel < 0);
   const int level = autodir ? 0 : (paragraphLevel & 1);
+<<<<<<< HEAD
 
   // Order matters (mintty does the same): do_bidi() first to obtain visual
   // order, then do_shape() — contextual forms are resolved from *visual*
@@ -165,6 +180,14 @@ bool applyBidiVisual(const char* utf8, std::string& out, int paragraphLevel) {
       }
       i = j - 1;
     }
+=======
+  do_bidi(autodir, level, line, count);
+
+  out.clear();
+  out.reserve(std::strlen(utf8));
+  for (int i = 0; i < count; i++) {
+    utf8AppendCodepoint(line[i].wc, out);
+>>>>>>> upstream/master
   }
   return true;
 }
@@ -174,7 +197,10 @@ bool computeVisualWordOrder(const std::vector<std::string>& words, bool paragrap
   visualOrder.clear();
   const size_t nWords = words.size();
   if (nWords <= 1 || nWords > BIDI_MAX_LINE) return false;
+<<<<<<< HEAD
   const std::lock_guard<std::mutex> lock(bidiMutex);
+=======
+>>>>>>> upstream/master
 
   static bidi_char line[BIDI_MAX_LINE];
   int count = 0;
@@ -191,7 +217,10 @@ bool computeVisualWordOrder(const std::vector<std::string>& words, bool paragrap
       if (!cp || cp == REPLACEMENT_GLYPH) break;
       line[count].origwc = line[count].wc = cp;
       line[count].index = static_cast<uint16_t>(w);
+<<<<<<< HEAD
       line[count].joiners = 0;
+=======
+>>>>>>> upstream/master
       count++;
     }
 
@@ -202,7 +231,10 @@ bool computeVisualWordOrder(const std::vector<std::string>& words, bool paragrap
       }
       line[count].origwc = line[count].wc = ' ';
       line[count].index = static_cast<uint16_t>(nWords);
+<<<<<<< HEAD
       line[count].joiners = 0;
+=======
+>>>>>>> upstream/master
       count++;
     }
   }

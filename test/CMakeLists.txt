@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
+<<<<<<< HEAD
 project(crosspoint_reader_tests C CXX)
+=======
+project(crosspoint_reader_tests CXX)
+>>>>>>> upstream/master
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -43,9 +47,12 @@ add_subdirectory(release_json_parser)
 add_subdirectory(differential_rounding)
 add_subdirectory(hyphenation_eval)
 add_subdirectory(utf8_compose)
+<<<<<<< HEAD
 add_subdirectory(opds_filename)
 add_subdirectory(minibidi_arabic)
 add_subdirectory(combining_marks)
 add_subdirectory(time_utils)
 add_subdirectory(weread)
 add_subdirectory(sd_card_font_cache_format)
+=======
+>>>>>>> upstream/master

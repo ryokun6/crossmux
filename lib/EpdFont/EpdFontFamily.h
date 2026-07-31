@@ -12,6 +12,7 @@ class EpdFontFamily {
     BOLD = 1,
     ITALIC = 2,
     BOLD_ITALIC = 3,
+<<<<<<< HEAD
     UNDERLINE = 4,       // drawn as a line below baseline by TextBlock::render()
     STRIKETHROUGH = 8,   // drawn as a line through midline by TextBlock::render()
     SUP = 16,            // superscript: glyph scaled 50%, raised ~40% of ascender
@@ -22,6 +23,13 @@ class EpdFontFamily {
   static constexpr bool hasTextDecoration(const Style style) {
     return (static_cast<uint8_t>(style) & TEXT_DECORATION_MASK) != 0;
   }
+=======
+    UNDERLINE = 4,      // drawn as a line below baseline by TextBlock::render()
+    STRIKETHROUGH = 8,  // drawn as a line through midline by TextBlock::render()
+    SUP = 16,           // superscript: glyph scaled 50%, raised ~40% of ascender
+    SUB = 32,           // subscript: glyph scaled 50%, lowered ~25% of ascender
+  };
+>>>>>>> upstream/master
 
   explicit EpdFontFamily(const EpdFont* regular, const EpdFont* bold = nullptr, const EpdFont* italic = nullptr,
                          const EpdFont* boldItalic = nullptr)

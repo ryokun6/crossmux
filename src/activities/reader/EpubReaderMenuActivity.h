@@ -17,7 +17,10 @@ class EpubReaderMenuActivity final : public Activity {
     GO_TO_PERCENT,
     AUTO_PAGE_TURN,
     ROTATE_SCREEN,
+<<<<<<< HEAD
     TOGGLE_WRITING_MODE,
+=======
+>>>>>>> upstream/master
     BOOKMARKS,
     TOGGLE_BOOKMARK,
     SCREENSHOT,
@@ -30,8 +33,12 @@ class EpubReaderMenuActivity final : public Activity {
 
   explicit EpubReaderMenuActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const std::string& title,
                                   const int currentPage, const int totalPages, const int bookProgressPercent,
+<<<<<<< HEAD
                                   const uint8_t currentOrientation, const uint8_t currentWritingMode,
                                   const bool hasFootnotes, bool hasBookmarks);
+=======
+                                  const uint8_t currentOrientation, const bool hasFootnotes, bool hasBookmarks);
+>>>>>>> upstream/master
 
   void onEnter() override;
   void onExit() override;

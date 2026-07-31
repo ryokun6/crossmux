@@ -120,6 +120,7 @@ TextBlock::TextBlock(const std::vector<std::string>& words, const std::vector<in
     return;
   }
 
+<<<<<<< HEAD
   numWords = static_cast<uint16_t>(words.size());
   focusPresent = hasFocus;
   if (numWords == 0) {
@@ -274,6 +275,27 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
       renderer.drawTextRotated90CCW(fontId, drawX, drawY, word, true, currentStyle);
       continue;
     }
+=======
+  const bool scanning = renderer.isFontCacheScanning();
+  const int ascender = renderer.getFontAscenderSize(fontId);
+  for (size_t i = 0; i < words.size(); i++) {
+    const int wordX = wordXpos[i] + x;
+    const EpdFontFamily::Style currentStyle = wordStyles[i];
+    const auto baseDir = static_cast<BidiUtils::BidiBaseDir>(
+        BidiUtils::detectParagraphLevel(words[i].c_str(), blockStyle.isRtl ? 1 : 0));
+    const uint8_t boundary = hasFocus ? wordFocusBoundary[i] : 0;
+>>>>>>> upstream/master
+
+    // SUP/SUB shift the baseline passed to drawText; the glyph is also scaled 50% inside
+    // drawText, so these offsets are chosen relative to the full-size ascender:
+    //   SUP: raise by 40% of ascender — sits clearly above the cap-height
+    //   SUB: lower by 25% of ascender — descends below baseline without clashing with ascenders below
+    int wordY = y;
+    if ((currentStyle & EpdFontFamily::SUP) != 0) {
+      wordY -= ascender * 2 / 5;
+    } else if ((currentStyle & EpdFontFamily::SUB) != 0) {
+      wordY += ascender / 4;
+    }
 
     if (boundary > 0) {
       // Focus split: draw bold prefix, then the regular suffix at a pre-computed x offset.
@@ -286,6 +308,7 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
           std::min<size_t>({static_cast<size_t>(boundary), static_cast<size_t>(wordTextLen(i)), sizeof(boldBuf) - 1});
       memcpy(boldBuf, word, boldLen);
       boldBuf[boldLen] = '\0';
+<<<<<<< HEAD
       renderer.drawText(fontId, drawX, drawY, boldBuf, true, boldStyle, baseDir);
       const int suffixX = drawX + focusSuffixX(i);
       renderer.drawText(fontId, suffixX, drawY, word + boldLen, true, currentStyle, baseDir);
@@ -347,6 +370,25 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
       }
     } else {
       flushDecorations();
+=======
+      renderer.drawText(fontId, wordX, wordY, boldBuf, true, boldStyle, baseDir);
+      const int suffixX = wordX + wordFocusSuffixX[i];
+      renderer.drawText(fontId, suffixX, wordY, words[i].c_str() + boldLen, true, currentStyle, baseDir);
+    } else {
+      renderer.drawText(fontId, wordX, wordY, words[i].c_str(), true, currentStyle, baseDir);
+    }
+
+    if (!scanning && (currentStyle & EpdFontFamily::UNDERLINE) != 0) {
+      const std::string& w = words[i];
+      int underlineWidth = renderer.getTextWidth(fontId, w.c_str(), currentStyle, baseDir);
+      const int underlineY = wordY + ascender + 2;
+
+      if ((currentStyle & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0) {
+        underlineWidth = (underlineWidth + 1) / 2;
+      }
+
+      renderer.drawLine(wordX, underlineY, wordX + underlineWidth, underlineY, true);
+>>>>>>> upstream/master
     }
   }
   if (!verticalRtl) {
@@ -355,8 +397,20 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
 }
 
 bool TextBlock::serialize(HalFile& file) const {
+<<<<<<< HEAD
   if (!isValid) {
     LOG_ERR("TXB", "Serialization failed: invalid block");
+=======
+  // Focus annotations are optional; vectors are either empty (no splits in this block)
+  // or sized in lockstep with words[].
+  const bool hasFocus = !wordFocusBoundary.empty();
+  if (words.size() != wordXpos.size() || words.size() != wordStyles.size() ||
+      (hasFocus && (words.size() != wordFocusBoundary.size() || words.size() != wordFocusSuffixX.size()))) {
+    LOG_ERR("TXB", "Serialization failed: size mismatch (words=%u, xpos=%u, styles=%u, boundary=%u, suffixX=%u)\n",
+            static_cast<uint32_t>(words.size()), static_cast<uint32_t>(wordXpos.size()),
+            static_cast<uint32_t>(wordStyles.size()), static_cast<uint32_t>(wordFocusBoundary.size()),
+            static_cast<uint32_t>(wordFocusSuffixX.size()));
+>>>>>>> upstream/master
     return false;
   }
 
@@ -394,7 +448,10 @@ bool TextBlock::serialize(HalFile& file) const {
   serialization::writePod(file, blockStyle.textIndentDefined);
   serialization::writePod(file, blockStyle.isRtl);
   serialization::writePod(file, blockStyle.directionDefined);
+<<<<<<< HEAD
   serialization::writePod(file, blockStyle.isVerticalRtl);
+=======
+>>>>>>> upstream/master
 
   return true;
 }
@@ -484,7 +541,10 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
   serialization::readPod(file, blockStyle.textIndentDefined);
   serialization::readPod(file, blockStyle.isRtl);
   serialization::readPod(file, blockStyle.directionDefined);
+<<<<<<< HEAD
   serialization::readPod(file, blockStyle.isVerticalRtl);
+=======
+>>>>>>> upstream/master
 
   return block;
 }

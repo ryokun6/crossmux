@@ -43,6 +43,13 @@ static_assert(!shouldSkipLargeOnlyImage(512, 512, 400, 300), "Large figures must
 // on resource-constrained devices (~380KB heap). TOC anchors bypass this cap.
 constexpr size_t MAX_ANCHORS_PER_CHAPTER = 1024;
 
+// Hard cap on the number of anchor IDs recorded per chapter. Legitimate navigation
+// anchors (TOC entries, footnotes, cross-references) rarely exceed a few hundred per
+// chapter. A runaway count usually means a converter injected machine-generated IDs on
+// every text fragment (e.g. Kobo KePub spans). The cap prevents unbounded heap growth
+// on resource-constrained devices (~380KB heap). TOC anchors bypass this cap.
+constexpr size_t MAX_ANCHORS_PER_CHAPTER = 1024;
+
 constexpr const char* HEADER_TAGS[] = {"h1", "h2", "h3", "h4", "h5", "h6"};
 constexpr const char* BLOCK_TAGS[] = {"p", "li", "div", "br", "blockquote"};
 constexpr const char* BOLD_TAGS[] = {"b", "strong"};
@@ -70,6 +77,7 @@ const char* getAttribute(const XML_Char** atts, const char* attrName) {
   return nullptr;
 }
 
+<<<<<<< HEAD
 constexpr char asciiLower(const char c) { return (c >= 'A' && c <= 'Z') ? static_cast<char>(c + ('a' - 'A')) : c; }
 
 constexpr bool containsAsciiCaseInsensitive(const char* text, const char* needle) {
@@ -115,6 +123,8 @@ bool isSemanticSeparatorImage(const std::string& src, const std::string& alt, co
          hasSeparatorHint(getAttribute(atts, "id")) || hasSeparatorHint(getAttribute(atts, "epub:type"));
 }
 
+=======
+>>>>>>> upstream/master
 // Returns true if the HTML element is a purely inline, non-navigable wrapper.
 // IDs on these elements are never meaningful navigation targets in epub content.
 // Reading-system converters (Kobo KePub, Calibre, etc.) frequently inject thousands
@@ -204,6 +214,7 @@ void ChapterHtmlSlimParser::updateEffectiveInlineStyle() {
   }
 }
 
+<<<<<<< HEAD
 bool ChapterHtmlSlimParser::startNewPage() {
   if (allocationFailed) return false;  // already out of memory; don't thrash the heap retrying
   currentPage = makeUniqueNoThrow<Page>();
@@ -215,6 +226,8 @@ bool ChapterHtmlSlimParser::startNewPage() {
   return true;
 }
 
+=======
+>>>>>>> upstream/master
 void ChapterHtmlSlimParser::flushPendingAnchor() {
   if (pendingAnchorId.empty()) return;
 
@@ -224,7 +237,11 @@ void ChapterHtmlSlimParser::flushPendingAnchor() {
     if (currentPage && !currentPage->elements.empty()) {
       completePageFn(std::move(currentPage), xpathParagraphIndex, xpathListItemIndex);
       completedPageCount++;
+<<<<<<< HEAD
       if (!startNewPage()) return;
+=======
+      currentPage.reset(new Page());
+>>>>>>> upstream/master
       currentPageNextY = 0;
     }
   }
@@ -311,6 +328,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
       // open. Merge those into the new style so the first child in a container inherits
       // the container's vertical spacing.
       const auto style = currentTextBlock->getBlockStyle();
+<<<<<<< HEAD
       BlockStyle incoming = blockStyle;
       if (style.fromBrElement) {
         // The empty block was created by a <br> section separator. Inject a full line of
@@ -325,6 +343,9 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
       }
       currentTextBlock->setBlockStyle(combined);
       verticalBlockStartSpacingApplied = false;
+=======
+      currentTextBlock->setBlockStyle(style.getCombinedBlockStyle(blockStyle, BlockStyle::CombineAxis::Vertical));
+>>>>>>> upstream/master
 
       flushPendingAnchor();
       return;
@@ -335,6 +356,7 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
   // If the pending anchor is a TOC chapter boundary, force a page break after the previous
   // block is flushed so the chapter starts on a fresh page.
   flushPendingAnchor();
+<<<<<<< HEAD
   currentTextBlock = makeUniqueNoThrow<ParsedText>(extraParagraphSpacing, hyphenationEnabled, focusReadingEnabled,
                                                    punctCompressionEnabled, blockStyle);
   if (!currentTextBlock) {
@@ -348,6 +370,9 @@ void ChapterHtmlSlimParser::startNewTextBlock(const BlockStyle& blockStyle) {
     currentTextBlock->setBlockStyle(style);
   }
   verticalBlockStartSpacingApplied = false;
+=======
+  currentTextBlock.reset(new ParsedText(extraParagraphSpacing, hyphenationEnabled, focusReadingEnabled, blockStyle));
+>>>>>>> upstream/master
   wordsExtractedInBlock = 0;
 }
 
@@ -1525,9 +1550,15 @@ bool ChapterHtmlSlimParser::beginParse() {
   // Using DefaultHandlerExpand preserves normal entity expansion from DOCTYPE
   XML_SetDefaultHandlerExpand(xmlParser_, defaultHandlerExpand);
 
+<<<<<<< HEAD
   if (!Storage.openFileForRead("EHP", filepath, parseFile_)) {
     destroyXmlParser(xmlParser_);
     xmlParser_ = nullptr;
+=======
+  HalFile file;
+  if (!Storage.openFileForRead("EHP", filepath, file)) {
+    destroyXmlParser(parser);
+>>>>>>> upstream/master
     return false;
   }
 

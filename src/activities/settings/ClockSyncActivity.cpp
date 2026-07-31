@@ -43,6 +43,7 @@ void ClockSyncActivity::onExit() {
 
 void ClockSyncActivity::launchWifiSelection() {
   LOG_INF("CLK", "Manual sync requested without WiFi, launching WiFi selection");
+<<<<<<< HEAD
   // ActivityManager owns the picker across frames; stack lifetime is insufficient.
   auto activity = makeUniqueNoThrow<WifiSelectionActivity>(renderer, mappedInput);
   if (!activity) {
@@ -52,6 +53,9 @@ void ClockSyncActivity::launchWifiSelection() {
     return;
   }
   startActivityForResult(std::move(activity),
+=======
+  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
+>>>>>>> upstream/master
                          [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
 }
 
@@ -62,14 +66,22 @@ void ClockSyncActivity::onWifiSelectionComplete(const bool connected) {
     return;
   }
 
+<<<<<<< HEAD
   state = State::Syncing;
+=======
+  state = SYNCING;
+>>>>>>> upstream/master
   requestUpdate();
 }
 
 void ClockSyncActivity::runSync() {
   if (WiFi.status() != WL_CONNECTED) {
     LOG_INF("CLK", "Manual sync requested but WiFi is not connected after selection");
+<<<<<<< HEAD
     state = State::NoWifi;
+=======
+    state = NO_WIFI;
+>>>>>>> upstream/master
     requestUpdate();
     return;
   }
@@ -98,9 +110,13 @@ void ClockSyncActivity::loop() {
     return;
   }
 
+<<<<<<< HEAD
   int x = 0;
   int y = 0;
   if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) {
+=======
+  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+>>>>>>> upstream/master
     finish();
   }
 }
@@ -139,7 +155,11 @@ void ClockSyncActivity::render(RenderLock&&) {
       break;
   }
 
+<<<<<<< HEAD
   if (state != State::Syncing) {
+=======
+  if (state != SYNCING) {
+>>>>>>> upstream/master
     const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
   }

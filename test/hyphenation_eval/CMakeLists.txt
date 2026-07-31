@@ -22,6 +22,7 @@ target_link_libraries(HyphenationEvaluationTest PRIVATE
 )
 
 gtest_discover_tests(HyphenationEvaluationTest)
+<<<<<<< HEAD
 
 # Same sources with ENABLE_CJK_VERSION — mirrors TC/SC/JA/KO firmware.
 add_executable(HyphenationCjkSkuTest
@@ -48,3 +49,5 @@ target_link_libraries(HyphenationCjkSkuTest PRIVATE
 )
 
 gtest_discover_tests(HyphenationCjkSkuTest)
+=======
+>>>>>>> upstream/master

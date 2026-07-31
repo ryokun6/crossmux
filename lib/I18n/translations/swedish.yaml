@@ -260,7 +260,11 @@ STR_REMAP_FRONT_BUTTONS: "Ändra frontknappar"
 STR_BOOKMARKS: "Bokmärken"
 STR_BOOKMARK_ADDED: "Bokmärke tillagt."
 STR_BOOKMARK_REMOVED: "Bokmärke borttaget."
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "OPDS-webbläsare"
+>>>>>>> upstream/master
 STR_SEARCH: "Sök"
 STR_COVER_CUSTOM: "Omslag + Valfri"
 STR_QUICK_RESUME: "Snabb återupptagning"
@@ -335,7 +339,11 @@ STR_ADD_SERVER: "Lägg till server"
 STR_SERVER_NAME: "Servernamn"
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Ta bort server"
+<<<<<<< HEAD
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_OPDS_SERVERS: "OPDS-servrar"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "Automatisk vändning aktiverad: "
 STR_AUTO_TURN_PAGES_PER_MIN: "Automatisk vändning (sidor per minut)"
 STR_MANAGE_FONTS: "Hantera teckensnitt"

@@ -129,9 +129,13 @@ static uint8_t lookupKernClass(const EpdKernClassEntry* entries, const uint16_t 
 }
 
 int8_t EpdFont::getKerning(const uint32_t leftCp, const uint32_t rightCp) const {
+<<<<<<< HEAD
   const uint32_t left = resolveCnCodepoint(leftCp);
   const uint32_t right = resolveCnCodepoint(rightCp);
   if (utf8IsCjkBreakable(left) || utf8IsCjkBreakable(right)) {
+=======
+  if (utf8IsCjkBreakable(leftCp) || utf8IsCjkBreakable(rightCp)) {
+>>>>>>> upstream/master
     return 0;
   }
   if (!data->kernMatrix) {

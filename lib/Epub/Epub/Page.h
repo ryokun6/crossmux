@@ -89,7 +89,10 @@ class Page {
 
   void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
   void renderImages(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
+<<<<<<< HEAD
   void renderImagesNeedingDecode(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
+=======
+>>>>>>> upstream/master
   bool serialize(HalFile& file) const;
   static std::unique_ptr<Page> deserialize(HalFile& file);
 

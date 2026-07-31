@@ -24,7 +24,10 @@ class ParsedText {
   bool extraParagraphSpacing;
   bool hyphenationEnabled;
   bool focusReadingEnabled;
+<<<<<<< HEAD
   bool punctCompressionEnabled;
+=======
+>>>>>>> upstream/master
   bool isNaturalAlign;
   bool hasRtlWord;
   std::vector<std::string> reorderedWordsScratch;
@@ -32,12 +35,18 @@ class ParsedText {
   std::vector<uint16_t> reorderedWidthsScratch;
   std::vector<bool> reorderedContinuesScratch;
   std::vector<bool> reorderedNoSpaceBeforeScratch;
+<<<<<<< HEAD
   std::vector<bool> reorderedSpaceBeforeScratch;
   std::vector<bool> reorderedFocusSuffixScratch;
   std::vector<uint16_t> visualOrderScratch;
 
   void reserveForTokens(size_t extraTokens, size_t extraBytes);
   bool tryReserveForTokens(size_t extraTokens, size_t extraBytes);
+=======
+  std::vector<bool> reorderedFocusSuffixScratch;
+  std::vector<uint16_t> visualOrderScratch;
+
+>>>>>>> upstream/master
   int resolveFirstLineIndent(bool isFirstLine, const GfxRenderer& renderer, int fontId) const;
   std::vector<size_t> computeLineBreaks(const GfxRenderer& renderer, int fontId, int pageWidth,
                                         std::vector<uint16_t>& wordWidths, std::vector<bool>& continuesVec,
@@ -62,7 +71,10 @@ class ParsedText {
         extraParagraphSpacing(extraParagraphSpacing),
         hyphenationEnabled(hyphenationEnabled),
         focusReadingEnabled(focusReadingEnabled),
+<<<<<<< HEAD
         punctCompressionEnabled(punctCompressionEnabled),
+=======
+>>>>>>> upstream/master
         isNaturalAlign(false),
         hasRtlWord(false) {}
   ~ParsedText() = default;
@@ -79,6 +91,7 @@ class ParsedText {
   bool isEmpty() const { return words.empty(); }
   void layoutAndExtractLines(const GfxRenderer& renderer, int fontId, uint16_t viewportWidth,
                              const std::function<void(std::shared_ptr<TextBlock>)>& processLine,
+<<<<<<< HEAD
                              bool includeLastLine = true, uint16_t viewportHeight = 0);
 
  private:
@@ -90,4 +103,7 @@ class ParsedText {
                              const std::function<void(std::shared_ptr<TextBlock>)>& processLine);
   std::vector<size_t> computeVerticalColumnBreaks(const GfxRenderer& renderer, int fontId, int columnHeight,
                                                   const std::vector<uint16_t>& verticalExtents);
+=======
+                             bool includeLastLine = true);
+>>>>>>> upstream/master
 };

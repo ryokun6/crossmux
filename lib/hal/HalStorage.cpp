@@ -112,7 +112,11 @@ class HalFile::Impl {
   // trips FreeRTOS's xTaskPriorityDisinherit assert. The FsFile member
   // destructor (DESTRUCTOR_CLOSES_FILE=1) will close() again after the lock
   // releases, but close() on an already-closed FsFile is a no-op. See SdFat
+<<<<<<< HEAD
   // issue #518 and the HAL note in AGENTS.md.
+=======
+  // issue #518 and the HAL note in CLAUDE.md.
+>>>>>>> upstream/master
   ~Impl() {
     HalStorage::StorageLock lock;
     file.close();

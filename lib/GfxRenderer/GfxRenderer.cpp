@@ -1,8 +1,11 @@
 #include "GfxRenderer.h"
 
 #include <BidiUtils.h>
+<<<<<<< HEAD
 #include <BuildScratch.h>
 #include <DirectPixelWriter.h>
+=======
+>>>>>>> upstream/master
 #include <FontDecompressor.h>
 #include <HalGPIO.h>
 #include <Logging.h>
@@ -35,6 +38,10 @@ const EpdGlyph* getGlyphMaybeReportMissing(FontCacheManager* fcm, const EpdFontF
   return glyph;
 }
 #endif
+}  // namespace
+
+namespace {
+const char* resolveVisualText(const char* text, std::string& visualBuffer, BidiUtils::BidiBaseDir baseDir);
 }  // namespace
 
 namespace {
@@ -106,6 +113,7 @@ void GfxRenderer::begin() {
   bwBufferChunks.assign((frameBufferSize + BW_BUFFER_CHUNK_SIZE - 1) / BW_BUFFER_CHUNK_SIZE, nullptr);
 }
 
+<<<<<<< HEAD
 void GfxRenderer::releaseFrameBufferForBuild() {
   uint32_t size = 0;
   uint8_t* scratch = display.lendFrameBufferStorage(&size);
@@ -137,6 +145,8 @@ void GfxRenderer::FrameBufferLoan::end() {
   }
 }
 
+=======
+>>>>>>> upstream/master
 bool GfxRenderer::isFontCacheScanning() const { return fontCacheManager_ && fontCacheManager_->isScanning(); }
 
 void GfxRenderer::insertFont(const int fontId, EpdFontFamily font) {
@@ -204,6 +214,7 @@ enum class TextRotation { None, Rotated90CW, Rotated90CCW };
 //
 // The advance width is also halved in drawText() so layout reserves exactly the right
 // horizontal space for the scaled glyph.
+<<<<<<< HEAD
 template <TextRotation rotation = TextRotation::None>
 static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMode renderMode,
                              const EpdFontFamily& fontFamily, const uint32_t cp, int cursorX, int cursorY,
@@ -212,6 +223,15 @@ static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMod
   const EpdGlyph* glyph = fontFamily.getGlyph(cp, style, &fontData);
   if (!glyph || !fontData) return;
 
+=======
+static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMode renderMode,
+                             const EpdFontFamily& fontFamily, const uint32_t cp, int cursorX, int cursorY,
+                             const bool pixelState, const EpdFontFamily::Style style) {
+  const EpdGlyph* glyph = fontFamily.getGlyph(cp, style);
+  if (!glyph) return;
+
+  const EpdFontData* fontData = fontFamily.getData(style);
+>>>>>>> upstream/master
   const uint8_t* bitmap = renderer.getGlyphBitmap(fontData, glyph);
   if (!bitmap) return;
 
@@ -223,6 +243,7 @@ static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMod
   // pixel offset from the (already-shifted) cursor position.
   const int baseX = cursorX + glyph->left / 2;
   const int baseY = cursorY - glyph->top / 2;
+<<<<<<< HEAD
   const auto drawScaledPixel = [&](const int dstX, const int dstY) {
     if constexpr (rotation == TextRotation::Rotated90CW) {
       renderer.drawPixel(cursorX + fontData->ascender / 2 - glyph->top / 2 + dstY, cursorY - glyph->left / 2 - dstX,
@@ -233,6 +254,8 @@ static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMod
       renderer.drawPixel(baseX + dstX, baseY + dstY, pixelState);
     }
   };
+=======
+>>>>>>> upstream/master
 
   if (fontData->is2Bit) {
     // 2-bit packed format: 4 pixels per byte, MSB first, 2 bits per pixel.
@@ -253,7 +276,11 @@ static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMod
           }
         }
         if (maxRaw >= 2 || coverage >= 2) {
+<<<<<<< HEAD
           drawScaledPixel(dstX, dstY);
+=======
+          renderer.drawPixel(baseX + dstX, baseY + dstY, pixelState);
+>>>>>>> upstream/master
         }
       }
     }
@@ -275,7 +302,11 @@ static void renderCharScaled(const GfxRenderer& renderer, GfxRenderer::RenderMod
           }
         }
         if (hasInk) {
+<<<<<<< HEAD
           drawScaledPixel(dstX, dstY);
+=======
+          renderer.drawPixel(baseX + dstX, baseY + dstY, pixelState);
+>>>>>>> upstream/master
         }
       }
     }
@@ -311,6 +342,7 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
     if (!renderer.glyphIntersectsStrip(ob, ib - (width - 1), ob + height - 1, ib)) {
       return;
     }
+<<<<<<< HEAD
   } else if constexpr (rotation == TextRotation::Rotated90CCW) {
     // Upright (left+gx, -top+gy) → CCW90: (top-gy, left+gx)
     const int x0 = cursorX + top - (height - 1);
@@ -320,6 +352,8 @@ static void renderCharImpl(const GfxRenderer& renderer, GfxRenderer::RenderMode 
     if (!renderer.glyphIntersectsStrip(x0, y0, x1, y1)) {
       return;
     }
+=======
+>>>>>>> upstream/master
   } else {
     const int gx0 = cursorX + left;
     const int gy0 = cursorY - top;
@@ -566,9 +600,12 @@ void GfxRenderer::drawText(const int fontId, const int x, const int y, const cha
       continue;
     }
 
+<<<<<<< HEAD
 #ifdef ENABLE_CHINESE_VERSION
     const uint32_t sourceCp = cp;
 #endif
+=======
+>>>>>>> upstream/master
     cp = font.applyLigatures(cp, textCursor, style);
 
     // Differential rounding: snap (previous advance + current kern) as one unit so
@@ -1441,11 +1478,15 @@ void GfxRenderer::clearScreen(const uint8_t color) const {
   start_ms = millis();
   if (_stripActive) {
     // Clear only the active band's scratch, not the shared framebuffer.
+<<<<<<< HEAD
     const size_t bytes = static_cast<size_t>(panelWidthBytes) * _stripRows;
     memset(_stripBuf, color, bytes);
     if (_stripBufMsb) {
       memset(_stripBufMsb, color, bytes);
     }
+=======
+    memset(_stripBuf, color, static_cast<size_t>(panelWidthBytes) * _stripRows);
+>>>>>>> upstream/master
     return;
   }
   display.clearScreen(color);
@@ -1457,6 +1498,7 @@ void GfxRenderer::beginStripTarget(uint8_t* scratch, int stripY0, int stripRows)
   // the downstream uint16_t cast in writeGrayscalePlaneStrip.
   assert(scratch != nullptr && stripRows > 0 && stripY0 >= 0 && stripY0 <= static_cast<int>(panelHeight) - stripRows);
   _stripBuf = scratch;
+<<<<<<< HEAD
   _stripBufMsb = nullptr;
   _stripY0 = stripY0;
   _stripRows = stripRows;
@@ -1468,6 +1510,8 @@ void GfxRenderer::beginDualStripTarget(uint8_t* scratchLsb, uint8_t* scratchMsb,
          stripY0 <= static_cast<int>(panelHeight) - stripRows);
   _stripBuf = scratchLsb;
   _stripBufMsb = scratchMsb;
+=======
+>>>>>>> upstream/master
   _stripY0 = stripY0;
   _stripRows = stripRows;
   _stripActive = true;
@@ -1476,7 +1520,10 @@ void GfxRenderer::beginDualStripTarget(uint8_t* scratchLsb, uint8_t* scratchMsb,
 void GfxRenderer::endStripTarget() const {
   _stripActive = false;
   _stripBuf = nullptr;
+<<<<<<< HEAD
   _stripBufMsb = nullptr;
+=======
+>>>>>>> upstream/master
   _stripY0 = 0;
   _stripRows = 0;
 }
@@ -1851,6 +1898,7 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, EpdFontFami
   // where kern/lig data was not loaded.
   auto sdIt = sdCardFonts_.find(fontId);
   if (sdIt != sdCardFonts_.end() && sdIt->second->hasAdvanceTable()) {
+<<<<<<< HEAD
     const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
     const uint8_t styleIdx = resolveSdCardStyle(*sdIt->second, style);
     const auto fontIt = fontMap.find(fontId);
@@ -1858,6 +1906,26 @@ int GfxRenderer::getTextAdvanceX(const int fontId, const char* text, EpdFontFami
     // One SD open per string on misses (not per codepoint) — see measureUtf8AdvancePx.
     // Missing glyphs (Latin-only SD + CJK) take advance from the builtin fallback.
     return sdIt->second->measureUtf8AdvancePx(text, styleIdx, isSupSub, fallback);
+=======
+    int32_t widthFP = 0;
+    const bool isSupSub = (style & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0;
+    const uint8_t styleIdx = resolveSdCardStyle(*sdIt->second, style);
+    const auto fontIt = fontMap.find(fontId);
+    if (fontIt == fontMap.end()) {
+      LOG_ERR("GFX", "Font %d not found", fontId);
+      return 0;
+    }
+    const auto& font = fontIt->second;
+    while (uint32_t cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&text))) {
+      int32_t advFP = sdIt->second->getAdvance(cp, styleIdx);
+      if (advFP == 0 && !utf8IsCombiningMark(cp)) {
+        const EpdGlyph* glyph = font.getGlyph(cp, style);
+        advFP = glyph ? glyph->advanceX : 0;
+      }
+      widthFP += isSupSub ? (advFP + 1) / 2 : advFP;
+    }
+    return fp4::toPixel(widthFP);
+>>>>>>> upstream/master
   }
 
   const auto fontIt = fontMap.find(fontId);

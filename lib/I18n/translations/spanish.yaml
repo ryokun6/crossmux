@@ -142,7 +142,11 @@ STR_ORIENTATION_INVERTED: "Al revés"
 STR_LANDSCAPE_CCW: "Horizontal (antihorario)"
 STR_PREV_NEXT: "Ant./Sig."
 STR_NEXT_PREV: "Sig./Ant."
+<<<<<<< HEAD
 STR_KOSYNC: "Cloud Sync"
+=======
+STR_KOSYNC: "KOSync"
+>>>>>>> upstream/master
 STR_BOOKMARK_OPTION: "Marcador"
 STR_DISABLED: "Desactivados"
 STR_NOTO_SERIF: "Noto Serif"
@@ -262,7 +266,11 @@ STR_REMAP_FRONT_BUTTONS: "Reconfigurar botones frontales"
 STR_BOOKMARKS: "Marcadores"
 STR_BOOKMARK_ADDED: "Marcador añadido."
 STR_BOOKMARK_REMOVED: "Marcador eliminado."
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "Navegador OPDS"
+>>>>>>> upstream/master
 STR_SEARCH: "Buscar"
 STR_COVER_CUSTOM: "Portada + Pers."
 STR_QUICK_RESUME: "Reanudación rápida"
@@ -324,7 +332,11 @@ STR_UPLOAD: "Subir"
 STR_BOOK_S_STYLE: "Estilo del libro"
 STR_EMBEDDED_STYLE: "Estilo integrado"
 STR_FOCUS_READING: "Lectura enfocada"
+<<<<<<< HEAD
 STR_OPDS_SERVER_URL: "Server URL"
+=======
+STR_OPDS_SERVER_URL: "URL del servidor OPDS"
+>>>>>>> upstream/master
 STR_PWR_BTN_FOOTNOTE_BACK: "Retorno rápido desde las notas al pie"
 STR_SET_SLEEP_COVER: "Pant. sus."
 STR_FOOTNOTES: "Notas al pie"
@@ -338,7 +350,11 @@ STR_ADD_SERVER: "Agregar servidor"
 STR_SERVER_NAME: "Nombre de servidor"
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Borrar servidor"
+<<<<<<< HEAD
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_OPDS_SERVERS: "Servidores OPDS"
+>>>>>>> upstream/master
 STR_AUTO_TURN_ENABLED: "Avance activado: "
 STR_AUTO_TURN_PAGES_PER_MIN: "Avance auto. (pág./min)"
 STR_MANAGE_FONTS: "Gestionar tipografías"

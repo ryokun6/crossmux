@@ -140,7 +140,11 @@ STR_ORIENTATION_INVERTED: "Vertical 180°"
 STR_LANDSCAPE_CCW: "Horitzontal antihorari"
 STR_PREV_NEXT: "Anterior/Següent"
 STR_NEXT_PREV: "Següent/Anterior"
+<<<<<<< HEAD
 STR_KOSYNC: "Cloud Sync"
+=======
+STR_KOSYNC: "KOSync"
+>>>>>>> upstream/master
 STR_BOOKMARK_OPTION: "Punt de llibre"
 STR_DISABLED: "Desactivats"
 STR_NOTO_SERIF: "Noto Serif"
@@ -238,7 +242,11 @@ STR_REMAP_FRONT_BUTTONS: "Reassigna els botons frontals"
 STR_BOOKMARKS: "Punts de llibre"
 STR_BOOKMARK_ADDED: "S'ha afegit el punt de llibre."
 STR_BOOKMARK_REMOVED: "S'ha eliminat el punt de llibre."
+<<<<<<< HEAD
 STR_OPDS_BROWSER: "ryOS Books"
+=======
+STR_OPDS_BROWSER: "Navegador OPDS"
+>>>>>>> upstream/master
 STR_COVER_CUSTOM: "Portada + Personalitzat"
 STR_QUICK_RESUME: "Represa ràpida"
 STR_MENU_RECENT_BOOKS: "Llibres recents"
@@ -299,7 +307,11 @@ STR_UPLOAD: "Puja"
 STR_BOOK_S_STYLE: "Estil del llibre"
 STR_EMBEDDED_STYLE: "Estil incrustat"
 STR_FOCUS_READING: "Lectura enfocada"
+<<<<<<< HEAD
 STR_OPDS_SERVER_URL: "Server URL"
+=======
+STR_OPDS_SERVER_URL: "URL del servidor OPDS"
+>>>>>>> upstream/master
 STR_PWR_BTN_FOOTNOTE_BACK: "Retorn ràpid des de les notes al peu"
 STR_FOOTNOTES: "Notes al peu"
 STR_NO_FOOTNOTES: "No hi ha notes al peu en aquesta pàgina"
@@ -338,10 +350,16 @@ STR_SEARCH: "Cerca"
 STR_SET_SLEEP_COVER: "Fixa portada"
 STR_ADD_SERVER: "Afegeix servidor"
 STR_SERVER_NAME: "Nom del servidor"
+<<<<<<< HEAD
 STR_NO_SERVERS: "No book servers configured"
 STR_DELETE_SERVER: "Suprimeix el servidor"
 STR_DELETE_CONFIRM: "Voleu suprimir aquest servidor?"
 STR_OPDS_SERVERS: "ryOS Books"
+=======
+STR_NO_SERVERS: "No hi ha servidors OPDS configurats"
+STR_DELETE_SERVER: "Suprimeix el servidor"
+STR_OPDS_SERVERS: "Servidors OPDS"
+>>>>>>> upstream/master
 STR_MANAGE_FONTS: "Gestiona els tipus de lletra"
 STR_FONT_BROWSER: "Navegador de tipus de lletra"
 STR_LOADING_FONT_LIST: "S'està carregant la llista de tipus de lletra..."
@@ -350,6 +368,7 @@ STR_FONT_PREVIEW_TEXT: "Jove xef, porti whisky amb quinze glaçons d'hidrogen, c
 STR_FONT_INSTALLED: "Tipus de lletra instal·lat!"
 STR_FONT_INSTALL_FAILED: "Ha fallat la instal·lació del tipus de lletra"
 STR_INSTALLED: "Instal·lat"
+<<<<<<< HEAD
 STR_CONFIRM_DOWNLOAD_PROMPT: "Voleu descarregar?"
 STR_SD_CARD_FULL: "Espai insuficient a la targeta SD"
 STR_FILES_LABEL: "Fitxers: "
@@ -358,6 +377,10 @@ STR_REDOWNLOAD: "Torna a descarregar"
 STR_DOWNLOAD_ALL: "Descarrega-ho tot"
 STR_UPDATE_ALL: "Actualitza-ho tot"
 STR_ALL_FONTS_INSTALLED: "Tots els tipus de lletra estan instal·lats!"
+=======
+STR_DOWNLOAD_ALL: "Descarrega-ho tot"
+STR_UPDATE_ALL: "Actualitza-ho tot"
+>>>>>>> upstream/master
 STR_UPDATE_AVAILABLE: "Actualitza"
 STR_CRASH_TITLE: "Bloqueig del sistema"
 STR_CRASH_DESCRIPTION: "S'ha desat un informe detallat a crash_report.txt. Incloeu aquest fitxer a l'informe d'errors."
@@ -391,6 +414,7 @@ STR_FIRMWARE_WRITE_FAILED: "Ha fallat l'escriptura del firmware"
 STR_FIRMWARE_UPDATE_DO_NOT_POWER_OFF: "No apagueu el dispositiu!"
 STR_RECOVERY_MODE: "Mode de recuperació"
 STR_RECOVERY_MODE_HINT: "Poseu firmware.bin a l'arrel de la targeta SD i seleccioneu-lo"
+<<<<<<< HEAD
 STR_CALIBRE_URL_HINT: "Per al Calibre, afegiu /opds a la URL"
 STR_RESUME: "Continua"
 STR_INDEX_FAILED: "No s'ha pogut indexar: llibre no vàlid"
@@ -439,3 +463,5 @@ STR_FMT_TITLE: "Títol"
 STR_OPDS_SD_ROOT: "Arrel de la targeta SD"
 STR_ADD_HIDDEN_NETWORK: "Afegeix una xarxa oculta..."
 STR_ENTER_WIFI_SSID: "Introdueix el nom de la xarxa (SSID)"
+=======
+>>>>>>> upstream/master

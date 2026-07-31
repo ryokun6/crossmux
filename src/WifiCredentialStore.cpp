@@ -16,8 +16,69 @@ void WifiCredentialStore::toJson(JsonDocument& doc) const {
   }
 }
 
+<<<<<<< HEAD
 bool WifiCredentialStore::fromJson(JsonVariantConst doc) {
   lastConnectedSsid = doc["lastConnectedSsid"] | "";
+=======
+bool WifiCredentialStore::saveToFile() const {
+  Storage.mkdir("/.crosspoint");
+  return JsonSettingsIO::saveWifi(*this, WIFI_FILE_JSON);
+}
+
+bool WifiCredentialStore::loadFromFile() {
+  // Try JSON first
+  if (Storage.exists(WIFI_FILE_JSON)) {
+    String json = Storage.readFile(WIFI_FILE_JSON);
+    if (!json.isEmpty()) {
+      bool resave = false;
+      bool result = JsonSettingsIO::loadWifi(*this, json.c_str(), &resave);
+      if (result && resave) {
+        LOG_DBG("WCS", "Resaving JSON with obfuscated passwords");
+        saveToFile();
+      }
+      return result;
+    }
+  }
+
+  // Fall back to binary migration
+  if (Storage.exists(WIFI_FILE_BIN)) {
+    if (loadFromBinaryFile()) {
+      if (saveToFile()) {
+        Storage.rename(WIFI_FILE_BIN, WIFI_FILE_BAK);
+        LOG_DBG("WCS", "Migrated wifi.bin to wifi.json");
+        return true;
+      } else {
+        LOG_ERR("WCS", "Failed to save wifi during migration");
+        return false;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool WifiCredentialStore::loadFromBinaryFile() {
+  HalFile file;
+  if (!Storage.openFileForRead("WCS", WIFI_FILE_BIN, file)) {
+    return false;
+  }
+
+  uint8_t version;
+  serialization::readPod(file, version);
+  if (version > WIFI_FILE_VERSION) {
+    LOG_DBG("WCS", "Unknown file version: %u", version);
+    return false;
+  }
+
+  if (version >= 2) {
+    serialization::readString(file, lastConnectedSsid);
+  } else {
+    lastConnectedSsid.clear();
+  }
+
+  uint8_t count;
+  serialization::readPod(file, count);
+>>>>>>> upstream/master
 
   // Tolerate a missing/invalid 'credentials' key (treat as empty list); only
   // a JSON parse error is fatal. A null JsonArray iterates zero times.

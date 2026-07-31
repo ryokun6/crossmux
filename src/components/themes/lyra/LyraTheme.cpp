@@ -18,12 +18,15 @@
 #include "components/icons/book.h"
 #include "components/icons/book24.h"
 #include "components/icons/bookmark.h"
+<<<<<<< HEAD
 #ifdef ENABLE_CHINESE_VERSION
 #include "components/icons/chinese_chess.h"
 #endif
 #if defined(ENABLE_CHINESE_VERSION) && !defined(__EMSCRIPTEN__)
 #include "components/icons/weread.h"
 #endif
+=======
+>>>>>>> upstream/master
 #include "components/icons/cover.h"
 #include "components/icons/file24.h"
 #include "components/icons/folder.h"
@@ -90,6 +93,7 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return HotspotIcon;
       case UIIcon::Bookmark:
         return BookmarkIcon;
+<<<<<<< HEAD
       case UIIcon::Apps:
         return AppsIcon;
       case UIIcon::Sudoku:
@@ -112,6 +116,8 @@ const uint8_t* iconForName(UIIcon icon, int size) {
         return StandbyIcon;
       case UIIcon::Game2048:
         return Game2048Icon;
+=======
+>>>>>>> upstream/master
       default:
         return nullptr;
     }
@@ -241,6 +247,7 @@ void LyraTheme::drawTabBar(const GfxRenderer& renderer, Rect rect, const std::ve
   renderer.drawLine(rect.x, rect.y + rect.height - 1, rect.x + rect.width - 1, rect.y + rect.height - 1, true);
 }
 
+<<<<<<< HEAD
 bool LyraTheme::tabIndexFromPoint(const GfxRenderer& renderer, const Rect rect, const std::vector<TabInfo>& tabs,
                                   const int x, const int y, int& index) const {
   if (tabs.empty() || y < rect.y || y >= rect.y + rect.height) {
@@ -272,6 +279,11 @@ int LyraTheme::getListPageItems(int contentHeight, bool hasSubtitle) const {
   const int rowStep = getListRowStep(hasSubtitle);
   if (rowStep <= 0) return 1;
   return std::max(1, contentHeight / rowStep);
+=======
+int LyraTheme::getListPageItems(int contentHeight, bool hasSubtitle) const {
+  int rowHeight = (hasSubtitle) ? LyraMetrics::values.listWithSubtitleRowHeight : LyraMetrics::values.listRowHeight;
+  return contentHeight / rowHeight;
+>>>>>>> upstream/master
 }
 
 void LyraTheme::drawList(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,

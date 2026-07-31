@@ -8,23 +8,35 @@
 #include <GfxRenderer.h>
 #include <HalStorage.h>
 #include <I18n.h>
+<<<<<<< HEAD
 #include <InflateReader.h>
+=======
+>>>>>>> upstream/master
 #include <JsonSettingsIO.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <esp_system.h>
 
 #include <algorithm>
+<<<<<<< HEAD
 #include <cstring>
+=======
+>>>>>>> upstream/master
 #include <functional>
 #include <iterator>
 #include <limits>
 
+<<<<<<< HEAD
 #include "AchievementsStore.h"
 #include "BookmarkEntry.h"
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
 #include "DictionaryWordSelectActivity.h"
+=======
+#include "BookmarkEntry.h"
+#include "CrossPointSettings.h"
+#include "CrossPointState.h"
+>>>>>>> upstream/master
 #include "EpubReaderBookmarksActivity.h"
 #include "EpubReaderChapterSelectionActivity.h"
 #include "EpubReaderFootnotesActivity.h"
@@ -46,7 +58,10 @@
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+<<<<<<< HEAD
 #include "util/AchievementPopupUtils.h"
+=======
+>>>>>>> upstream/master
 #include "util/BookmarkUtil.h"
 #include "util/ScreenshotUtil.h"
 
@@ -238,6 +253,7 @@ void EpubReaderActivity::onEnter() {
 
   epub->setupCacheDir();
 
+<<<<<<< HEAD
 #ifdef ENABLE_CHINESE_VERSION
   wereadBookId_[0] = '\0';
   clearInitialProgressAfterSave_ = false;
@@ -248,6 +264,8 @@ void EpubReaderActivity::onEnter() {
   bool hasSavedProgress = false;
 #endif
 
+=======
+>>>>>>> upstream/master
   HalFile f;
   if (Storage.openFileForRead("ERS", epub->getCachePath() + "/progress.bin", f)) {
     uint8_t data[6];
@@ -306,6 +324,8 @@ void EpubReaderActivity::onEnter() {
   }
 #endif
 
+  loadCachedBookmarks();
+
   // Trigger first update
   requestUpdate();
 }
@@ -323,15 +343,21 @@ void EpubReaderActivity::onExit() {
 
   // Leaving mid-footnote loses the in-RAM return stack on deep sleep; persist the
   // pre-footnote position so the book reopens at the link origin, not the footnote.
+<<<<<<< HEAD
   // Runs before endSession() so the final stats progress reflects the link origin.
+=======
+>>>>>>> upstream/master
   if (footnoteDepth > 0 && epub) {
     const SavedPosition& origin = savedPositions[0];
     saveProgress(origin.spineIndex, origin.pageNumber, 0);
   }
 
+<<<<<<< HEAD
   READING_STATS.endSession();
   ACHIEVEMENTS.recordSessionEnded(READING_STATS.getLastSessionSnapshot());
   showPendingAchievementPopups(renderer);
+=======
+>>>>>>> upstream/master
   section.reset();
   InflateReader::releaseSharedDictionary();
   if (pendingReadFolderMove && epub) {
@@ -546,11 +572,14 @@ void EpubReaderActivity::loop() {
     }
   }
 
+<<<<<<< HEAD
   if (showDictionaryMessage && (millis() - dictionaryMessageTime) >= ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS) {
     showDictionaryMessage = false;
     requestUpdate();
   }
 
+=======
+>>>>>>> upstream/master
   if (showBookmarkMessage && (millis() - bookmarkMessageTime) >= ReaderUtils::BOOKMARK_MESSAGE_DURATION_MS) {
     showBookmarkMessage = false;
     requestUpdate();
@@ -571,6 +600,7 @@ void EpubReaderActivity::loop() {
         bookProgress = epub->calculateProgress(currentSpineIndex, chapterProgress) * 100.0f;
       }
       const int bookProgressPercent = clampPercent(static_cast<int>(bookProgress + 0.5f));
+<<<<<<< HEAD
       startActivityForResult(
           std::make_unique<EpubReaderMenuActivity>(renderer, mappedInput, epub->getTitle(), currentPage, totalPages,
                                                    bookProgressPercent, SETTINGS.orientation, SETTINGS.writingMode,
@@ -586,6 +616,20 @@ void EpubReaderActivity::loop() {
               onReaderMenuConfirm(static_cast<EpubReaderMenuActivity::MenuAction>(menu.action));
             }
           });
+=======
+      startActivityForResult(std::make_unique<EpubReaderMenuActivity>(
+                                 renderer, mappedInput, epub->getTitle(), currentPage, totalPages, bookProgressPercent,
+                                 SETTINGS.orientation, !currentPageFootnotes.empty(), !cachedBookmarks.empty()),
+                             [this](const ActivityResult& result) {
+                               // Always apply orientation change even if the menu was cancelled
+                               const auto& menu = std::get<MenuResult>(result.data);
+                               applyOrientation(menu.orientation);
+                               toggleAutoPageTurn(menu.pageTurnOption);
+                               if (!result.isCancelled) {
+                                 onReaderMenuConfirm(static_cast<EpubReaderMenuActivity::MenuAction>(menu.action));
+                               }
+                             });
+>>>>>>> upstream/master
     }
   }
 
@@ -603,6 +647,7 @@ void EpubReaderActivity::loop() {
         }
         break;
       case CrossPointSettings::LP_MENU_KOSYNC:
+<<<<<<< HEAD
         // Hold ~1s launches KOReader sync (or the credentials hint if not logged in).
         if (mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
           launchKOReaderSync();
@@ -616,6 +661,15 @@ void EpubReaderActivity::loop() {
           ignoreNextConfirmRelease = true;  // Prevent menu open on the release that follows
           openDictionaryWordSelect();
           return;
+=======
+        // Hold ~1s launches KOReader sync. If sync can't run (no credentials stored), fall
+        // through so the normal Confirm-release still opens the reader menu.
+        if (mappedInput.getHeldTime() >= ReaderUtils::GO_HOME_MS) {
+          if (launchKOReaderSync()) {
+            ignoreNextConfirmRelease = true;  // sync launched or error shown; suppress menu open
+            return;
+          }
+>>>>>>> upstream/master
         }
         break;
       case CrossPointSettings::LP_MENU_DISABLED:
@@ -822,7 +876,10 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       startActivityForResult(
           std::make_unique<EpubReaderChapterSelectionActivity>(renderer, mappedInput, epub, path, spineIdx),
           [this](const ActivityResult& result) {
+<<<<<<< HEAD
             READING_STATS.resumeSession();
+=======
+>>>>>>> upstream/master
             if (!result.isCancelled) {
               const auto& chapterResult = std::get<ChapterResult>(result.data);
               RenderLock lock(*this);
@@ -913,12 +970,26 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
       break;
     }
     case EpubReaderMenuActivity::MenuAction::SYNC: {
+<<<<<<< HEAD
 #ifdef ENABLE_CHINESE_VERSION
       if (wereadBookId_[0] && launchWeReadSync()) {
         break;
       }
 #endif
       launchKOReaderSync();
+=======
+      launchKOReaderSync();
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::BOOKMARKS: {
+      startActivityForResult(
+          std::make_unique<EpubReaderBookmarksActivity>(renderer, mappedInput, epub, epub->getPath()),
+          progressChangeResultHandler);
+      break;
+    }
+    case EpubReaderMenuActivity::MenuAction::TOGGLE_BOOKMARK: {
+      addBookmark();
+>>>>>>> upstream/master
       break;
     }
     case EpubReaderMenuActivity::MenuAction::BOOKMARKS: {
@@ -948,6 +1019,7 @@ void EpubReaderActivity::onReaderMenuConfirm(EpubReaderMenuActivity::MenuAction 
   }
 }
 
+<<<<<<< HEAD
 void EpubReaderActivity::openDictionaryWordSelect() {
   if (SETTINGS.dictionaryName[0] == '\0') {
     showDictionaryMessage = true;
@@ -985,6 +1057,10 @@ void EpubReaderActivity::launchKOReaderSync() {
                                                totalPages, SavedProgressPosition{}, std::string{}, std::nullopt));
     return;  // acted: showed credentials hint
   }
+=======
+bool EpubReaderActivity::launchKOReaderSync() {
+  if (!KOREADER_STORE.hasCredentials()) return false;  // no-op: nothing to launch
+>>>>>>> upstream/master
 
   const int currentPage = section ? section->currentPage : nextPageNumber;
   const int totalPages = section ? section->pageCount : cachedChapterTotalPageCount;
@@ -1010,7 +1086,11 @@ void EpubReaderActivity::launchKOReaderSync() {
     LOG_ERR("KOSync", "Aborting sync because current progress could not be saved");
     pendingSyncSaveError = true;
     requestUpdate();
+<<<<<<< HEAD
     return;  // acted: surfaced a save error to the user
+=======
+    return true;  // acted: surfaced a save error to the user
+>>>>>>> upstream/master
   }
 
   // Release Epub and Section to free ~65KB RAM for the TLS handshake.
@@ -1028,6 +1108,7 @@ void EpubReaderActivity::launchKOReaderSync() {
   activityManager.replaceActivity(std::make_unique<KOReaderSyncActivity>(
       renderer, mappedInput, savedEpubPath, currentSpineIndex, currentPage, totalPages, std::move(localKoPos),
       std::move(localChapterName), paragraphIndex));
+<<<<<<< HEAD
 }
 
 #ifdef ENABLE_CHINESE_VERSION
@@ -1086,6 +1167,11 @@ bool EpubReaderActivity::launchWeReadSync() {
 }
 #endif
 
+=======
+  return true;  // acted: launched the sync activity
+}
+
+>>>>>>> upstream/master
 void EpubReaderActivity::applyOrientation(const uint8_t orientation) {
   // No-op if the selected orientation matches current settings.
   if (SETTINGS.orientation == orientation) {
@@ -1459,6 +1545,8 @@ void EpubReaderActivity::render(RenderLock&& lock) {
 
   updateBookmarkFlag();
 
+  updateBookmarkFlag();
+
   {
     auto p = section->loadPageFromSectionFile();
     if (!p) {
@@ -1493,12 +1581,15 @@ void EpubReaderActivity::render(RenderLock&& lock) {
   if (showBookmarkMessage) {
     GUI.drawPopup(renderer, bookmarkRemoved ? tr(STR_BOOKMARK_REMOVED) : tr(STR_BOOKMARK_ADDED));
   }
+<<<<<<< HEAD
 
   if (showDictionaryMessage) {
     GUI.drawPopup(renderer, tr(STR_DICT_NO_DICT_SET));
   }
 
   lastRenderCompleteMs = millis();
+=======
+>>>>>>> upstream/master
 }
 
 void EpubReaderActivity::silentIndexNextChapterIfNeeded(const uint16_t viewportWidth, const uint16_t viewportHeight) {
@@ -1593,6 +1684,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   // Raw built-in fonts (GenSen) render directly and skip both the scan and its
   // temporary string.
   auto* fcm = renderer.getFontCacheManager();
+<<<<<<< HEAD
 #ifdef ENABLE_CHINESE_VERSION
   fcm->consumeMissingChineseCodepoint();  // discard status/UI glyphs left by the previous render
 #endif
@@ -1612,6 +1704,11 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     fcm->resetStats();
     rawFontCacheClear.emplace(*fcm);
   }
+=======
+  auto scope = fcm->createPrewarmScope();
+  page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);  // scan pass
+  scope.endScanAndPrewarm();
+>>>>>>> upstream/master
   const auto tPrewarm = millis();
   const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
   const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
@@ -1629,6 +1726,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     }
   };
 
+<<<<<<< HEAD
   page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
 #ifdef ENABLE_CHINESE_VERSION
   const uint32_t missingCodepoint = fcm->consumeMissingChineseCodepoint();
@@ -1637,6 +1735,20 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
     pendingMissingChineseCodepoint_.compare_exchange_strong(expected, missingCodepoint, std::memory_order_relaxed);
   }
 #endif
+=======
+  const bool pageHasImages = page->hasImages();
+  const bool needsTextGrayscale = SETTINGS.textAntiAliasing;
+  const bool needsAnyGrayscale = needsTextGrayscale || pageHasImages;
+  auto renderGrayscalePass = [&]() {
+    if (needsTextGrayscale) {
+      page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+    } else {
+      page->renderImages(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+    }
+  };
+
+  page->render(renderer, fontId, orientedMarginLeft, orientedMarginTop);
+>>>>>>> upstream/master
   renderStatusBar();
   const auto tBwRender = millis();
 
@@ -1672,6 +1784,7 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
   }
   const auto tDisplay = millis();
 
+<<<<<<< HEAD
   // Tiled grayscale leaves the BW framebuffer intact so no full-frame
   // storeBwBuffer is needed; controller RAM is re-synced from the live
   // framebuffer afterward. When the BW refresh above went out async and heap
@@ -1805,6 +1918,64 @@ void EpubReaderActivity::renderContents(std::unique_ptr<Page> page, const int or
                 tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayPlanes - tGrayStart,
                 tGrayDisplay - tGrayPlanes, tCleanup - tGrayDisplay, tEnd - t0);
       }
+=======
+  // Tiled grayscale: render each plane band-by-band into a small scratch and
+  // stream straight to the controller, leaving the BW framebuffer intact so no
+  // full-frame storeBwBuffer is needed; controller RAM is re-synced from the
+  // live framebuffer afterward. The page is re-rendered ceil(H/STRIP_ROWS) times
+  // per plane, but renderCharImpl culls out-of-band glyphs before decode so the
+  // cost stays close to one render. Both text (drawPixel) and images
+  // (DirectPixelWriter) honor the active strip target.
+  if (needsAnyGrayscale && renderer.supportsStripGrayscale()) {
+    constexpr int STRIP_ROWS = 80;
+    const int gh = renderer.getDisplayHeight();
+    const int gwBytes = renderer.getDisplayWidthBytes();
+
+    auto scratch = makeUniqueNoThrow<uint8_t[]>(static_cast<size_t>(gwBytes) * STRIP_ROWS);
+    if (!scratch) {
+      LOG_ERR("ERS", "OOM: grayscale strip scratch (%d bytes); skipping AA this page", gwBytes * STRIP_ROWS);
+    } else {
+      // Bands may be streamed in any order: X4 windows each via setRamArea, X3
+      // via PTL.
+      renderer.setRenderMode(GfxRenderer::GRAYSCALE_LSB);
+      for (int y = 0; y < gh; y += STRIP_ROWS) {
+        const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+        renderer.beginStripTarget(scratch.get(), y, rows);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
+        renderer.writeGrayscalePlaneStrip(true, scratch.get(), y, rows);
+      }
+      const auto tGrayLsb = millis();
+
+      // MSB plane.
+      renderer.setRenderMode(GfxRenderer::GRAYSCALE_MSB);
+      for (int y = 0; y < gh; y += STRIP_ROWS) {
+        const int rows = (gh - y < STRIP_ROWS) ? (gh - y) : STRIP_ROWS;
+        renderer.beginStripTarget(scratch.get(), y, rows);
+        renderer.clearScreen(0x00);
+        renderGrayscalePass();
+        renderer.endStripTarget();
+        renderer.writeGrayscalePlaneStrip(false, scratch.get(), y, rows);
+      }
+      const auto tGrayMsb = millis();
+
+      renderer.setRenderMode(GfxRenderer::BW);
+      renderer.displayGrayBuffer();
+      const auto tGrayDisplay = millis();
+
+      // BW framebuffer is intact; re-sync controller RAM for the next
+      // differential page turn directly from it.
+      renderer.cleanupGrayscaleWithFrameBuffer();
+      const auto tCleanup = millis();
+
+      const auto tEnd = millis();
+      LOG_DBG("ERS",
+              "Page render (tiled): prewarm=%lums bw_render=%lums display=%lums gray_lsb=%lums "
+              "gray_msb=%lums gray_display=%lums cleanup=%lums total=%lums",
+              tPrewarm - t0, tBwRender - tPrewarm, tDisplay - tBwRender, tGrayLsb - tDisplay, tGrayMsb - tGrayLsb,
+              tGrayDisplay - tGrayMsb, tCleanup - tGrayDisplay, tEnd - t0);
+>>>>>>> upstream/master
     }
   } else {
     // Fallback path for a controller without strip support. grayscale rendering

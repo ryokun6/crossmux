@@ -6,8 +6,11 @@
 !NotoSerif/**
 !NotoSans/
 !NotoSans/**
+<<<<<<< HEAD
 !NotoSansArabic/
 !NotoSansArabic/**
+=======
+>>>>>>> upstream/master
 !NotoSansHebrew/
 !NotoSansHebrew/**
 !OpenDyslexic/

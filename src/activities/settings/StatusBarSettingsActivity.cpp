@@ -83,6 +83,10 @@ void StatusBarSettingsActivity::onEnter() {
     SETTINGS.statusBarClock = CrossPointSettings::STATUS_BAR_CLOCK_MODE::STATUS_BAR_CLOCK_HIDE;
   }
 
+  if (SETTINGS.statusBarClock >= STATUS_BAR_CLOCK_ITEMS) {
+    SETTINGS.statusBarClock = CrossPointSettings::STATUS_BAR_CLOCK_MODE::STATUS_BAR_CLOCK_HIDE;
+  }
+
   requestUpdate();
 }
 
@@ -220,6 +224,17 @@ void StatusBarSettingsActivity::render(RenderLock&&) {
             return I18N.get(xtcStatusBarNames[SETTINGS.xtcStatusBarMode]);
           case ITEM_CLOCK:
             return I18N.get(statusBarClockNames[SETTINGS.statusBarClock]);
+<<<<<<< HEAD
+=======
+          case ITEM_CLOCK_FORMAT: {
+            const uint8_t fmt = SETTINGS.clockFormat < CLOCK_FORMAT_ITEMS ? SETTINGS.clockFormat : 0;
+            return std::string(I18N.get(clockFormatNames[fmt]));
+          }
+          case ITEM_CLOCK_UTC_OFFSET:
+            return formatUtcOffset(SETTINGS.clockUtcOffsetQ);
+          case ITEM_CLOCK_SYNC:
+            return SETTINGS.clockHasBeenSynced ? tr(STR_CLOCK_SYNCED) : tr(STR_NOT_SET);
+>>>>>>> upstream/master
           default:
             return tr(STR_HIDE);
         }

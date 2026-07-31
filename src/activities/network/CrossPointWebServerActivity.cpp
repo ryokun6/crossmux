@@ -250,6 +250,7 @@ void CrossPointWebServerActivity::startAccessPoint() {
   // Start DNS server for captive portal behavior
   // This redirects all DNS queries to our IP, making any domain typed resolve to us
   stopDnsServer();
+<<<<<<< HEAD
   // Raw pointer because stopDnsServer() owns the teardown (stop() then delete).
   dnsServer = new (std::nothrow) DNSServer();
   if (!dnsServer) {
@@ -261,6 +262,12 @@ void CrossPointWebServerActivity::startAccessPoint() {
     dnsServer->start(DNS_PORT, "*", apIP);
     LOG_DBG("WEBACT", "DNS server started for captive portal");
   }
+=======
+  dnsServer = new DNSServer();
+  dnsServer->setErrorReplyCode(DNSReplyCode::NoError);
+  dnsServer->start(DNS_PORT, "*", apIP);
+  LOG_DBG("WEBACT", "DNS server started for captive portal");
+>>>>>>> upstream/master
 
   LOG_DBG("WEBACT", "Free heap after AP start: %d bytes", ESP.getFreeHeap());
 

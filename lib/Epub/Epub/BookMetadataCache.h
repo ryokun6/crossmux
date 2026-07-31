@@ -57,11 +57,14 @@ class BookMetadataCache {
   // Temp file handles during build
   HalFile spineFile;
   HalFile tocFile;
+<<<<<<< HEAD
   // Buffers the per-entry tmp-file writes during the OPF/TOC passes: those
   // writes interleave with zip-inflate SD reads, and unbuffered they thrash
   // SdFat's shared sector cache (one 512B transaction per 4-byte pod). One
   // wrapper serves whichever pass is active (spine, then toc).
   std::unique_ptr<serialization::BufferedFileWriter> passOut;
+=======
+>>>>>>> upstream/master
 
   // Index for fast href→spineIndex lookup (used only for large EPUBs)
   struct SpineHrefIndexEntry {

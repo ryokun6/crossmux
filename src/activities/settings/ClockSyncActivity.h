@@ -4,7 +4,12 @@
 
 #include "activities/Activity.h"
 
+<<<<<<< HEAD
 // Manual one-shot clock sync. If WiFi is not connected yet, it reuses the
+=======
+// Manual NTP resync action. Runs a forced sync (bypassing the once-per-device debounce),
+// reports success/failure, then waits for Back. If WiFi is not connected yet, it reuses the
+>>>>>>> upstream/master
 // normal WiFi selection flow first.
 class ClockSyncActivity final : public Activity {
  public:

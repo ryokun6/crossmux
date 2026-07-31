@@ -11,7 +11,13 @@
 class Stream;
 
 /**
+<<<<<<< HEAD
  * HTTP client utility for fetching content and downloading files.
+=======
+ * HTTP client utility for fetching content and downloading files. Built on
+ * esp_http_client: https is verified against the CA bundle, plain http is
+ * used for local servers (transport is chosen from the URL scheme).
+>>>>>>> upstream/master
  */
 class HttpDownloader {
  public:
@@ -19,6 +25,10 @@ class HttpDownloader {
   // Called with each body chunk as it arrives; return false to abort. Lets a
   // streaming parser consume the response without buffering the whole body.
   using DataCallback = std::function<bool(const uint8_t* data, size_t len)>;
+<<<<<<< HEAD
+=======
+
+>>>>>>> upstream/master
   enum DownloadError {
     OK = 0,
     HTTP_ERROR,
