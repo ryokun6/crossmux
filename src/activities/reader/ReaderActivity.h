@@ -1,34 +1,82 @@
 #pragma once
+
+#include <atomic>
 #include <memory>
+#include <string>
+#include <utility>
 
+#include "EndOfBookOptions.h"
+#include "ReaderSession.h"
 #include "activities/Activity.h"
-#include "activities/home/FileBrowserActivity.h"
 
-class Epub;
-class Xtc;
-class Txt;
+class ReaderActivity : public Activity {
+ protected:
+  std::string bookPath;
+  int pagesUntilFullRefresh = 0;
+  bool forcedRefreshPending = false;
 
-class ReaderActivity final : public Activity {
-  std::string initialBookPath;
-  std::string currentBookPath;  // Track current book path for navigation
-  static std::unique_ptr<Epub> loadEpub(const std::string& path);
-  static std::unique_ptr<Xtc> loadXtc(const std::string& path);
-  static std::unique_ptr<Txt> loadTxt(const std::string& path);
-  static bool isXtcFile(const std::string& path);
-  static bool isTxtFile(const std::string& path);
-  static bool isBmpFile(const std::string& path);
+  std::unique_ptr<EndOfBookOptions> endOfBookOptions;
+  std::atomic<bool> endOfBookOptionsReady{false};
+  ReaderSession readerSession;
+  std::atomic<bool> pageRendered{false};
+  bool bookRemembered = false;
+  void markPageRendered() { pageRendered.store(true, std::memory_order_release); }
+  void rememberBookOnceRendered();
 
-  void goToLibrary(const std::string& fromBookPath = "");
-  void onGoToEpubReader(std::unique_ptr<Epub> epub);
-  void onGoToXtcReader(std::unique_ptr<Xtc> xtc);
-  void onGoToTxtReader(std::unique_ptr<Txt> txt);
-  void onGoToBmpViewer(const std::string& path);
+  explicit ReaderActivity(const char* name, GfxRenderer& renderer, MappedInputManager& mappedInput,
+                          std::string bookPath, bool allowFastInitialRefresh);
 
-  void onGoBack();
+  virtual bool loadBook() = 0;
+  // Called when loadBook() failed. Return true to keep the activity alive
+  // (e.g. showing a dialog); false finishes it (the default).
+  virtual bool handleLoadFailure() { return false; }
+  virtual std::string getBookTitle() const = 0;
+  virtual std::string getBookAuthor() const { return ""; }
+  virtual std::string getBookThumbBmpPath() const { return ""; }
+  // Whole-book progress for the reader.exit plugin event, reusing the
+  // per-reader ScreenshotInfo implementations.
+  //
+  // Upstream added this helper in d3e55c53 with an earlier slice of this
+  // feature, then removed it in c1e1fec3 as dead code once no caller remained
+  // ("removes unnecessary wrapper structs"). It is reinstated here because this
+  // change reintroduces the callers: ReaderActivity.cpp uses it for the progress
+  // string and for the session's render-complete basis points, and
+  // EpubReaderActivity overrides getProgressBasisPoints() and falls back to it.
+  int getProgressPercent() const { return getScreenshotInfo().progressPercent; }
+  virtual int getProgressBasisPoints() const { return getProgressPercent() * 100; }
+
+  virtual bool handleFormatInput() { return false; }
+  virtual bool pageTurn(bool isForward) = 0;
+  virtual bool skipPages(int amount) { return pageTurn(amount > 0); }
+  virtual bool isAtEndOfBook() const = 0;
+  virtual void onReturnFromEndOfBook() {}
+
+  virtual void renderBook() = 0;
+  virtual void applyInitialOrientation();
+  virtual void onEndOfBookRendered() {}
+
+  bool handleBackNavigation();
+  /** True while the end-of-book suggestion menu is on screen and owning input. */
+  bool endOfBookMenuActive() const;
+  bool handleEndOfBookMenu(bool suppressConfirmRelease = false);
+  bool handleEndOfBookPageTurn(bool prevTriggered, bool nextTriggered);
+  void clearEndOfBookOptionsIfNeeded();
+  void disableFastInitialRefresh();
+  void notePageTurn(bool forward, bool succeeded);
+  void flushReaderSession();
 
  public:
-  explicit ReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string initialBookPath)
-      : Activity("Reader", renderer, mappedInput), initialBookPath(std::move(initialBookPath)) {}
+  ~ReaderActivity() override = default;
+
+  static std::unique_ptr<ReaderActivity> create(GfxRenderer& renderer, MappedInputManager& mappedInput,
+                                                std::string path, bool allowFastInitialRefresh);
+
   void onEnter() override;
-  bool isReaderActivity() const override { return true; }
+  void onExit() override;
+  void prepareForSleep() override;
+  void loop() override;
+  void render(RenderLock&& lock) override;
+
+  bool isReaderActivity() const final { return true; }
+  bool handleForcedRefresh() final;
 };

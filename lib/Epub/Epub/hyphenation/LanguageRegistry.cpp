@@ -13,6 +13,7 @@
 #include "generated/hyph-fr.trie.h"
 #include "generated/hyph-it.trie.h"
 #include "generated/hyph-pl.trie.h"
+#include "generated/hyph-pt.trie.h"
 #include "generated/hyph-ru.trie.h"
 #include "generated/hyph-sv.trie.h"
 #include "generated/hyph-uk.trie.h"

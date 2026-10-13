@@ -2,11 +2,14 @@
 #include <HalStorage.h>
 
 #include <algorithm>
+#include <cstring>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "FootnoteEntry.h"
+#include "PageLink.h"
 #include "blocks/ImageBlock.h"
 #include "blocks/TextBlock.h"
 
@@ -30,12 +33,12 @@ class PageElement {
 
 // a line from a block element
 class PageLine final : public PageElement {
-  std::shared_ptr<TextBlock> block;
+  std::unique_ptr<TextBlock> block;
 
  public:
-  PageLine(std::shared_ptr<TextBlock> block, const int16_t xPos, const int16_t yPos)
+  PageLine(std::unique_ptr<TextBlock> block, const int16_t xPos, const int16_t yPos)
       : PageElement(xPos, yPos), block(std::move(block)) {}
-  const std::shared_ptr<TextBlock>& getBlock() const { return block; }
+  const std::unique_ptr<TextBlock>& getBlock() const { return block; }
   void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) override;
   bool serialize(HalFile& file) override;
   PageElementTag getTag() const override { return TAG_PageLine; }
@@ -44,15 +47,17 @@ class PageLine final : public PageElement {
 
 // New PageImage class
 class PageImage final : public PageElement {
-  std::shared_ptr<ImageBlock> imageBlock;
+  std::unique_ptr<ImageBlock> imageBlock;
 
  public:
-  PageImage(std::shared_ptr<ImageBlock> block, const int16_t xPos, const int16_t yPos)
+  PageImage(std::unique_ptr<ImageBlock> block, const int16_t xPos, const int16_t yPos)
       : PageElement(xPos, yPos), imageBlock(std::move(block)) {}
   void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) override;
+  void renderPlaceholder(GfxRenderer& renderer, int xOffset, int yOffset) const;
   bool serialize(HalFile& file) override;
   PageElementTag getTag() const override { return TAG_PageImage; }
   static std::unique_ptr<PageImage> deserialize(HalFile& file);
+  ImageBlock& getImageBlock() { return *imageBlock; }
   const ImageBlock& getImageBlock() const { return *imageBlock; }
 };
 
@@ -73,34 +78,39 @@ class PageHorizontalRule final : public PageElement {
 class Page {
  public:
   // the list of block index and line numbers on this page
-  std::vector<std::shared_ptr<PageElement>> elements;
-  std::vector<FootnoteEntry> footnotes;
-  static constexpr uint16_t MAX_FOOTNOTES_PER_PAGE = 16;
+  std::vector<std::unique_ptr<PageElement>> elements;
+  FootnoteList footnotes;
+  static constexpr uint16_t MAX_FOOTNOTES_PER_PAGE = FootnoteList::MAX_SIZE;
+  PageLinkList links;
+  static constexpr uint16_t MAX_LINKS_PER_PAGE = PageLinkList::MAX_SIZE;
 
-  void addFootnote(const char* number, const char* href) {
-    if (footnotes.size() >= MAX_FOOTNOTES_PER_PAGE) return;  // Cap per-page footnotes
-    FootnoteEntry entry;
-    strncpy(entry.number, number, sizeof(entry.number) - 1);
-    entry.number[sizeof(entry.number) - 1] = '\0';
-    strncpy(entry.href, href, sizeof(entry.href) - 1);
-    entry.href[sizeof(entry.href) - 1] = '\0';
-    footnotes.push_back(entry);
-  }
+  // Zero-based visible-codepoint offset where this page starts. Not part of the serialized page
+  // body (it lives in the section's visible-offset LUT); Section::loadPage* fills it in from the
+  // build LUT or the on-disk LUT while the page file is already open, so the reader can persist
+  // progress without a second section-file open per page turn.
+  uint32_t visibleTextOffset = 0;
+
+  void addFootnote(const char* number, const char* href);
+
+  bool addLink(const char* href, int16_t x, int16_t y, int16_t width, int16_t height);
 
   void render(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
   void renderImages(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
-  void renderImagesNeedingDecode(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
+  void renderWithImagePlaceholders(GfxRenderer& renderer, int fontId, int xOffset, int yOffset) const;
+  void extractImagesNeedingDecode();
+  bool warmImages(GfxRenderer& renderer, int xOffset, int yOffset, CancelCheck cancellation);
+  void cacheImagesNeedingDecode(GfxRenderer& renderer, int xOffset, int yOffset);
   bool serialize(HalFile& file) const;
-  static std::unique_ptr<Page> deserialize(HalFile& file);
+  static std::unique_ptr<Page> deserialize(HalFile& file, bool collectTouchLinks = true);
 
   // Check if page contains any images (used to force full refresh)
   bool hasImages() const {
     return std::any_of(elements.begin(), elements.end(),
-                       [](const std::shared_ptr<PageElement>& el) { return el->getTag() == TAG_PageImage; });
+                       [](const std::unique_ptr<PageElement>& el) { return el->getTag() == TAG_PageImage; });
   }
 
   bool hasImagesNeedingDecode() const {
-    return std::any_of(elements.begin(), elements.end(), [](const std::shared_ptr<PageElement>& element) {
+    return std::any_of(elements.begin(), elements.end(), [](const std::unique_ptr<PageElement>& element) {
       return element->getTag() == TAG_PageImage &&
              static_cast<const PageImage&>(*element).getImageBlock().needsDecode();
     });

@@ -86,28 +86,31 @@ bool KOReaderCredentialStore::loadFromBinaryFile() {
   }
 
   if (file.available()) {
-    serialization::readString(file, username);
+    if (!serialization::readString(file, username, serialization::MAX_TEXT_BYTES)) username.clear();
   } else {
     username.clear();
   }
 
   if (file.available()) {
-    serialization::readString(file, password);
+    if (!serialization::readString(file, password, serialization::MAX_TEXT_BYTES)) password.clear();
     legacyDeobfuscate(password);
   } else {
     password.clear();
   }
 
   if (file.available()) {
-    serialization::readString(file, serverUrl);
+    if (!serialization::readString(file, serverUrl, serialization::MAX_TEXT_BYTES)) serverUrl.clear();
   } else {
     serverUrl.clear();
   }
 
   if (file.available()) {
     uint8_t method;
-    serialization::readPod(file, method);
-    matchMethod = static_cast<DocumentMatchMethod>(method);
+    if (!serialization::readPod(file, method)) {
+      matchMethod = DocumentMatchMethod::FILENAME;
+    } else {
+      matchMethod = static_cast<DocumentMatchMethod>(method);
+    }
   } else {
     matchMethod = DocumentMatchMethod::FILENAME;
   }
@@ -170,6 +173,8 @@ std::string KOReaderCredentialStore::getBaseUrl() const {
 
   return url;
 }
+
+bool KOReaderCredentialStore::usesCrossPointSyncServer() const { return getBaseUrl() == DEFAULT_SERVER_URL; }
 
 void KOReaderCredentialStore::setMatchMethod(DocumentMatchMethod method) {
   matchMethod = method;

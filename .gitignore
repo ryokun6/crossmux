@@ -1,9 +1,14 @@
 .pio
+/.platformio
 .idea
 .DS_Store
 .vscode
+.zed
 open-x4-sdk
 fs_
+/simulator/build*/
+/simulator/arduino-host/build/
+/simulator/sd_root/
 lib/EpdFont/fontsrc
 lib/I18n/I18nKeys.h
 lib/I18n/I18nStrings.h
@@ -46,3 +51,6 @@ lib/EpdFont/builtinFonts/source/
 /CMakeLists.txt
 /dependencies.lock
 /sdkconfig.*
+sdkconfig.sticky
+sdkconfig.x4pro
+flake.*

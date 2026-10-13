@@ -12,7 +12,6 @@
 #include "components/FontPreloadView.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
-#include "images/Logo120.h"
 
 void BootActivity::onEnter() {
   Activity::onEnter();
@@ -26,14 +25,13 @@ void BootActivity::onEnter() {
 }
 
 void BootActivity::renderSplash() {
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-
-  renderer.clearScreen();
-  renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
-  renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_CROSSPOINT), true, EpdFontFamily::BOLD);
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight / 2 + 95, tr(STR_BOOTING));
-  renderer.drawCenteredText(SMALL_FONT_ID, pageHeight - 30, CROSSPOINT_VERSION);
+  GUI.drawSplash(renderer, tr(STR_BOOTING), CROSSPOINT_VERSION);
+#if FREEINK_DEVICE_EEGO_A4
+  // A4: the panel is being powered on for the first time here, and a FAST
+  // refresh on a freshly powered panel doesn't establish the frame (observed:
+  // splash never appears). Force the first paint to a full waveform.
+  renderer.requestNextFullRefresh();
+#endif
   renderer.displayBuffer();
 }
 
@@ -51,42 +49,55 @@ void BootActivity::runPostOta() {
 
   const auto* family = sdFontSystem.registry().findFamily(SETTINGS.sdFontFamilyName);
   const auto* file = family ? family->findNearestSize(SETTINGS.fontPointSize) : nullptr;
-  if (!file || SdCardFontCache::isValidFor(file->path.c_str())) return;
+  if (!file || family->vector) return;
+  auto result = SdCardFontCache::preflight(file->path.c_str());
+  if (result == SdCardFontCache::Result::AlreadyCached) return;
 
-  {
-    RenderLock lock(*this);
-    sdFontSystem.releaseLoadedFont(renderer);
-    completed_.store(0);
-    total_.store(1);
-    lastRequestedPercent_ = 0;
-    preloadPointSize_ = file->pointSize;
-    stage_.store(Stage::Copying);
+  if (result == SdCardFontCache::Result::Ok) {
+    {
+      RenderLock lock(*this);
+      sdFontSystem.releaseLoadedFont(renderer);
+      completed_.store(0);
+      total_.store(1);
+      lastRequestedPercent_ = 0;
+      preloadPointSize_ = file->pointSize;
+      stage_.store(Stage::Copying);
+    }
+    requestUpdateAndWait();
+
+    result = SdCardFontCache::preload(
+        file->path.c_str(),
+        [](size_t completed, size_t total, void* context) {
+          auto* self = static_cast<BootActivity*>(context);
+          bool refresh = false;
+          {
+            RenderLock lock(*self);
+            self->completed_.store(completed);
+            self->total_.store(total);
+
+            const size_t sourceSize = total / 2;
+            const Stage nextStage = completed <= sourceSize ? Stage::Copying : Stage::Verifying;
+            const bool phaseChanged = self->stage_.exchange(nextStage) != nextStage;
+            const unsigned percent = total > 0 ? static_cast<unsigned>(completed * 100 / total) : 0;
+            if (phaseChanged || percent == 100 || percent >= self->lastRequestedPercent_ + 10) {
+              self->lastRequestedPercent_ = percent;
+              refresh = true;
+            }
+          }
+          // Finish the panel refresh before the cache writer resumes Flash operations.
+          if (refresh) self->requestUpdateAndWait();
+        },
+        this);
   }
-  requestUpdateAndWait();
 
-  const auto result = SdCardFontCache::preload(
-      file->path.c_str(),
-      [](size_t completed, size_t total, void* context) {
-        auto* self = static_cast<BootActivity*>(context);
-        self->completed_.store(completed);
-        self->total_.store(total);
-
-        const size_t sourceSize = total / 2;
-        const Stage nextStage = completed <= sourceSize ? Stage::Copying : Stage::Verifying;
-        const bool phaseChanged = self->stage_.exchange(nextStage) != nextStage;
-        const unsigned percent = total > 0 ? static_cast<unsigned>(completed * 100 / total) : 0;
-        if (phaseChanged || percent == 100 || percent >= self->lastRequestedPercent_ + 10) {
-          self->lastRequestedPercent_ = percent;
-          self->requestUpdate(true);
-        }
-      },
-      this);
-
-  // The callback only queues refreshes. Keep the verified 100% state visible
-  // until the panel has physically completed that frame before showing Ready.
+  // Keep the verified 100% frame visible before showing Ready.
   if (result == SdCardFontCache::Result::Ok) requestUpdateAndWait();
 
   const bool succeeded = result == SdCardFontCache::Result::Ok || result == SdCardFontCache::Result::AlreadyCached;
+  if (!succeeded) {
+    SETTINGS.sdFontFlashPreload = 0;
+    SETTINGS.saveToFile();
+  }
   {
     RenderLock lock(*this);
     sdFontSystem.ensureLoaded(renderer, succeeded);
@@ -125,6 +136,7 @@ void BootActivity::runPostOta() {
 
   LOG_INF("SDFCACHE", "Post-OTA preload for %s: %s", file->path.c_str(), SdCardFontCache::resultName(result));
   requestUpdateAndWait();
+  if (result == SdCardFontCache::Result::TooLarge) delay(fontpreload::NOTICE_DURATION_MS);
 }
 
 void BootActivity::render(RenderLock&&) {
@@ -153,6 +165,10 @@ void BootActivity::render(RenderLock&&) {
                         fontpreload::State::Ready);
       break;
     case Stage::Failed: {
+      if (failure_.load() == Failure::TooLarge) {
+        fontpreload::drawTooLargeNotice(renderer);
+        break;
+      }
       renderer.clearScreen();
       StrId reason = StrId::STR_OTA_CONFIRM_FAILED;
       switch (failure_.load()) {

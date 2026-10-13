@@ -28,7 +28,7 @@ ImageToFramebufferDecoder* ImageDecoderFactory::getDecoder(const std::string& im
     if (!jpegDecoder) {
       jpegDecoder = makeUniqueNoThrow<JpegToFramebufferConverter>();
       if (!jpegDecoder) {
-        LOG_ERR("DEC", "OOM allocating JPEG decoder for: %s", imagePath.c_str());
+        LOG_ERR("DEC", "OOM creating JPEG decoder");
         return nullptr;
       }
     }
@@ -37,7 +37,7 @@ ImageToFramebufferDecoder* ImageDecoderFactory::getDecoder(const std::string& im
     if (!pngDecoder) {
       pngDecoder = makeUniqueNoThrow<PngToFramebufferConverter>();
       if (!pngDecoder) {
-        LOG_ERR("DEC", "OOM allocating PNG decoder for: %s", imagePath.c_str());
+        LOG_ERR("DEC", "OOM creating PNG decoder");
         return nullptr;
       }
     }

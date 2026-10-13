@@ -1,0 +1,11 @@
+# Regenerate from the repository root with:
+#   python3 freeink-sdk/libs/assets/Icons/tools/gen_icons.py \
+#     --manifest src/components/icons/readerToolbarIcons.manifest \
+#     --svgdir src/components/icons/sources/lucide \
+#     --sizes 24 --out src/components/icons/readerToolbarIcons.h
+# Use --sizes 48 --out src/components/icons/readerToolbarIcons48.h for the high-density variant.
+reader-contents = menu
+reader-text = type
+reader-more = ellipsis
+reader-back = chevron-left
+reader-next = chevron-right

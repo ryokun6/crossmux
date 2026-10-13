@@ -31,6 +31,7 @@ class KeyboardEntryActivity : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool preventAutoSleep() override { return true; }
 
  private:
   std::string title;
@@ -45,14 +46,22 @@ class KeyboardEntryActivity : public Activity {
   // layouts (with the always-visible number row); the URL layers are
   // app-defined tables in the .cpp.
   freeink::ui::KeyboardLayoutId layoutId = freeink::ui::KeyboardLayoutId::QwertyEn;
+  // Asks the SDK for a layout variant with the language key. Only the Latin
+  // layouts honour it; the Cyrillic, Hebrew and Arabic tables carry the key
+  // either way.
+  // Resolved once in onEnter(): the set cannot change while a keyboard is on
+  // screen, and currentLayout() runs on every loop pass.
+  bool showLangKey = false;
   bool shifted = false;
   bool symbols = false;
   bool urlPanel = false;  // URL snippet panel replaces the letter layer
 
-  // Key hit rects registered by the keyboard component during render();
-  // loop() routes touch snapshots against them. 5-row EN layout registers 41
-  // keys, so 48 leaves headroom.
-  freeink::ui::InteractionBuffer<48> interactions;
+  // Key hit rects registered by the keyboard component during render(); loop()
+  // routes touch snapshots against them. The 5-row EN layout registers 41 keys,
+  // Cyrillic's wider rows (12/11/11 against 10/9/9) exactly 48, so 56 restores
+  // the headroom. Two generations of 16-byte entries: 256 bytes for the eight
+  // extra slots, no heap.
+  freeink::ui::InteractionBuffer<56> interactions;
 
   // GPIO selection over the current layout grid (row/col in layout terms;
   // the bottom action row is just the last row).
@@ -79,9 +88,16 @@ class KeyboardEntryActivity : public Activity {
   freeink::ui::TouchHoldRouter touchRouter;
 
   // loop() runs on the main task while render() rebuilds the interaction
-  // table on the render task; routing against a half-built table would read
-  // torn entries, so taps are dropped during the rebuild window. atomic (not
-  // volatile) so the flag also orders the table writes on dual-core targets.
+  // table on the render task; render() opts `interactions` into the SDK's
+  // double-buffered publish cycle (beginPublishCycle()/publish()) so
+  // TouchHoldRouter's routePublished()-based reads in loop() always see a
+  // complete, previously-published table, never one mid-rebuild — no taps
+  // dropped for that reason anymore. interactionsReady itself gates only
+  // before the very first publish (nothing registered yet). Do not clear it
+  // for later renders: the point of retaining the published generation is
+  // that loop() can keep routing a release while the next frame is built.
+  // atomic (not volatile) so the flag also orders the first table publication
+  // on dual-core targets.
   std::atomic<bool> interactionsReady{false};
 
   int delPressCount = 0;
@@ -90,11 +106,14 @@ class KeyboardEntryActivity : public Activity {
 
   void onComplete(std::string text);
   void onCancel();
-  bool cursorPositionFromPoint(int x, int y, size_t& position) const;
+  int inputStartY() const;
+  int inputLineCount() const;
+  bool cursorPositionFromPoint(int x, int y, size_t& position, bool& passwordToggle) const;
   std::string displayTextForCurrentState() const;
   // Advance of s[start, end) measured in place by temporarily null-terminating
   // at `end` — avoids a substr temporary per measurement.
   int measureRange(std::string& s, int start, int end) const;
+  bool rangeIsRtl(std::string& s, int start, int end) const;
   // Largest line end in (start, s.length()] whose advance fits maxWidth.
   // Binary search over the monotonic prefix advance; always advances at least
   // one byte so an oversized glyph cannot stall the wrap loop.
@@ -118,6 +137,8 @@ class KeyboardEntryActivity : public Activity {
   static size_t utf8Next(const std::string& s, size_t pos);
 
   freeink::ui::Rect keyboardRect() const;
+  freeink::ui::Rect keyboardKeysRect() const;
+  int inputWindowStart(std::string& displayText, int width) const;
 
   static constexpr uint16_t LONG_PRESS_MS = 500;
   static constexpr uint16_t DEL_LONG_PRESS_MS = 1500;

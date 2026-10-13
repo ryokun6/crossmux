@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <cctype>
-#include <cstdint>
-#include <cstdio>
+#include <array>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -148,6 +146,94 @@ TEST(ReleaseJsonParser, RealisticMinified) {
   EXPECT_STREQ(p.getFirmwareUrl(),
                "https://github.com/crosspoint-reader/crosspoint-reader/releases/download/v2.4.1/firmware.bin");
   EXPECT_EQ(p.getFirmwareSize(), 1572864u);
+}
+
+TEST(ReleaseJsonParser, NightlyBuildTag) {
+  const char* json =
+      R"({"tag_name":"nightly-5064d90","assets":[{"name":"firmware.bin","size":5839088,"browser_download_url":"https://example.com/firmware.bin"}]})";
+  ReleaseJsonParser p;
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundTag());
+  EXPECT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getTagName(), "nightly-5064d90");
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://example.com/firmware.bin");
+  EXPECT_EQ(p.getFirmwareSize(), 5839088u);
+}
+
+TEST(ReleaseJsonParser, UnsupportedChannelStatus) {
+  const char* json = R"({"ota_status":"unsupported_channel","assets":[]})";
+  ReleaseJsonParser p;
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundUnsupportedChannel());
+  EXPECT_FALSE(p.foundTag());
+  EXPECT_FALSE(p.foundFirmware());
+}
+
+TEST(ReleaseJsonParser, OtaReleaseNotes) {
+  const char* json =
+      R"({"tag_name":"v2.4.1","release_notes":["Faster book opening","More reliable OTA","New font sizes 20 and 22"],"assets":[{"name":"firmware.bin","size":1,"browser_download_url":"https://example.com/fw"}]})";
+  std::array<ReleaseJsonParser::ReleaseNote, ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX> notes{};
+  ReleaseJsonParser p(notes);
+  p.feed(json, strlen(json));
+
+  ASSERT_TRUE(p.foundReleaseNotes());
+  ASSERT_EQ(p.getReleaseNoteCount(), 3u);
+  EXPECT_STREQ(notes[0].data(), "Faster book opening");
+  EXPECT_STREQ(notes[1].data(), "More reliable OTA");
+  EXPECT_STREQ(notes[2].data(), "New font sizes 20 and 22");
+}
+
+TEST(ReleaseJsonParser, OtaReleaseNotesChunkedByteByByte) {
+  const char* json = R"({"release_notes":["加快图书打开速度","提升OTA更新可靠性","新增20和22号字体"]})";
+  std::array<ReleaseJsonParser::ReleaseNote, ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX> notes{};
+  ReleaseJsonParser p(notes);
+  feedChunked(p, json, 1);
+
+  ASSERT_TRUE(p.foundReleaseNotes());
+  ASSERT_EQ(p.getReleaseNoteCount(), 3u);
+  EXPECT_STREQ(notes[0].data(), "加快图书打开速度");
+  EXPECT_STREQ(notes[1].data(), "提升OTA更新可靠性");
+  EXPECT_STREQ(notes[2].data(), "新增20和22号字体");
+}
+
+TEST(ReleaseJsonParser, OtaReleaseNotesAtCapacity) {
+  const char* json = R"({"release_notes":["One","Two","Three","Four","Five","Six","Seven","Eight"]})";
+  std::array<ReleaseJsonParser::ReleaseNote, ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX> notes{};
+  ReleaseJsonParser p(notes);
+  p.feed(json, strlen(json));
+
+  ASSERT_TRUE(p.foundReleaseNotes());
+  EXPECT_EQ(p.getReleaseNoteCount(), ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX);
+  EXPECT_STREQ(notes.back().data(), "Eight");
+}
+
+TEST(ReleaseJsonParser, RejectsInvalidOtaReleaseNotes) {
+  const std::string oversized = R"({"release_notes":[")" + std::string(97, 'x') + R"(","Valid"]})";
+  const char* invalid[] = {
+      R"({"tag_name":"v1.0.0","assets":[]})",
+      R"({"summary":"Legacy\nSummary"})",
+      R"({"release_notes":["Only one"]})",
+      R"({"release_notes":["Duplicate","Duplicate"]})",
+      R"({"release_notes":["Bad * markdown","Valid"]})",
+      R"({"release_notes":["Valid",null]})",
+      R"({"release_notes":["Valid",{"nested":"value"}]})",
+      R"({"release_notes":["One","Two","Three","Four","Five","Six","Seven","Eight","Nine"]})",
+  };
+  for (const char* json : invalid) {
+    std::array<ReleaseJsonParser::ReleaseNote, ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX> notes{};
+    ReleaseJsonParser p(notes);
+    p.feed(json, strlen(json));
+    EXPECT_FALSE(p.foundReleaseNotes()) << json;
+    EXPECT_EQ(p.getReleaseNoteCount(), 0u) << json;
+  }
+
+  std::array<ReleaseJsonParser::ReleaseNote, ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX> notes{};
+  ReleaseJsonParser p(notes);
+  p.feed(oversized.c_str(), oversized.size());
+  EXPECT_FALSE(p.foundReleaseNotes());
+  EXPECT_EQ(p.getReleaseNoteCount(), 0u);
 }
 
 TEST(ReleaseJsonParser, PrettyAndMinifiedAgree) {
@@ -625,6 +711,58 @@ TEST(ReleaseJsonParser, FirmwareBinExactMatch) {
   EXPECT_TRUE(p.foundFirmware());
   EXPECT_STREQ(p.getFirmwareUrl(), "https://exact");
   EXPECT_EQ(p.getFirmwareSize(), 200u);
+}
+
+TEST(ReleaseJsonParser, ConfiguredFirmwareNameMatch) {
+  const char* json = R"({
+      "tag_name": "1.6.1",
+      "assets": [
+        {"name": "firmware-x4pro.bin", "browser_download_url": "https://legacy", "size": 100},
+        {"name": "crosspoint-1.6.1-sticky.bin", "browser_download_url": "https://sticky", "size": 200},
+        {"name": "crosspoint-1.6.1-x4pro.bin", "browser_download_url": "https://x4pro", "size": 300}
+      ]
+    })";
+
+  ReleaseJsonParser p;
+  p.setFirmwareAssetName("crosspoint-1.6.1-x4pro.bin");
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://x4pro");
+  EXPECT_EQ(p.getFirmwareSize(), 300u);
+}
+
+TEST(ReleaseJsonParser, ConfiguredFirmwareNameIsNotOverwrittenBySameSuffix) {
+  const char* json = R"({
+      "tag_name": "1.6.1",
+      "assets": [
+        {"name": "crosspoint-1.6.1-x4pro.bin", "browser_download_url": "https://correct", "size": 100},
+        {"name": "crosspoint-1.6.0-x4pro.bin", "browser_download_url": "https://stale", "size": 200}
+      ]
+    })";
+
+  ReleaseJsonParser p;
+  p.setFirmwareAssetName("crosspoint-1.6.1-x4pro.bin");
+  p.feed(json, strlen(json));
+
+  EXPECT_TRUE(p.foundFirmware());
+  EXPECT_STREQ(p.getFirmwareUrl(), "https://correct");
+  EXPECT_EQ(p.getFirmwareSize(), 100u);
+}
+
+TEST(ReleaseJsonParser, ConfiguredFirmwareNameRejectsDifferentVersion) {
+  const char* json = R"({
+      "tag_name": "1.6.1",
+      "assets": [
+        {"name": "crosspoint-1.6.0-x4pro.bin", "browser_download_url": "https://stale", "size": 200}
+      ]
+    })";
+
+  ReleaseJsonParser p;
+  p.setFirmwareAssetName("crosspoint-1.6.1-x4pro.bin");
+  p.feed(json, strlen(json));
+
+  EXPECT_FALSE(p.foundFirmware());
 }
 
 TEST(ReleaseJsonParser, LargeSize) {

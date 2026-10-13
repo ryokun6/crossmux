@@ -21,6 +21,10 @@ the IP address shown on the device screen.
 | `GET` | `/fonts` | SD-card font manager page |
 | `GET` | `/js/jszip.min.js` | JavaScript asset used by the file manager |
 
+The routes are identical in every firmware. Both page locales are embedded;
+Simplified-Chinese device UI selects `zh-CN`, and every other UI language uses
+the English pages. Page locale follows the UI language directly.
+
 ## Device Status
 
 ### `GET /api/status`
@@ -51,6 +55,7 @@ Response:
 | `rssi` | number | Wi-Fi RSSI in dBm; `0` in AP mode |
 | `freeHeap` | number | Free heap in bytes |
 | `uptime` | number | Seconds since boot |
+| `deviceId` | string | With `?plugin=<name>`: 64 hex chars, stable per device and plugin (SHA-256 of an on-device NVS secret and the name); omitted if NVS is unavailable |
 | `device` | string | `"X3"` or `"X4"` hardware detection |
 
 ## File Management
@@ -81,6 +86,16 @@ Response:
 Hidden dotfiles are omitted unless the device setting `showHiddenFiles` is
 enabled. `System Volume Information` and `XTCache` are always hidden/protected.
 
+The response schema is unchanged for large directories. Entries are scanned
+once and streamed as a chunked response in bounded batches, so the complete
+listing is never retained in RAM. The server reserves its 1400-byte batch
+buffer during startup; allocation failure now fails startup and releases the
+services already created. The endpoint retains a defensive HTTP `503` response
+if the buffer is unavailable.
+The saved-credential stores (`/.crosspoint/wifi.json`, `opds.json`,
+`koreader.json`) can never be downloaded, uploaded, renamed, moved, deleted or
+written by a plugin over the network, however the path is spelled.
+
 ### `GET /download`
 
 Downloads a file from the SD card.
@@ -95,8 +110,8 @@ Query parameters:
 |-----------|----------|-------------|
 | `path` | Yes | File path to download |
 
-Protected dotfiles, `System Volume Information`, and `XTCache` cannot be
-downloaded. EPUB files are served as `application/epub+zip`; other files use
+Protected dotfiles, `System Volume Information`, `XTCache`, and the credential
+stores cannot be downloaded. EPUB files are served as `application/epub+zip`; other files use
 `application/octet-stream`.
 
 ### `POST /upload`
@@ -219,6 +234,18 @@ Example item:
 }
 ```
 
+For an enum, `value` is always an index into `options`, never the option's text.
+For a toggle it is `0` or `1`; for a numeric value it is an integer and may be
+negative. `fontSize` is one of the settings whose `options` are built at request
+time — they are the point sizes the selected font family actually ships, so a
+family installed at 10/12/14 offers three options. (`fontFamily` and
+`dictionaryName` vary the same way, from the SD card contents.)
+`value` is always an index into `options`, never the option's text. The
+`fontSize` options depend on the selected family. A `.cpfont` family installed
+at 10/12/14 pt offers those three sizes. TTF/OTF/TTC families offer the
+standard 12/14/16/18 pt sizes. The `fontFamily` and `dictionaryName` options
+also depend on the SD card contents.
+
 Types:
 
 | Type | Extra fields |
@@ -229,6 +256,20 @@ Types:
 | `string` | `value`; password fields also include `hasPassword` and always return an empty `value` |
 
 The font-family setting includes SD-card font families when they are installed.
+
+Reader display settings include:
+
+| Key | Type | Behavior |
+|-----|------|----------|
+| `readingGuideLineEnabled` | toggle | Enables line guides for EPUB and TXT |
+| `readingGuideLineStyle` | enum | Solid, three dash lengths, dotted, or wavy |
+| `readingGuideLineOffset` | value | Signed vertical offset from `-30` to `30` pixels |
+| `readingBackgroundEnabled` | toggle | Uses the existing custom background cache for EPUB and TXT |
+| `inxTabPosition` | enum | Places the Inx main tabs at the top (`0`) or bottom (`1`) |
+
+The API can enable or disable an existing reading background, but selecting and
+converting a PNG is a device workflow under **Settings > Reader > Reading
+Background > Custom Image**. Disabling the setting does not delete that cache.
 
 ### `POST /api/settings`
 
@@ -253,7 +294,9 @@ Applied 2 setting(s)
 
 ### `GET /api/fonts`
 
-Lists installed SD-card font families.
+Lists installed SD-card font families. On devices that load TTF/OTF/TTC files,
+these families appear with `sizes: [0]`. The `0` means that the font file has
+no fixed point size; the reader offers 12, 14, 16, and 18 pt.
 
 ```bash
 curl http://crosspoint.local/api/fonts
@@ -299,6 +342,9 @@ Successful response:
 ### `POST /api/fonts/delete`
 
 Deletes an installed font family.
+
+This endpoint removes family subfolders. To remove a loose TTF/OTF/TTC file
+from a font root, delete the file from the SD card instead.
 
 ```bash
 curl -X POST \
@@ -509,49 +555,171 @@ The final field is the WebSocket upload port.
 Calibre Wireless starts the same web server in STA mode and displays setup
 instructions plus WebSocket upload progress on the device screen.
 
-## Known Limitation: One Idle Connection Stalls the Server
+## Plugin API
 
-The HTTP server handles one client at a time and can stall for seconds when
-more than one TCP connection is in play. This is measured, understood, and
-**deliberately deferred** — it is not an oversight. Do not re-derive it.
+Device capabilities for browser-side SD plugins (`plugin.js`). Plugins normally
+reach these through the `PluginHost` wrappers (`api.relay`, `api.crypto`,
+`api.fetchToSd`, `api.writeFile`); the raw contracts are below. Outbound TLS is
+encrypted but the peer is not verified (the transport ships no CA bundle).
 
-Arduino's `WebServer::handleClient()` (framework package,
-`WebServer.cpp:409-467`) services exactly one client per call. A new accept is
-gated on `_currentStatus == HC_NONE`, and an accepted client that sends nothing
-is held for the full `HTTP_MAX_DATA_WAIT` (5000 ms) before it is dropped. The
-listen backlog is only 4 (`NetworkServer(port, max_clients = 4)`) and every
-response sends `Connection: close`, so a page load needs a fresh connection per
-asset.
+### `GET /api/plugins`
 
-Measured on device (X3, `1.4.14-tc`), holding exactly one idle socket open to
-port 80 sending nothing:
+Installed plugins that ship a `plugin.js`:
+`[{"name":"<folder>","dir":"<root>/<folder>","title":"<title>","mount":"settings"}, ...]`.
+`dir` is where the plugin is installed (plugins keep their own files there);
+`title` and `mount` come from the plugin's `manifest.json` when present.
 
-| Condition | Total |
-|---|---|
-| Control, no idle socket | 0.145 s |
-| One idle socket held, first request | **3.783 s** |
-| Same, requests 2-4 | 0.036-0.082 s |
-| After holder released | 0.129 s |
+### `GET /plugin?name=<plugin>&file=<file>`
 
-The idle socket had been open ~1.5 s when the request arrived, leaving ~3.5 s
-of the 5000 ms window, and the measured stall was 3.78 s — a direct match.
-`time_connect` stayed fast (0.024 s) while total ballooned: the handshake
-completes in the listen backlog, but the application burns the remainder of
-`HTTP_MAX_DATA_WAIT` on the idle client before servicing the real request.
-Browsers open speculative preconnect sockets, so real-world use can hit
-multi-second stalls even though sequential `curl` requests complete in
-20-119 ms.
+Serves one file from the plugin's folder (first root holding that name). Both
+parameters must be single path components (no `/`, `\`, or `..`); 404 when
+the plugin, file, or a directory is requested.
 
-This is a **separate** issue from the heap-starvation bug fixed elsewhere,
-where a resident SD font pinned ~75 KB and left `MaxAlloc` at 2,292 B — below
-what lwIP needs for a socket — wedging the server entirely (0 of 21 requests
-succeeded, all timing out with `time_connect` never advancing). That fix
-restored sequential use; it does not address concurrency.
+### `POST /api/relay`
 
-Known viable fix route: `HTTP_MAX_DATA_WAIT` is an unguarded `#define` in the
-framework and cannot be overridden with `-D`, but `handleClient()` is `virtual`
-and `_nullDelay` defaults to `true`, so subclassing `WebServer` to bound the
-idle-socket wait is viable without patching the framework. It was deferred as a
-larger, riskier change deserving its own measurement. The same note lives next
-to `CrossPointWebServer::handleClient()` in
-`src/network/CrossPointWebServer.cpp`.
+Makes an outbound HTTP(S) request for a plugin (any method; browsers can't, due
+to CORS). Body: `{"plugin":"<name>","method":"GET","url":"https://...","headers":{...},"body":"..."}`.
+
+- **Success:** `200` with the upstream body verbatim. The upstream status is
+  in the `X-Relay-Status` response header, and its headers in `X-Relay-Headers`
+  as JSON `[["name","value"], ...]` in receive order, duplicates kept (every
+  `Set-Cookie`). `api.relay()` resolves to `{status, headers, body}`.
+- **Redirects** are not followed: a 3xx comes back with its `location` header.
+- **Limits:** the upstream body is capped at 32KB; larger payloads belong on
+  `/api/fetch`.
+- **Errors:** `400 {"error":"missing plugin/url"}`; `502 {"error":"relay failed; ..."}`
+  for a transport failure, a truncated body, a body over the cap, or low memory
+  (the device log names which).
+
+### `POST /api/crypto`
+
+Stateless wolfSSL primitives. Body `{"op":"<op>", ...}`; binary fields are
+base64 in both directions, each at most 64KB encoded. Replies are `200` with
+the result fields, or `200 {"error":"..."}`.
+
+| `op` | Request fields | Result |
+| --- | --- | --- |
+| `random` | `len` (default 16, max 4096) | `data` |
+| `sha1` | `data` | `data` (20 bytes) |
+| `sha256` | `data` | `data` (32 bytes) |
+| `aesenc` | `key`, `iv` (16 bytes each), `data` | `data`: AES-128-CBC with PKCS#7 padding |
+| `aesdec` | `key`, `iv`, `data` (block-aligned) | `data`: AES-128-CBC, padding left in place |
+| `keygen` | none | `public` (SPKI DER), `private` (PKCS#8 DER): RSA key pair |
+| `pubencrypt` | `cert` (X.509 DER), `data` | `data`: RSAES-PKCS1-v1_5 to the certificate's key |
+| `sign` | `private` (PKCS#8 DER), `hash` (20 bytes) | `data` (128 bytes): raw RSA signature |
+| `rsadec` | `private` (PKCS#8 DER), `data` (one modulus block) | `data`: raw RSA private-key result, padding left in place |
+| `pkcs12` | `data` (the bundle), `password` | `key`, `cert` (DER) |
+
+### `POST /api/book-key`
+
+Stores a protected book's content key for the reader. Body:
+`{"path":"/abs/book.epub","key":"<base64, 16 bytes>","expires":<epoch seconds, optional>}`.
+The device wraps the key with AES-256-GCM under a key derived from its NVS
+secret and writes `<path>.key`; the header (including `expires`) is
+authenticated, so the file only opens on this reader and its loan date cannot
+be edited. The reader enforces `expires` when the book opens.
+
+- **Success:** `200 {"ok":true}`.
+- **Errors:** `400 {"error":"bad path/key"}`; `500 {"error":"cannot store key"}`.
+
+### `POST /api/fetch`
+
+Downloads a URL straight to SD, so a large body never passes through the
+browser. Body: `{"plugin":"<name>","url":"...","dest":"/abs/path","headers":{...},"offset":0,"maxBytes":0}`.
+
+- `dest` must be absolute with no `..`; missing parent folders are created.
+- The transfer is staged in `<dest>.part` and replaces `dest` only when the
+  whole body has arrived, so a failed update keeps the previous file.
+- Up to 5 redirects are followed. `headers` (typically the plugin's
+  `Authorization`) are sent only while the target keeps the starting URL's
+  scheme, host, and port; a redirect elsewhere, including https→http, gets none.
+- A body cut short mid-transfer resumes on its own with a Range request.
+- **Segments:** `maxBytes` (at most 4MB) ends the request after that many
+  bytes with `complete:false`; send the next request with `offset` set to the
+  returned `bytes` to continue the same `.part`. `api.fetchToSd()` does this
+  loop, keeping each browser request short.
+- A long transfer answers early with `200` chunked and sends whitespace every
+  5s to keep the browser connection open; the JSON result follows at the end.
+- **Result:** `{"status":200,"bytes":N,"complete":true,"total":N}` (`total`
+  when the server reported a size). `error` is set to `transport failure`,
+  `http status`, or `sd write failed` when the file was not installed.
+- **Errors:** `400 {"error":"bad url/dest"}`; `409 {"error":"offset mismatch","bytes":N}`
+  when `offset` does not match the `.part` size; `502 {"error":"sd write failed" |
+  "range unsupported" | "download truncated","bytes":N,"complete":false}`.
+
+### `POST /api/plugin-fs?plugin=<name>&path=<abs path>`
+
+Writes one small file to SD. The content is sent as a multipart file part
+(`api.writeFile()` builds it), so binary data, including NUL bytes, arrives
+intact. It streams to `<path>.tmp` and replaces `path` only after a complete,
+non-empty body. `path` must be absolute, without `..`, and not a credential
+store. A plugin keeps its own files in its install folder (`api.dir`).
+
+- **Success:** `200 {"ok":true,"bytes":N}`.
+- **Errors:** `400` (`bad path`, `empty body`, `missing file part`,
+  `upload aborted`); `413 {"error":"too large"}` over 256KB; `500
+  {"error":"cannot write" | "sd write failed"}`. The previous file is kept on
+  every error.
+
+## Plugin Job Queue
+
+External systems trigger SD-plugin actions without the web UI. The firmware
+stores opaque `{plugin, action, args}` blobs (fixed 6-slot pool; args/result
+< 192 bytes JSON); an open page hosting the plugin executes them. See
+`docs/sd-plugins.md` for the full contract.
+
+### `POST /api/plugin-jobs`
+
+```bash
+curl -X POST http://crosspoint.local/api/plugin-jobs \
+  -d '{"plugin":"<name>","action":"<action>","args":{"path":"/Books/somefile"}}'
+# -> {"id":3}         (503 {"error":"job queue full"} when all slots busy)
+```
+
+### `GET /api/plugin-jobs/claim?plugin=<name>`
+
+Executor-side (used by the plugin host page): returns the next pending job
+`{"id":3,"claim":7,"action":"<action>","args":{...}}` and marks it running, or `{"id":0}`.
+A running job whose lease expires returns to pending and gets a new `claim` when re-claimed.
+
+### `POST /api/plugin-jobs/complete`
+
+Executor-side: `{"id":3,"claim":7,"ok":true,"result":{...}}` -> `{"ok":true}`. The `claim`
+must match the one from the claim response; a stale claim (the lease expired and another
+executor re-claimed the job) gets `409 {"error":"stale claim"}` and changes nothing.
+
+### `GET /api/plugin-jobs/status?id=<n>`
+
+```bash
+curl "http://crosspoint.local/api/plugin-jobs/status?id=3"
+# -> {"id":3,"state":"done","result":{"title":"...","dest":"/Books/Book.epub"}}
+```
+
+States: `pending`, `running`, `done`, `error`, `unknown` (slot recycled —
+poll promptly after completion).
+
+### `GET /plugins-run`
+
+Headless executor page: loads every plugin with its UI hidden so registered
+actions run. Keep it open (browser tab or embedded webview) while jobs are
+queued; jobs enqueued with no page open stay pending until one opens.
+
+## Startup failure handling
+
+`CrossPointWebServer::begin()` returns false when the application-level server,
+upload, WebDAV, WebSocket or file-list allocations fail, or UDP discovery cannot
+start. It releases partially started services and buffers before returning;
+callers display the service screen only on success. `stop()` also releases the
+UDP TX buffer retained by a failed socket creation, and a stopped object can be
+started again. AP mode initialization failure returns before starting services.
+
+Read Pico enables WiFi/LwIP PSRAM allocation while retaining the 32 KiB internal
+reserve and 4096-byte ordinary-allocation threshold. The two 4096-byte upload
+buffers and 1400-byte listing buffer prefer PSRAM, with internal fallback on
+failure or devices without PSRAM. This does not make third-party constructors,
+route registration, mDNS, or void-returning listener startup fully OOM-safe.
+
+Run `python3 scripts/tests/test_webserver_startup_failure.py` for injected
+allocation/socket failures, cleanup, repeated stop, retry, and AP startup guards.
+Physical acceptance additionally requires AP and STA transfers; host stubs do
+not exercise the actual WiFi driver or prove that every listener is reachable.

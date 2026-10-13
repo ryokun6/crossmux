@@ -8,6 +8,8 @@
 #include "CrossPointSettings.h"
 #include "components/themes/BaseTheme.h"
 
+class CoverGridHomeUi;
+
 class UITheme {
   // Static instance
   static UITheme instance;
@@ -20,6 +22,9 @@ class UITheme {
 
   const ThemeMetrics& getMetrics() const;
   const BaseTheme& getTheme() const { return *currentTheme; }
+  bool usesClassicTabs() const { return currentType == CrossPointSettings::UI_THEME::CLASSIC; }
+  bool hasMainTabs() const { return currentType == CrossPointSettings::UI_THEME::INX; }
+  bool showSelectionCursor() const;
   Rect getScreenSafeArea(const GfxRenderer& renderer, bool hasFrontButtonHints = false,
                          bool hasSideButtonHints = false);
   static void drawCenteredText(const GfxRenderer& renderer, Rect screen, int fontId, int y, const char* text,
@@ -29,6 +34,9 @@ class UITheme {
                                       int maxLines, bool black = true,
                                       EpdFontFamily::Style style = EpdFontFamily::REGULAR,
                                       TextVerticalAlignment verticalAlignment = TextVerticalAlignment::CENTER);
+  static bool supportsCoverGrid();
+  static bool hasCoverGridHome();
+  static void drawCoverGridHome(CoverGridHomeUi& home);
   void reload();
   void setTheme(CrossPointSettings::UI_THEME type);
   static int getNumberOfItemsPerPage(const GfxRenderer& renderer, bool hasHeader, bool hasTabBar, bool hasButtonHints,
@@ -36,14 +44,18 @@ class UITheme {
   static std::string getCoverThumbPath(std::string coverBmpPath, int coverHeight);
   static UIIcon getFileIcon(const std::string& filename);
   static int getStatusBarHeight();
+  static int getStatusBarTextTopPadding(const GfxRenderer& renderer);
   static int getProgressBarHeight();
 
  private:
-  const ThemeMetrics* currentMetrics;
-  std::unique_ptr<BaseTheme> currentTheme;
+  BaseTheme fallbackTheme;
+  const ThemeMetrics* currentMetrics = &BaseMetrics::values;
+  std::unique_ptr<BaseTheme> ownedTheme;
+  BaseTheme* currentTheme = &fallbackTheme;
+  CrossPointSettings::UI_THEME currentType = CrossPointSettings::UI_THEME::CLASSIC;
   mutable ThemeMetrics adjustedMetrics;
   mutable bool metricsValid = false;
-  mutable bool metricsForTouch = false;
+  mutable bool metricsForButtonHints = false;
 };
 
 // Helper macro to access current theme

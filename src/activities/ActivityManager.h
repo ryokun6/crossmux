@@ -11,13 +11,16 @@
 #include <vector>
 
 #include "GfxRenderer.h"
+#include "Logging.h"
 #include "MappedInputManager.h"
+#include "Memory.h"
+#include "activities/MainTab.h"
 #include "util/ScreenshotInfo.h"
 
 class Activity;    // forward declaration
 class RenderLock;  // forward declaration
 
-enum class HomeMenuItem { NONE, FILE_BROWSER, RECENTS, OPDS_BROWSER, FILE_TRANSFER, SETTINGS_MENU, APPS };
+enum class HomeMenuItem { NONE, FILE_BROWSER, RECENTS, LIBRARY, OPDS_BROWSER, FILE_TRANSFER, SETTINGS_MENU, APPS };
 
 /**
  * ActivityManager
@@ -41,13 +44,25 @@ class ActivityManager {
   MappedInputManager& mappedInput;
   std::vector<std::unique_ptr<Activity>> stackActivities;
   std::unique_ptr<Activity> currentActivity;
+  MainTabFocus mainTabFocus = MainTabFocus::Tabs;
+  bool mainTabEntryReleasePending = false;
 
+ private:
+  enum class StandbyBackState : uint8_t { Idle, Pressed, WaitingForRelease };
+  StandbyBackState standbyBackState = StandbyBackState::Idle;
+  bool handleHomeStandbyInput();
+  void resetHomeStandbyInput();
+
+ protected:
   void exitActivity(const RenderLock& lock);
+  bool handleMainTabInput();
 
   // Pending activity to be launched on next loop iteration
   std::unique_ptr<Activity> pendingActivity;
   enum class PendingAction { None, Push, Pop, Replace };
-  PendingAction pendingAction = PendingAction::None;
+  // Shared between the main task (core 0) and the render task (core 1), so it
+  // must be atomic rather than a plain/volatile enum (FreeRTOS SMP data race).
+  std::atomic<PendingAction> pendingAction{PendingAction::None};
 
   // Task to render and display the activity
   TaskHandle_t renderTaskHandle = nullptr;
@@ -58,13 +73,13 @@ class ActivityManager {
   // Note: only one waiting task is supported at a time
   TaskHandle_t waitingTaskHandle = nullptr;
 
-  // Mutex to protect rendering operations from race conditions
-  // Must only be used via RenderLock
+  // Lock to serialize rendering operations. Must only be used via RenderLock.
   SemaphoreHandle_t renderingMutex = nullptr;
 
   // Cross-task render request flag. requestUpdate() may set it from any task;
   // loop() consumes and clears it with exchange(false).
   std::atomic<bool> requestedUpdate{false};
+  std::atomic<uint32_t> idleRenderGeneration{0};
 
  public:
   explicit ActivityManager(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -76,17 +91,42 @@ class ActivityManager {
 
   void begin();
   void loop();
+  void cancelIdleRender() { idleRenderGeneration.fetch_add(1, std::memory_order_relaxed); }
+  bool idleRenderCancelled(uint32_t generation) const {
+    return generation != idleRenderGeneration.load(std::memory_order_relaxed) || isSwitchPending() ||
+           requestedUpdate.load();
+  }
 
   // Will replace currentActivity and drop all activities on stack
   void replaceActivity(std::unique_ptr<Activity>&& newActivity);
 
+  // Activities must outlive the caller, so they cannot use stack storage. This
+  // keeps the single required heap allocation fallible under -fno-exceptions.
+  template <typename T, typename... Args>
+  bool replaceActivityWith(Args&&... args) {
+    auto activity = makeUniqueNoThrow<T>(renderer, mappedInput, std::forward<Args>(args)...);
+    if (!activity) {
+      LOG_ERR("ACT", "OOM: activity (%u bytes)", static_cast<unsigned>(sizeof(T)));
+      return false;
+    }
+    replaceActivity(std::move(activity));
+    return true;
+  }
+
   // goTo... functions are convenient wrapper for replaceActivity()
   void goToFileTransfer();
+  void goToJoinNetwork();  // File Transfer straight into Join Network (post heap-defrag reboot)
+  void goToUsbDrive();
   void goToSettings();
   void goToReadingStatsMenu();
+  void goToReadingStats();
+  void goToInxRecent();
+  void goToMainTab(MainTab tab);
   void goToFileBrowser(std::string path = {});
+  void goToLibrary();
   void goToRecentBooks();
   void goToBrowser();
+  void goToPlugins(bool showOpds);
   void goToReader(std::string path, bool allowFastInitialRefresh = false);
   void goToSleep(bool fromTimeout = false);
   void goToBoot();
@@ -94,11 +134,13 @@ class ActivityManager {
   void goToFullScreenMessage(std::string message, EpdFontFamily::Style style = EpdFontFamily::REGULAR);
   void goToCrashReport();
   void goToApps();
+  void goToAirPage();
   void goToStandby();
-#if defined(ENABLE_CHINESE_VERSION) && !defined(__EMSCRIPTEN__)
+#ifdef ENABLE_CHINESE_VERSION
   void goToWeRead();
 #endif
   void goHome(HomeMenuItem initialMenuItem = HomeMenuItem::NONE);
+  MainTabFocus getMainTabFocus() const { return mainTabFocus; }
 
   // This will move current activity to stack instead of deleting it
   void pushActivity(std::unique_ptr<Activity>&& activity);
@@ -108,10 +150,19 @@ class ActivityManager {
   void popActivity();
 
   bool preventAutoSleep() const;
+  bool requiresExclusiveStorageLoop() const;
   bool isReaderActivity() const;
+  bool keepsBluetoothAlive() const;
+  bool deferBluetoothStart() const;
   bool handleForcedRefresh();
   bool skipLoopDelay() const;
   ScreenshotInfo getScreenshotInfo() const;
+  void prepareForSleep();
+
+  // Returns true when a Push/Pop/Replace is waiting for the render lock.
+  // The render task can call this to abort a long render early and let the
+  // main task proceed with the activity switch.
+  bool isSwitchPending() const { return pendingAction.load() != PendingAction::None; }
 
   // If immediate is true, the update will be triggered immediately.
   // Otherwise, it will be deferred until the end of the current loop iteration.

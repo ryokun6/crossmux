@@ -1,32 +1,15 @@
-/**
- * XtcReaderActivity.h
- *
- * XTC ebook reader activity for CrossPoint Reader
- * Displays pre-rendered XTC pages on e-ink display
- */
-
 #pragma once
 
 #include <Xtc.h>
 
-#include <cstdint>
 #include <memory>
 #include <string>
-#include <utility>
 
-#include "activities/Activity.h"
+#include "ReaderActivity.h"
 
-class XtcReaderActivity final : public Activity {
+class XtcReaderActivity final : public ReaderActivity {
   std::shared_ptr<Xtc> xtc;
-
   uint32_t currentPage = 0;
-  // Refresh cadence counter, seeded from SETTINGS in onEnter() (0 here would make the first
-  // paint of the book a slow HALF refresh, see ReaderUtils::displayWithRefreshCycle).
-  int pagesUntilFullRefresh = 0;
-
-  // Full-page decode buffer: allocated once in onEnter(), reused each render, freed in onExit().
-  std::unique_ptr<uint8_t[]> pageBuffer;
-  size_t pageBufferCapacity = 0;
 
   enum class StatusBarOverlayPosition { Bottom, Top };
   struct StatusBarInfo {
@@ -36,18 +19,31 @@ class XtcReaderActivity final : public Activity {
   };
 
   void renderPage();
-  void renderStatusBarOverlay(StatusBarOverlayPosition position) const;
+  void openChapterSelection();
+  void renderStatusBarOverlay(GfxRenderer& renderer, StatusBarOverlayPosition position) const;
   StatusBarInfo getStatusBarInfo() const;
   void saveProgress() const;
   void loadProgress();
 
+  bool loadBook() override;
+  std::string getBookTitle() const override { return xtc ? xtc->getTitle() : ""; }
+  std::string getBookAuthor() const override { return xtc ? xtc->getAuthor() : ""; }
+  std::string getBookThumbBmpPath() const override { return xtc ? xtc->getThumbBmpPath() : ""; }
+  bool handleFormatInput() override;
+  void renderBook() override;
+  void applyInitialOrientation() override;
+
  public:
-  explicit XtcReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::unique_ptr<Xtc> xtc)
-      : Activity("XtcReader", renderer, mappedInput), xtc(std::move(xtc)) {}
-  void onEnter() override;
+  explicit XtcReaderActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, std::string bookPath,
+                             bool allowFastInitialRefresh)
+      : ReaderActivity("XtcReader", renderer, mappedInput, std::move(bookPath), allowFastInitialRefresh) {}
+  ~XtcReaderActivity() override = default;
+
   void onExit() override;
-  void loop() override;
-  void render(RenderLock&&) override;
-  bool isReaderActivity() const override { return true; }
+  bool pageTurn(bool isForward) override;
+  bool skipPages(int amount) override;
+  bool isAtEndOfBook() const override;
+  void onReturnFromEndOfBook() override;
+
   ScreenshotInfo getScreenshotInfo() const override;
 };

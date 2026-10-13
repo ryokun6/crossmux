@@ -1,23 +1,11 @@
 #include "InflateReader.h"
 
-#include <Logging.h>
-
 #include <cstring>
 #include <type_traits>
 
-#if defined(ESP32) || defined(ARDUINO)
-#include <Arduino.h>
-#endif
-
 namespace {
-constexpr size_t INFLATE_DICT_SIZE = 32768;
-
-// Kept after the first successful streaming inflate in a reader session so
-// mid-book section rebuilds do not need a fresh 32KB MaxAlloc (X3 often sits
-// at ~32756 once the SD font is warm — 12 bytes short of a new malloc).
-uint8_t* sharedRing = nullptr;
-int sharedRingUsers = 0;
-}  // namespace
+constexpr size_t INFLATE_DICT_SIZE = InflateReader::RING_BYTES;
+}
 
 // Guarantee the cast pattern in the header comment is valid.
 static_assert(std::is_standard_layout<InflateReader>::value,
@@ -25,53 +13,13 @@ static_assert(std::is_standard_layout<InflateReader>::value,
 
 InflateReader::~InflateReader() { deinit(); }
 
-bool InflateReader::acquireSharedDictionary() {
-  if (sharedRing != nullptr) {
-    return true;
-  }
-  sharedRing = static_cast<uint8_t*>(malloc(INFLATE_DICT_SIZE));
-  if (sharedRing == nullptr) {
-#if defined(ESP32) || defined(ARDUINO)
-    LOG_ERR("INF", "Shared inflate ring OOM (%u bytes) Free=%u MaxAlloc=%u", static_cast<unsigned>(INFLATE_DICT_SIZE),
-            static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
-#else
-    LOG_ERR("INF", "Shared inflate ring OOM (%u bytes)", static_cast<unsigned>(INFLATE_DICT_SIZE));
-#endif
-    return false;
-  }
-  LOG_DBG("INF", "Pinned shared %u-byte inflate dictionary", static_cast<unsigned>(INFLATE_DICT_SIZE));
-  return true;
-}
-
-void InflateReader::releaseSharedDictionary() {
-  if (sharedRingUsers > 0) {
-    LOG_ERR("INF", "releaseSharedDictionary while %d users still active", sharedRingUsers);
-    return;
-  }
-  free(sharedRing);
-  sharedRing = nullptr;
-}
-
 bool InflateReader::init(const bool streaming) {
-  deinit();
+  deinit();  // free any previously allocated ring buffer and reset state
 
   if (streaming) {
-    if (sharedRing != nullptr && sharedRingUsers == 0) {
-      ringBuffer = sharedRing;
-      ownsRing = false;
-      sharedRingUsers = 1;
-    } else {
-      ringBuffer = static_cast<uint8_t*>(malloc(INFLATE_DICT_SIZE));
-      ownsRing = true;
-      if (ringBuffer == nullptr) {
-#if defined(ESP32) || defined(ARDUINO)
-        LOG_ERR("INF", "Inflate ring OOM (%u bytes) Free=%u MaxAlloc=%u shared=%d",
-                static_cast<unsigned>(INFLATE_DICT_SIZE), static_cast<unsigned>(ESP.getFreeHeap()),
-                static_cast<unsigned>(ESP.getMaxAllocHeap()), sharedRing != nullptr ? 1 : 0);
-#endif
-        return false;
-      }
-    }
+    ringBuffer = static_cast<uint8_t*>(malloc(INFLATE_DICT_SIZE));
+    if (!ringBuffer) return false;
+    ownsRing = true;
     memset(ringBuffer, 0, INFLATE_DICT_SIZE);
   }
 
@@ -79,19 +27,20 @@ bool InflateReader::init(const bool streaming) {
   return true;
 }
 
+bool InflateReader::initWithRing(uint8_t* ring) {
+  deinit();  // free any owned ring buffer and reset state
+  if (!ring) return false;
+  ringBuffer = ring;
+  ownsRing = false;  // caller's buffer: never freed here
+  memset(ringBuffer, 0, INFLATE_DICT_SIZE);
+  uzlib_uncompress_init(&decomp, ringBuffer, INFLATE_DICT_SIZE);
+  return true;
+}
+
 void InflateReader::deinit() {
-  if (ringBuffer != nullptr) {
-    if (ownsRing) {
-      // Do not promote into a session-long pin: a resident 32KB ring caps MaxAlloc
-      // below CJK glyph mini-bitmap size (~28–34KB) and forces per-glyph SD overflow
-      // on every page flip. createSectionFile acquires/releases explicitly instead.
-      free(ringBuffer);
-    } else if (sharedRingUsers > 0) {
-      sharedRingUsers--;
-    }
-    ringBuffer = nullptr;
-    ownsRing = false;
-  }
+  if (ringBuffer && ownsRing) free(ringBuffer);
+  ringBuffer = nullptr;
+  ownsRing = false;
   memset(&decomp, 0, sizeof(decomp));
 }
 
@@ -109,6 +58,8 @@ void InflateReader::skipZlibHeader() {
 
 bool InflateReader::read(uint8_t* dest, size_t len) {
   if (!ringBuffer) {
+    // One-shot mode: back-references use absolute offset from dest_start.
+    // Valid only when read() is called once with the full output buffer.
     decomp.dest_start = dest;
   }
   decomp.dest = dest;
@@ -121,6 +72,8 @@ bool InflateReader::read(uint8_t* dest, size_t len) {
 
 InflateStatus InflateReader::readAtMost(uint8_t* dest, size_t maxLen, size_t* produced) {
   if (!ringBuffer) {
+    // One-shot mode: back-references use absolute offset from dest_start.
+    // Valid only when readAtMost() is called once with the full output buffer.
     decomp.dest_start = dest;
   }
   decomp.dest = dest;

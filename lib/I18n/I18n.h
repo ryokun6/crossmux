@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 
 #include "I18nKeys.h"
 /**
@@ -29,6 +30,15 @@ class I18n {
   // compiled in but whose glyphs are not (e.g. ZH_TW in the non-CJK global
   // build) would render as garbled boxes, so it is reported as unavailable.
   static bool isLanguageAvailable(Language lang);
+
+  // True when `lang` is the synthesized Simplified Chinese table. Compares the
+  // persisted code so this compiles on images whose generated enum has no ZH_CN.
+  static bool isSimplifiedChinese(Language lang) {
+    const auto idx = static_cast<uint8_t>(lang);
+    if (idx >= static_cast<uint8_t>(Language::_COUNT)) return false;
+    const char* code = LANGUAGE_CODES[idx];
+    return code != nullptr && std::strcmp(code, "zh-CN") == 0;
+  }
 
   // Get all unique characters used in a specific language
   // Returns a sorted string of unique characters

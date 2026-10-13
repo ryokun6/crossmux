@@ -26,9 +26,17 @@ bool BookmarkFile::load(const std::string& bookPath, std::vector<BookmarkEntry>&
     bookmark.xpath = obj["xpath"] | "";
     bookmark.percentage = obj["percentage"] | static_cast<float>(0);
     bookmark.summary = obj["summary"] | "";
+    bookmark.name = obj["name"] | "";
+    if (bookmark.name.size() > BookmarkEntry::MAX_NAME_LENGTH) {
+      bookmark.name.resize(BookmarkEntry::MAX_NAME_LENGTH);
+    }
     bookmark.computedSpineIndex = obj["si"] | static_cast<uint16_t>(0);
     bookmark.computedChapterPageCount = obj["pc"] | static_cast<uint16_t>(0);
     bookmark.computedChapterProgress = obj["pp"] | static_cast<uint16_t>(0);
+    if (!obj["vo"].isNull()) {
+      bookmark.visibleTextOffset = obj["vo"] | static_cast<uint32_t>(0);
+      bookmark.hasVisibleTextOffset = true;
+    }
   }
 
   LOG_DBG("BKM", "Loaded %zu bookmarks from file", bookmarks.size());
@@ -36,6 +44,13 @@ bool BookmarkFile::load(const std::string& bookPath, std::vector<BookmarkEntry>&
 }
 
 bool BookmarkFile::save(const std::string& bookPath, const std::vector<BookmarkEntry>& bookmarks) {
+  for (const auto& bookmark : bookmarks) {
+    if (bookmark.name.size() > BookmarkEntry::MAX_NAME_LENGTH) {
+      LOG_ERR("BKM", "Bookmark name exceeds %zu bytes", BookmarkEntry::MAX_NAME_LENGTH);
+      return false;
+    }
+  }
+
   JsonDocument doc;
   JsonArray arr = doc["bookmarks"].to<JsonArray>();
   LOG_DBG("BKM", "Saving %zu bookmarks to file", bookmarks.size());
@@ -44,9 +59,15 @@ bool BookmarkFile::save(const std::string& bookPath, const std::vector<BookmarkE
     obj["xpath"] = bookmark.xpath;
     obj["percentage"] = bookmark.percentage;
     obj["summary"] = bookmark.summary;
+    if (!bookmark.name.empty()) {
+      obj["name"] = bookmark.name;
+    }
     obj["si"] = bookmark.computedSpineIndex;
     obj["pc"] = bookmark.computedChapterPageCount;
     obj["pp"] = bookmark.computedChapterProgress;
+    if (bookmark.hasVisibleTextOffset) {
+      obj["vo"] = bookmark.visibleTextOffset;
+    }
   }
 
   // writeDocToFile ensures /.crosspoint; the bookmarks subdirectory is ours.

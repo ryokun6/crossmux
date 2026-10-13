@@ -2,6 +2,7 @@ _language_name: "한국어"
 _language_code: "KO"
 _locale: "ko-KR"
 _order: "25"
+_bcp47: "ko"
 
 STR_CROSSPOINT: "ryOS CrossMux"
 STR_BOOTING: "부팅 중"

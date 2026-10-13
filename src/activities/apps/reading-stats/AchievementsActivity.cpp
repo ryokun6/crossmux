@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "AppMetricCard.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 #include "util/HeaderDateUtils.h"
@@ -83,6 +84,8 @@ void AchievementsActivity::rebuildVisibleIndexes() {
 
   for (int i = 0; i < static_cast<int>(achievements.size()); ++i) {
     if (achievements[i].state.unlocked == showCompleted) {
+      // Store source indices for navigation, rather than copying achievement views.
+      // cppcheck-suppress useStlAlgorithm
       visibleIndexes.push_back(i);
     }
   }
@@ -92,6 +95,8 @@ void AchievementsActivity::rebuildVisibleIndexes() {
     const bool fallbackCompleted = selectedTab == FilterTab::Completed;
     for (int i = 0; i < static_cast<int>(achievements.size()); ++i) {
       if (achievements[i].state.unlocked == fallbackCompleted) {
+        // Store source indices for navigation, rather than copying achievement views.
+        // cppcheck-suppress useStlAlgorithm
         visibleIndexes.push_back(i);
       }
     }
@@ -131,6 +136,47 @@ void AchievementsActivity::loop() {
     if (!mappedInput.isPressed(MappedInputManager::Button::Confirm)) {
       waitForConfirmRelease = false;
     }
+    return;
+  }
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int pageWidth = renderer.getScreenWidth();
+  const int tabTop = metrics.topPadding + metrics.headerHeight;
+  int tab = -1;
+  if (mappedInput.colTouch(tab, 0, pageWidth / 2, 2, tabTop, tabTop + metrics.tabBarHeight, pageWidth / 2) ==
+      MappedInputManager::RowTouch::Tap) {
+    selectedTab = tab == 0 ? FilterTab::Pending : FilterTab::Completed;
+    selectedIndex = 0;
+    rebuildVisibleIndexes();
+    requestUpdate();
+    return;
+  }
+
+  const int contentTop = tabTop + metrics.tabBarHeight + metrics.verticalSpacing;
+  const int viewportHeight =
+      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
+  const int maxVisibleRows = std::max(1, viewportHeight / ROW_STEP);
+  const int firstVisibleIndex = selectedIndex >= maxVisibleRows ? selectedIndex - maxVisibleRows + 1 : 0;
+  int touchedRow = -1;
+  const auto rowTouch =
+      mappedInput.rowTouch(touchedRow, contentTop, ROW_STEP,
+                           std::min(maxVisibleRows, static_cast<int>(visibleIndexes.size()) - firstVisibleIndex),
+                           metrics.contentSidePadding, pageWidth - metrics.contentSidePadding, ROW_BOX_HEIGHT);
+  if (rowTouch != MappedInputManager::RowTouch::None) {
+    selectedIndex = firstVisibleIndex + touchedRow;
+    requestUpdate();
+    return;
+  }
+
+  const auto swipe = mappedInput.wasSwipe();
+  if (swipe == MappedInputManager::SwipeDir::Up && !visibleIndexes.empty()) {
+    selectedIndex = ButtonNavigator::nextIndex(selectedIndex, static_cast<int>(visibleIndexes.size()));
+    requestUpdate();
+    return;
+  }
+  if (swipe == MappedInputManager::SwipeDir::Down && !visibleIndexes.empty()) {
+    selectedIndex = ButtonNavigator::previousIndex(selectedIndex, static_cast<int>(visibleIndexes.size()));
+    requestUpdate();
     return;
   }
 
@@ -210,17 +256,14 @@ void AchievementsActivity::render(RenderLock&&) {
       const auto& entry = achievements[visibleIndexes[visibleIndex]];
       const bool selected = visibleIndex == selectedIndex;
       const Rect rowRect{sidePadding, currentY, rowWidth, ROW_BOX_HEIGHT};
-      if (selected) {
-        renderer.fillRectDither(rowRect.x, rowRect.y, rowRect.width, rowRect.height, Color::LightGray);
-        renderer.drawRect(rowRect.x, rowRect.y, rowRect.width, rowRect.height);
-      }
+      const bool foregroundBlack = AppMetricCard::drawListRow(renderer, rowRect, selected);
 
       const int iconX = rowRect.x + 10;
       const int iconY = rowRect.y + (rowRect.height - ICON_BOX_SIZE) / 2;
       if (entry.state.unlocked) {
-        drawTrophyIcon(renderer, iconX, iconY, true);
+        drawTrophyIcon(renderer, iconX, iconY, foregroundBlack);
       } else {
-        drawLockIcon(renderer, iconX, iconY, true);
+        drawLockIcon(renderer, iconX, iconY, foregroundBlack);
       }
 
       const std::string title = ACHIEVEMENTS.getTitle(entry.definition->id);
@@ -236,17 +279,19 @@ void AchievementsActivity::render(RenderLock&&) {
           renderer.truncatedText(SMALL_FONT_ID, description.c_str(), textWidth, EpdFontFamily::REGULAR);
 
       const int titleTop = rowRect.y + 8;
-      renderer.drawText(UI_10_FONT_ID, textX, titleTop, truncatedTitle.c_str(), true, EpdFontFamily::BOLD);
+      renderer.drawText(UI_10_FONT_ID, textX, titleTop, truncatedTitle.c_str(), foregroundBlack, EpdFontFamily::BOLD);
       // Description sits one title-line below the title so the two never touch, derived
       // from the font metric instead of a hand-tuned offset.
       const int descriptionTop = titleTop + renderer.getLineHeight(UI_10_FONT_ID);
-      renderer.drawText(SMALL_FONT_ID, textX, descriptionTop, truncatedDescription.c_str(), true,
+      renderer.drawText(SMALL_FONT_ID, textX, descriptionTop, truncatedDescription.c_str(), foregroundBlack,
                         EpdFontFamily::REGULAR);
       renderer.drawText(UI_10_FONT_ID, rowRect.x + rowRect.width - progressWidth - 10, rowRect.y + 18, progress.c_str(),
-                        true, EpdFontFamily::REGULAR);
+                        foregroundBlack, EpdFontFamily::REGULAR);
 
       currentY += ROW_STEP;
     }
+    AppMetricCard::drawListScrollBar(renderer, Rect{0, contentTop, pageWidth, viewportHeight},
+                                     static_cast<int>(visibleIndexes.size()), firstVisibleIndex, maxVisibleRows);
   }
 
   const std::string nextTabLabel = tabLabel(selectedTab == FilterTab::Pending);

@@ -5,6 +5,7 @@
 
 #include "lib/EpdFont/EpdFont.h"
 #include "lib/EpdFont/EpdFontData.h"
+#include "lib/EpdFont/MissingGlyph.h"
 
 // ============================================================================
 // Synthetic test font
@@ -270,6 +271,120 @@ TEST(EpdFont, KernLookup) {
   EXPECT_EQ(testFont().getKerning('T', 'T'), 0);  // 'T' has no right class
 }
 
+// The font above is the DENSE representation, which only SD-card fonts use now. Every built-in
+// font ships the sparse (CSR) form instead, so it needs its own coverage: same pairs, same
+// answers, including the two zero cells that the sparse form stores by omitting them.
+namespace {
+// Dense equivalent, for reference:  [L1,R1]=-5  [L1,R2]=-7  [L2,R1]=-2  [L2,R2]=-3
+// Rows are [rowOffsets[l], rowOffsets[l+1]) and sorted ascending by column.
+const uint16_t kKernRowOffsetsFull[] = {0, 2, 4};
+const uint8_t kKernSparseColsFull[] = {0, 1, 0, 1};
+const int8_t kKernSparseValuesFull[] = {-5, -7, -2, -3};
+
+// A row with a hole: left class 1 keeps only its R2 entry, left class 2 only its R1 entry.
+// This is the case the dense form cannot distinguish from a stored zero, and the one a
+// binary search gets wrong if it does not confirm the key it landed on.
+const uint16_t kKernRowOffsetsSparse[] = {0, 1, 2};
+const uint8_t kKernSparseColsSparse[] = {1, 0};
+const int8_t kKernSparseValuesSparse[] = {-7, -2};
+
+EpdFontData makeSparseFontData(const uint16_t* rowOffsets, const uint8_t* cols, const int8_t* values) {
+  EpdFontData d = kTestFontData;
+  d.kernMatrix = nullptr;  // force the sparse path
+  d.kernRowOffsets = rowOffsets;
+  d.kernSparseCols = cols;
+  d.kernSparseValues = values;
+  return d;
+}
+}  // namespace
+
+TEST(EpdFont, KernLookupSparseMatchesDense) {
+  const EpdFontData sparseData = makeSparseFontData(kKernRowOffsetsFull, kKernSparseColsFull, kKernSparseValuesFull);
+  EpdFont sparse(&sparseData);
+
+  // Every pair the dense font answers, the sparse font must answer identically.
+  for (const uint32_t left : {'T', 'a', 'o', 'x'}) {
+    for (const uint32_t right : {'T', 'a', 'o', 'x'}) {
+      EXPECT_EQ(sparse.getKerning(left, right), testFont().getKerning(left, right))
+          << "pair " << static_cast<char>(left) << static_cast<char>(right);
+    }
+  }
+}
+
+TEST(EpdFont, KernLookupSparseHandlesMissingEntries) {
+  const EpdFontData sparseData =
+      makeSparseFontData(kKernRowOffsetsSparse, kKernSparseColsSparse, kKernSparseValuesSparse);
+  EpdFont sparse(&sparseData);
+
+  EXPECT_EQ(sparse.getKerning('T', 'o'), -7);  // present, and not the first column of its row
+  EXPECT_EQ(sparse.getKerning('o', 'a'), -2);  // present, first column of its row
+  EXPECT_EQ(sparse.getKerning('T', 'a'), 0);   // absent: column below the one stored
+  EXPECT_EQ(sparse.getKerning('o', 'o'), 0);   // absent: column above the one stored
+  EXPECT_EQ(sparse.getKerning('a', 'o'), 0);   // no left class at all
+  EXPECT_EQ(sparse.getKerning('T', 'x'), 0);   // no right class at all
+}
+
+// The class maps above are the PACKED form, which only SD-card fonts use now. Built-in fonts
+// ship the split arrays, so the same coexistence check the matrix gets applies here too.
+namespace {
+const uint16_t kKernLeftCps[] = {0x54, 0x6F};
+const uint8_t kKernLeftIds[] = {1, 2};
+const uint16_t kKernRightCps[] = {0x61, 0x6F};
+const uint8_t kKernRightIds[] = {1, 2};
+
+EpdFontData makeSplitClassFontData() {
+  EpdFontData d = kTestFontData;
+  d.kernLeftClasses = nullptr;  // force the split path
+  d.kernRightClasses = nullptr;
+  d.kernLeftCodepoints = kKernLeftCps;
+  d.kernLeftClassIds = kKernLeftIds;
+  d.kernRightCodepoints = kKernRightCps;
+  d.kernRightClassIds = kKernRightIds;
+  return d;
+}
+}  // namespace
+
+TEST(EpdFont, KernSplitClassMapMatchesPacked) {
+  const EpdFontData splitData = makeSplitClassFontData();
+  EpdFont split(&splitData);
+  for (const uint32_t left : {'T', 'a', 'o', 'x', 'z'}) {
+    for (const uint32_t right : {'T', 'a', 'o', 'x', 'z'}) {
+      EXPECT_EQ(split.getKerning(left, right), testFont().getKerning(left, right))
+          << "pair " << static_cast<char>(left) << static_cast<char>(right);
+    }
+  }
+}
+
+TEST(EpdFont, KernSplitClassMapWithSparseMatrix) {
+  // The combination the built-in fonts actually ship: split class maps AND a sparse matrix.
+  EpdFontData d = makeSplitClassFontData();
+  d.kernMatrix = nullptr;
+  d.kernRowOffsets = kKernRowOffsetsFull;
+  d.kernSparseCols = kKernSparseColsFull;
+  d.kernSparseValues = kKernSparseValuesFull;
+  EpdFont shipped(&d);
+
+  EXPECT_EQ(shipped.getKerning('T', 'a'), -5);
+  EXPECT_EQ(shipped.getKerning('T', 'o'), -7);
+  EXPECT_EQ(shipped.getKerning('o', 'a'), -2);
+  EXPECT_EQ(shipped.getKerning('o', 'o'), -3);
+  EXPECT_EQ(shipped.getKerning('a', 'o'), 0);  // no left class
+  EXPECT_EQ(shipped.getKerning('T', 'x'), 0);  // no right class
+}
+
+TEST(EpdFont, KernLookupEmptyRowIsZero) {
+  // Left class 1 stores nothing (offsets 0,0) — an empty range must not read past its row.
+  static const uint16_t rowOffsets[] = {0, 0, 1};
+  static const uint8_t cols[] = {0};
+  static const int8_t values[] = {-2};
+  const EpdFontData sparseData = makeSparseFontData(rowOffsets, cols, values);
+  EpdFont sparse(&sparseData);
+
+  EXPECT_EQ(sparse.getKerning('T', 'a'), 0);
+  EXPECT_EQ(sparse.getKerning('T', 'o'), 0);
+  EXPECT_EQ(sparse.getKerning('o', 'a'), -2);
+}
+
 TEST(EpdFont, GlyphLookup) {
   ASSERT_NE(testFont().getGlyph('T'), nullptr);
   ASSERT_NE(testFont().getGlyph('a'), nullptr);
@@ -293,7 +408,7 @@ TEST(EpdFont, CoveredGlyphDoesNotReportReplacement) {
 
 TEST(EpdFont, MissingGlyphReportsReplacement) {
   bool usedReplacement = false;
-  EXPECT_EQ(replacementFont().getGlyph(0x749F, &usedReplacement), &kReplacementGlyphs[0]);
+  EXPECT_EQ(replacementFont().getGlyph(0x749F, &usedReplacement), nullptr);
   EXPECT_TRUE(usedReplacement);
 }
 
@@ -358,21 +473,45 @@ TEST(EpdFont, PairConsistencyViaFont) {
   EXPECT_EQ(oo_gap_after_o, oo_gap_bare);
 }
 
-// Null-glyph handling: when a codepoint has no glyph (and no replacement
-// glyph), the pending advance from the previous glyph must still be flushed.
-// Without the flush fix, the glyph after the null would overlap the one before.
-TEST(EpdFont, NullGlyphAdvancePreserved) {
-  // 'Z' (0x5A) is not in our font and there's no U+FFFD, so getGlyph returns null.
-  // "oZo" should lay out as: o1 at 0, Z skipped (advance flushed), o2 at 9.
-  //   toPixel(145) = 9 (o's advance, no kern since Z resets prevCp).
-  //   w = 9 + 8 = 17
-  EXPECT_EQ(textWidth("oZo"), 17);
+TEST(EpdFont, MissingGlyphReservesOutlineWidth) {
+  // ascender 12: 9px square, 1px bearing on each side, 11px advance.
+  EXPECT_EQ(textWidth("Z"), 10);
+  EXPECT_EQ(textWidth("oZo"), 28);
+  EXPECT_EQ(textWidth("oZZo"), 39);
+  EXPECT_EQ(textWidth("Zo"), 19);
+  EXPECT_EQ(textWidth("oZ"), 19);
+  EXPECT_EQ(textWidth("ZZ"), 21);
+  int w = 0, h = 0;
+  replacementFont().getTextDimensions("Z", &w, &h);
+  EXPECT_EQ(w, textWidth("Z"));
+  EXPECT_EQ(h, 9);
+  EXPECT_EQ(replacementFont().getGlyph(REPLACEMENT_GLYPH), &kReplacementGlyphs[0]);
+}
 
-  // Multi-null: "oZZo" -- two consecutive nulls, advance still preserved.
-  EXPECT_EQ(textWidth("oZZo"), 17);
+TEST(EpdFont, MissingGlyphMetricsScaleAndIgnoreNonPrintingCharacters) {
+  EXPECT_EQ(missingGlyph::metrics(24, 'Z').width, 18);
+  EXPECT_EQ(missingGlyph::metrics(24, 'Z').advanceX, 20 * 16);
+  EXPECT_EQ(missingGlyph::metrics(-1, 'Z').width, 4);
+  EXPECT_EQ(missingGlyph::metrics(10000, 'Z').width, 255);
+  for (const uint32_t cp :
+       {0x20, 0xA0, 0xAD, 0x3000, 0x200B, 0x200D, 0x2060, 0xFE0F, 0xFEFF, 0xE0100, 0x301, 0x5B0, 0x64E}) {
+    SCOPED_TRACE(cp);
+    EXPECT_EQ(missingGlyph::metrics(24, cp).width, 0);
+    EXPECT_EQ(missingGlyph::metrics(24, cp).advanceX, 0);
+  }
+  EXPECT_EQ(textWidth("o\xCC\x81o"), textWidth("oo"));
+  EXPECT_EQ(textWidth("o\xD6\xB0o"), textWidth("oo"));
+}
 
-  // Null at start: "Zo" -- no pending advance to flush, o renders at 0.
-  EXPECT_EQ(textWidth("Zo"), 8);
+TEST(EpdFont, MissingGlyphDoesNotUseKerningClassesLeftInSubsetFont) {
+  auto data = kTestFontData;
+  // 'T' still has kerning classes but its glyph is no longer in the subset.
+  data.intervals = kIntervals + 1;
+  data.intervalCount = 3;
+  EpdFont font(&data);
+  int w = 0, h = 0;
+  font.getTextDimensions("Ta", &w, &h);
+  EXPECT_EQ(w, 11 + 7);
 }
 
 TEST(EpdFont, HeightCalculation) {

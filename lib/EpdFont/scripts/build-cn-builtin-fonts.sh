@@ -3,11 +3,10 @@
 # Generates the per-size CJK font headers used by the ENABLE_CHINESE_VERSION
 # build. Coverage tiers per point size:
 #
-#   8/10/12pt (SMALL, UI text)   : 3500 常用字 ∪ i18n   (cn_common_chars.txt)
-#   14pt      (LARGE, reader MEDIUM default) : 7000 通用汉字 + 扩展符号
-#                                              (chars_7000_common.txt → TC)
-#   16/18pt   (I18N, reader LARGE/EXTRA_LARGE) : ~i18n-only chars
-#                                                (cn_i18n_chars.txt)
+#   8/10/12pt (COMMON, UI + reader SMALL) : 3500 常用字 ∪ i18n
+#                                            (cn_common_chars.txt)
+#   14/16/18pt (I18N, reader MEDIUM/LARGE/EXTRA_LARGE) : UI-only chars
+#                                                          (cn_i18n_chars.txt)
 #
 # Source face: GenSen Rounded 2 TW Regular (Traditional). Charset lists are
 # converted Simplified→Traditional (OpenCC s2tw, Taiwan forms) and deduped so
@@ -148,6 +147,14 @@ if [ ! -f "$CHARSET_FILE" ]; then
   exit 1
 fi
 
+mkdir -p "$TMP_DIR"
+
+# Note on charset files:
+#   - $CHARSET_FILE (cn_common_chars.txt): full subset for 8/10/12pt.
+#     Produced by build_cn_charset.py (Step 0 above) — pool ∪ required.
+#   - $I18N_CHARSET_FILE (cn_i18n_chars.txt): require-from only, for the
+#     tiny 14pt/16pt/18pt subset. Also produced by build_cn_charset.py as a side
+#     output whenever --require-from is passed.
 if [ ! -f "$I18N_CHARSET_FILE" ]; then
   echo "Error: $I18N_CHARSET_FILE not found in $(pwd)." >&2
   echo "       Run build_cn_charset.py with at least one --require-from arg," >&2
@@ -218,19 +225,8 @@ echo "Subsetting $(basename "$SOURCE_OTF") → $(basename "$SUBSET_OTF") (small)
   --no-hinting \
   --drop-tables+=DSIG,GSUB,GPOS
 
-# Step 1b: subset for 14pt — 7000 TC 通用汉字 + extended symbol coverage.
-echo "Subsetting $(basename "$SOURCE_OTF") → $(basename "$LARGE_OTF") (large)..."
-"$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
-  --output-file="$LARGE_OTF" \
-  --text-file="$LARGE_CHARSET_FILE" \
-  --unicodes="U+0020-007E,U+00A0-00FF,U+2010-2026,U+2030-205F,U+2070-209F,U+20A0-20CF,U+2150-218F,U+2190-21FF,U+2200-22FF,U+2460-24FF,U+2500-257F,U+2580-259F,U+25A0-25FF,U+2600-26FF,U+2700-27BF,U+3000-303F,U+FE10-FE19,U+FE30-FE48,U+FF00-FFEF,U+FFFD" \
-  --layout-features='*' \
-  --notdef-outline \
-  --recommended-glyphs \
-  --no-hinting \
-  --drop-tables+=DSIG,GSUB,GPOS
-
-# Step 1c: subset down to i18n-only CJK + ASCII + Latin-1 + CJK punctuation.
+# Step 1b: subset down to i18n-only CJK + ASCII + Latin-1 + CJK punctuation.
+# Used by the 14pt/16pt/18pt bitmap headers.
 echo "Subsetting $(basename "$SOURCE_OTF") → $(basename "$I18N_OTF") (i18n)..."
 "$PYTHON" -m fontTools.subset "$SOURCE_OTF" \
   --output-file="$I18N_OTF" \
@@ -296,6 +292,8 @@ done
 for size in "${CN_FONT_SIZES_I18N[@]}"; do
   emit_size "$size" "$I18N_OTF"
 done
+
+"$PYTHON" share-cn-font-intervals.py
 
 echo ""
 echo "Done. Generated $((${#CN_FONT_SIZES_SMALL[@]} + ${#CN_FONT_SIZES_LARGE[@]} + ${#CN_FONT_SIZES_I18N[@]})) CJK font headers in ../builtinFonts/"

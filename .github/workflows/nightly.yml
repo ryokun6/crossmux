@@ -1,37 +1,127 @@
-name: Nightly
+name: Firmware Release
 
-# Daily rolling nightly build of main, published as a prerelease tagged
-# `nightly` with international (firmware.bin), Traditional (firmware-tc.bin),
-# Simplified (firmware-sc.bin), Japanese (firmware-ja.bin), and Korean
-# (firmware-ko.bin) assets. The website's Insider/Nightly reads the newest prerelease.
 on:
-  schedule:
-    - cron: '0 18 * * *' # daily 18:00 UTC
   workflow_dispatch:
+    inputs:
+      notes_en:
+        description: 'English OTA release notes (2-8 lines, max 96 ASCII bytes each)'
+        required: true
+        type: string
+      notes_zh:
+        description: 'Chinese OTA release notes (2-8 lines, max 32 characters each)'
+        required: true
+        type: string
+  push:
+    tags:
+      - '*.*.*'
+
+concurrency:
+  group: firmware-${{ github.event_name == 'push' && 'stable' || 'nightly' }}-publish
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-nightly:
+  select_runner:
+    uses: ./.github/workflows/select-build-runner.yml
+    secrets:
+      runner_status_token: ${{ secrets.H2O_RUNNER_TOKEN }}
+
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      channel: ${{ steps.release.outputs.channel }}
+      matrix: ${{ steps.release.outputs.matrix }}
+      build_id: ${{ steps.release.outputs.build_id }}
+      build_tag: ${{ steps.release.outputs.build_tag }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: release
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            channel=stable
+            version="$(python3 -c 'import configparser; c=configparser.ConfigParser(); c.read("platformio.ini"); print(c["crosspoint"]["version"])')"
+            if [[ ! "$GITHUB_REF_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ "$GITHUB_REF_NAME" != "$version" ]; then
+              echo "::error::Stable tag $GITHUB_REF_NAME does not match firmware version $version"
+              exit 1
+            fi
+          else
+            channel=nightly
+          fi
+          build_id="${channel}-build-${GITHUB_SHA}-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+          echo "build_tag=$build_id" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(python3 scripts/package_nightly_target.py --channel "$channel" --matrix)" >> "$GITHUB_OUTPUT"
+
+  notes:
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          submodules: recursive
+          fetch-depth: 0
+      - name: Build release notes
+        env:
+          CHANNEL: ${{ needs.prepare.outputs.channel }}
+          NOTES_EN: ${{ inputs.notes_en }}
+          NOTES_ZH: ${{ inputs.notes_zh }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = stable ]; then
+            notes=".github/release-notes/${GITHUB_REF_NAME}.md"
+            test -f "$notes"
+            cp "$notes" release-body.md
+            git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > tag-message.txt
+            python3 scripts/generate_ota_notes.py --input tag-message.txt --output ota-notes.md
+            test -s ota-notes.md
+            printf '\n' >> release-body.md
+            cat ota-notes.md >> release-body.md
+          else
+            printf 'Nightly build `%s` from `main`.\n' "${GITHUB_SHA::7}" > release-body.md
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+              python3 scripts/generate_ota_notes.py \
+                --en-notes="$NOTES_EN" --zh-notes="$NOTES_ZH" --output ota-notes.md
+              test -s ota-notes.md
+              printf '\n' >> release-body.md
+              cat ota-notes.md >> release-body.md
+            fi
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-release-notes
+          path: |
+            release-body.md
+            ota-notes.md
+          if-no-files-found: warn
+          retention-days: 1
 
+  build:
+    needs: [prepare, select_runner]
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: ${{ matrix.targetId }} (${{ needs.prepare.outputs.channel }})
+    runs-on: ${{ fromJSON(needs.select_runner.outputs['runs-on']) }}
+    steps:
+      - name: Isolate PlatformIO toolchains
+        run: echo "PLATFORMIO_CORE_DIR=$RUNNER_TEMP/.platformio-$GITHUB_RUN_ID-$GITHUB_JOB-${{ matrix.targetId }}" >> "$GITHUB_ENV"
+      - name: Use runner temporary directory
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v6
         with:
           python-version: '3.14'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
+          version: latest
           enable-cache: false
-
       - name: Install PlatformIO Core
-        run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+        run: uv pip install --system -U pioarduino==6.2.0
 
       # OpenCC tw2sp synthesizes ZH_CN UI strings for gh_release_sc_rc (gen_i18n.py).
       - name: Install OpenCC
@@ -54,8 +144,23 @@ jobs:
           cp .pio/build/gh_release_ja_rc/firmware.bin  dist/firmware-ja.bin
           cp .pio/build/gh_release_ko_rc/firmware.bin  dist/firmware-ko.bin
 
-      # Roll the single `nightly` release/tag forward to the current commit.
-      - name: Remove previous nightly release
+  publish_github:
+    needs: [prepare, notes, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: firmware-${{ needs.prepare.outputs.channel }}-*
+          path: artifacts
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-release-notes
+          path: notes
+      - name: Load previous global Nightly index
+        if: needs.prepare.outputs.channel == 'nightly'
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release delete nightly --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true

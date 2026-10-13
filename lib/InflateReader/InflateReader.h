@@ -13,10 +13,10 @@ enum class InflateStatus {
 
 // Streaming deflate decompressor wrapping uzlib.
 //
-// NOTE: retained ONLY for FontDecompressor's tiny one-shot flash-resident group
-// decompressions, where uzlib's ~1KB state beats tinfl's ~11KB on the
-// OOM-sensitive render path. All throughput paths (zip entries, PNG IDAT) use
-// InflateStream (lib/miniz), which decodes several times faster.
+// Retained for small, OOM-sensitive one-shot decompressions where uzlib's ~1KB
+// state beats tinfl's ~11KB: font groups and bounded ZIP image-header probes.
+// Throughput paths (full zip entries, PNG IDAT) use InflateStream (lib/miniz),
+// which decodes several times faster.
 //
 // Two modes:
 //   init(false)  — one-shot: input is a contiguous buffer, call read() once.
@@ -49,22 +49,30 @@ class InflateReader {
   InflateReader(const InflateReader&) = delete;
   InflateReader& operator=(const InflateReader&) = delete;
 
-  // Initialise decompressor. streaming=true needs a 32KB ring for back-references
-  // across multiple read() / readAtMost() calls. Prefers the session-shared ring
-  // from acquireSharedDictionary() so mid-read MaxAlloc cliffs do not fail init.
-  // Returns false only in streaming mode if no ring can be obtained.
+  // Size of the streaming ring buffer, exposed so callers using initWithRing()
+  // can allocate it themselves.
+  static constexpr size_t RING_BYTES = 32768;
+
+  // Initialise decompressor. streaming=true allocates a 32KB ring buffer needed
+  // when read() or readAtMost() will be called multiple times.
+  // Returns false only in streaming mode if the ring buffer allocation fails.
   bool init(bool streaming = false);
 
-  // Release this instance's ring reference and reset internal state.
-  void deinit();
+  // Initialise streaming mode over a caller-owned ring buffer of RING_BYTES.
+  //
+  // Exists for allocation ordering. The ring is by far the largest block a
+  // streaming decode needs, and on a heap where every allocation is carved from
+  // one big free run, taking any smaller buffer first can leave the largest
+  // block just short of 32KB — measured on device at 32756 bytes against a
+  // 32768 requirement. A caller that allocates the ring FIRST, then its own
+  // state, never hits that. The buffer must outlive the reader; deinit() does
+  // not free it.
+  // Returns false if ring is null (e.g. a forwarded failed allocation), leaving
+  // the reader deinitialised.
+  bool initWithRing(uint8_t* ring);
 
-  // Pin a process-wide 32KB inflate dictionary for the duration of chapter
-  // indexing (createSectionFile). Call acquire at entry and releaseSharedDictionary
-  // when indexing finishes so page-turn glyph prewarm can claim MaxAlloc again.
-  // Without acquire, streaming inflate mallocs a private ring and frees it on
-  // deinit (no longer promoted into a permanent pin — that starved page flips).
-  static bool acquireSharedDictionary();
-  static void releaseSharedDictionary();
+  // Release the ring buffer (only if this reader owns it) and reset state.
+  void deinit();
 
   // Set the entire compressed input as a contiguous memory buffer.
   // Used in one-shot mode; not needed when a read callback is set.
@@ -96,5 +104,5 @@ class InflateReader {
  private:
   uzlib_uncomp decomp = {};
   uint8_t* ringBuffer = nullptr;
-  bool ownsRing = false;  // true when ringBuffer was malloc'd for this instance
+  bool ownsRing = false;
 };

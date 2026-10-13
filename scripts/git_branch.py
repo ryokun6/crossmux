@@ -1,6 +1,6 @@
 """
 PlatformIO pre-build script: inject git branch and short SHA into
-CROSSPOINT_VERSION for the default (dev) environment.
+CROSSPOINT_VERSION for development environments.
 
 Results in a version string like:  1.1.0-dev-feat-kosync-xpath-05c6cf8
 Release environments are unaffected; they set CROSSPOINT_VERSION in the ini.
@@ -69,7 +69,7 @@ def get_base_version(project_dir):
         warn(f'platformio.ini not found at {ini_path}; base version will be "0.0.0"')
         return '0.0.0'
     config = configparser.ConfigParser()
-    config.read(ini_path)
+    config.read(ini_path, encoding='utf-8')
     if not config.has_option('crosspoint', 'version'):
         warn('No [crosspoint] version in platformio.ini; base version will be "0.0.0"')
         return '0.0.0'
@@ -77,16 +77,20 @@ def get_base_version(project_dir):
 
 
 def inject_version(env):
-    # Only applies to the dev (default) environment; release envs set the
+    pioenv = env['PIOENV']
+    # Only applies to development environments; release envs set the
     # version via build_flags in platformio.ini and are unaffected.
-    if env['PIOENV'] != 'default':
+    if pioenv not in ('default', 'sticky', 'eego_a4', 'murphy_m4', 'waveshare_epaper_397', 'metalio_eink4'):
         return
 
     project_dir = env['PROJECT_DIR']
     base_version = get_base_version(project_dir)
-    branch = get_git_branch(project_dir)
     short_sha = get_git_short_sha(project_dir)
-    version_string = f'{base_version}-dev-{branch}-{short_sha}'
+    if pioenv in ('default', 'sticky'):
+        version_string = f'{base_version}-dev-{get_git_branch(project_dir)}-{short_sha}'
+    else:
+        device = pioenv.replace('_', '-')
+        version_string = f'{base_version}-{device}-rc+{short_sha}'
 
     env.Append(CPPDEFINES=[('CROSSPOINT_VERSION', f'\\"{version_string}\\"')])
     print(f'CrossPoint build version: {version_string}')
@@ -100,7 +104,9 @@ try:
     inject_version(env)     # noqa: F821  # type: ignore[name-defined]
 except NameError:
     class _Env(dict):
-        def Append(self, **_): pass
+        def Append(self, **_):
+            # Validation mode does not need SCons state; this stub only satisfies inject_version().
+            return None
 
     _project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     inject_version(_Env({'PIOENV': 'default', 'PROJECT_DIR': _project_dir}))

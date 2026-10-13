@@ -1,24 +1,39 @@
 #pragma once
+#include <atomic>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "./FileBrowserActivity.h"
+#include "RecentBooksStore.h"
 #include "activities/Activity.h"
+#include "components/CoverGridHomeUi.h"
 #include "util/ButtonNavigator.h"
 
-struct RecentBook;
 struct Rect;
 
 class HomeActivity final : public Activity {
+  enum class CarouselUpdateScope { None, MenuOnly, Full };
+
+  std::unique_ptr<CoverGridHomeUi> coverGridUi;
   ButtonNavigator buttonNavigator;
   int selectorIndex = 0;
   bool recentsLoading = false;
   bool recentsLoaded = false;
   bool firstRenderDone = false;
-  bool coverRendered = false;      // Track if cover has been rendered once
-  bool coverBufferStored = false;  // Track if cover buffer is stored
-  uint8_t* coverBuffer = nullptr;  // HomeActivity's own buffer for cover image
-  size_t coverBufferSize = 0;      // Bytes allocated to coverBuffer
+  bool hasOpdsServers = false;
+  bool hasPlugins = false;
+  // The home "library" slot (index 2) shows Plugins when any plugin is
+  // installed, otherwise OPDS. The index converters gate on its presence.
+  bool hasLibrarySlot() const { return hasPlugins || hasOpdsServers; }
+  bool hasContinueReading = false;
+  int lastCarouselBookIndex = 0;
+  bool coverRendered = false;           // Track if cover has been rendered once
+  bool coverBufferStored = false;       // Track if cover buffer is stored
+  bool coverBufferUnavailable = false;  // Stop retrying an optional snapshot after OOM
+  std::atomic<CarouselUpdateScope> carouselUpdateScope{CarouselUpdateScope::None};
+  std::unique_ptr<uint8_t[]> coverBuffer;  // HomeActivity's own buffer for cover image
+  size_t coverBufferSize = 0;              // Bytes allocated to coverBuffer
   // Logical rect last passed to drawRecentBookCover. The cover snapshot only
   // needs to cover this region, not the entire framebuffer, so we cache the
   // tile instead of all 48 KB. Set in render() before the call.
@@ -28,51 +43,30 @@ class HomeActivity final : public Activity {
   int coverRectH = 0;
   std::vector<RecentBook> recentBooks;
   const HomeMenuItem initialMenuItem;
-  // Only enter Standby when this activity has observed a complete press→release
-  // pair locally. Prevents a release edge that leaks across an activity switch
-  // (e.g. Back pressed in SettingsActivity, released after HomeActivity took over)
-  // from immediately punching the user into Standby.
-  bool sawBackPressInActivity = false;
 
-  // Convert HomeMenuItem to menu index (used in onEnter)
-  static int menuItemToIndex(HomeMenuItem item) {
-    int i = 0;
-    if (item == HomeMenuItem::FILE_BROWSER) return i;
-    ++i;
-    if (item == HomeMenuItem::RECENTS) return i;
-    ++i;
-    if (item == HomeMenuItem::FILE_TRANSFER) return i;
-    ++i;
-    if (item == HomeMenuItem::SETTINGS_MENU) return i;
-    ++i;
-    if (item == HomeMenuItem::APPS) return i;
-    return 0;
-  }
-
-  // Convert menu index to HomeMenuItem (used in loop)
-  static HomeMenuItem indexToMenuItem(int idx) {
-    int i = 0;
-    if (idx == i++) return HomeMenuItem::FILE_BROWSER;
-    if (idx == i++) return HomeMenuItem::RECENTS;
-    if (idx == i++) return HomeMenuItem::FILE_TRANSFER;
-    if (idx == i++) return HomeMenuItem::SETTINGS_MENU;
-    if (idx == i) return HomeMenuItem::APPS;
-    return HomeMenuItem::NONE;
-  }
   void onSelectBook(const std::string& path);
   void onFileBrowserOpen();
+  void onLibraryOpen();
   void onRecentsOpen();
   void onSettingsOpen();
   void onFileTransferOpen();
+  void onOpdsBrowserOpen();
   void onAppsOpen();
-  void onStandbyOpen();
+  void onPluginsOpen();
 
   int getMenuItemCount() const;
+  static constexpr bool canRenderCarouselMenuOnly(bool isCarousel, bool recentsLoaded, CarouselUpdateScope scope) {
+    return isCarousel && recentsLoaded && scope == CarouselUpdateScope::MenuOnly;
+  }
+  void requestCarouselUpdate(CarouselUpdateScope scope);
   bool storeCoverBuffer();    // Store frame buffer for cover image
   bool restoreCoverBuffer();  // Restore frame buffer from stored cover
   void freeCoverBuffer();     // Free the stored cover buffer
   void loadRecentBooks(int maxBooks);
   void loadRecentCovers(int coverHeight);
+  void fillCoverGridFromLibrary();
+  void resolveGridCoverPaths();
+  void loadGridCover(RecentBook& book, int height, bool& showingLoading, Rect& popupRect);
 
  public:
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
@@ -82,4 +76,5 @@ class HomeActivity final : public Activity {
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool isHomeActivity() const override { return true; }
 };

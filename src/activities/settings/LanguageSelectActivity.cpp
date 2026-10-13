@@ -1,7 +1,9 @@
 #include "LanguageSelectActivity.h"
 
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <I18n.h>
+#include <Logging.h>
 
 #include <algorithm>
 #include <iterator>
@@ -9,132 +11,134 @@
 #include "CrossPointSettings.h"
 #include "I18nKeys.h"
 #include "MappedInputManager.h"
-#include "fontIds.h"
+#include "components/UITheme.h"
+#include "util/Timezones.h"
+
+namespace fui = freeink::ui;
+
+LanguageSelectActivity::LanguageSelectActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, const Mode mode)
+    : UiListActivity("LanguageSelect", renderer, mappedInput), mode_(mode) {}
 
 void LanguageSelectActivity::onEnter() {
-  Activity::onEnter();
+  UiListActivity::onEnter();
 
-  // Build the list of languages this build can actually render, so the global
-  // build doesn't list (and let users pick) ZH_TW, whose name itself renders as
-  // garbled boxes without the CJK font.
-  totalItems = 0;
-  for (const uint8_t langIndex : SORTED_LANGUAGE_INDICES) {
-    if (I18n::isLanguageAvailable(static_cast<Language>(langIndex))) {
-      visibleIndices[totalItems++] = langIndex;
+  // Initial onboarding offers Simplified Chinese first without changing the
+  // active language until the user confirms. Other entry modes keep the
+  // current language selected.
+  const auto selectedLang =
+      mode_ == Mode::Initial ? static_cast<uint8_t>(I18n::languageFromCode("ZH_CN"))
+                             : static_cast<uint8_t>(I18N.getLanguage());
+  const auto* begin = std::begin(SORTED_LANGUAGE_INDICES);
+  const auto* end = std::end(SORTED_LANGUAGE_INDICES);
+  const auto* it = std::find(begin, end, selectedLang);
+  nav.selected = (it != end) ? static_cast<int>(std::distance(begin, it)) : 0;
+
+  // Built once here rather than every buildScreen() call: labels are static,
+  // and the "Selected" marker can't go stale mid-visit since activateIndex()
+  // finishes the activity immediately on selection.
+  for (int i = 0; i < totalItems; ++i) {
+    fui::ListItem item;
+    item.label = I18N.getLanguageName(static_cast<Language>(SORTED_LANGUAGE_INDICES[i]));
+    if (SORTED_LANGUAGE_INDICES[i] == selectedLang) {
+      item.value = tr(STR_SELECTED);
     }
+    item.actionValue = static_cast<int16_t>(i);
+    rowItems[i] = item;
   }
-
-  // Set current selection based on current language
-  const auto currentLang = static_cast<uint8_t>(I18N.getLanguage());
-  const auto* begin = visibleIndices;
-  const auto* end = visibleIndices + totalItems;
-  const auto* it = std::find(begin, end, currentLang);
-  selectedIndex = (it != end) ? std::distance(begin, it) : 0;
-
-  requestUpdate();
 }
 
-void LanguageSelectActivity::onExit() { Activity::onExit(); }
+const char* LanguageSelectActivity::headerTitle() const { return tr(STR_LANGUAGE); }
 
-void LanguageSelectActivity::loop() {
-  auto activateSelected = [this] { handleSelection(); };
+void LanguageSelectActivity::activateIndex(const int index) {
+  // The activated row leaves this screen; a lingering flash would gray an
+  // unrelated element on the next render.
+  app.clearTapFlash();
+  nav.selected = index;
+  const uint8_t langIndex = SORTED_LANGUAGE_INDICES[index];
 
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    onBack();
-    return;
-  }
-
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    activateSelected();
-    return;
-  }
-
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight =
-      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
-  switch (handleListTouch(selectedIndex, totalItems, contentTop, contentHeight, false)) {
-    case ListTouchResult::Activated:
-      activateSelected();
-      return;
-    case ListTouchResult::Consumed:
-      return;
-    case ListTouchResult::None:
+  const uint8_t previousLanguage = SETTINGS.language;
+  const auto previousContentProfile = SETTINGS.contentProfile;
+  const uint8_t previousClockUtcOffsetQ = SETTINGS.clockUtcOffsetQ;
+  const uint8_t previousFontFamily = SETTINGS.fontFamily;
+  const uint8_t previousFontPointSize = SETTINGS.fontPointSize;
+  const uint8_t previousOnboardingVersion = SETTINGS.onboardingVersion;
+  SETTINGS.applyLanguageSelection(langIndex);
+  const Language language = static_cast<Language>(langIndex);
+  const bool simplifiedChinese = I18n::isSimplifiedChinese(language);
+  switch (mode_) {
+    case Mode::Settings:
+      break;
+    case Mode::Initial:
+      SETTINGS.clockUtcOffsetQ = simplifiedChinese ? 80 : 48;
+      SETTINGS.fontFamily = CrossPointSettings::NOTOSANS;
+      SETTINGS.fontPointSize = 12;
+      SETTINGS.onboardingVersion = CrossPointSettings::CURRENT_ONBOARDING_VERSION;
+      break;
+    case Mode::Upgrade:
+      SETTINGS.onboardingVersion = CrossPointSettings::CURRENT_ONBOARDING_VERSION;
       break;
   }
-
-  const int pageItems = UITheme::getNumberOfItemsPerPage(renderer, true, false, true, false);
-  const auto swipe = mappedInput.wasSwipe();
-  if (swipe == MappedInputManager::SwipeDir::Up) {
-    selectedIndex = ButtonNavigator::nextPageIndex(static_cast<int>(selectedIndex), totalItems, pageItems);
+  if (!SETTINGS.saveToFile()) {
+    SETTINGS.language = previousLanguage;
+    SETTINGS.contentProfile = previousContentProfile;
+    SETTINGS.clockUtcOffsetQ = previousClockUtcOffsetQ;
+    SETTINGS.fontFamily = previousFontFamily;
+    SETTINGS.fontPointSize = previousFontPointSize;
+    SETTINGS.onboardingVersion = previousOnboardingVersion;
+    LOG_ERR("LANG", "Failed to save language selection");
+    for (int i = 0; i < totalItems; ++i) {
+      rowItems[i].value = SORTED_LANGUAGE_INDICES[i] == langIndex ? tr(STR_SELECTED) : nullptr;
+    }
     requestUpdate();
     return;
   }
-  if (swipe == MappedInputManager::SwipeDir::Down) {
-    selectedIndex = ButtonNavigator::previousPageIndex(static_cast<int>(selectedIndex), totalItems, pageItems);
-    requestUpdate();
-    return;
-  }
 
-  // Handle navigation
-  buttonNavigator.onNextRelease([this] {
-    selectedIndex = ButtonNavigator::nextIndex(static_cast<int>(selectedIndex), totalItems);
-    requestUpdate();
-  });
-
-  buttonNavigator.onPreviousRelease([this] {
-    selectedIndex = ButtonNavigator::previousIndex(static_cast<int>(selectedIndex), totalItems);
-    requestUpdate();
-  });
-
-  buttonNavigator.onNextContinuous([this, pageItems] {
-    selectedIndex = ButtonNavigator::nextPageIndex(static_cast<int>(selectedIndex), totalItems, pageItems);
-    requestUpdate();
-  });
-
-  buttonNavigator.onPreviousContinuous([this, pageItems] {
-    selectedIndex = ButtonNavigator::previousPageIndex(static_cast<int>(selectedIndex), totalItems, pageItems);
-    requestUpdate();
-  });
-}
-
-void LanguageSelectActivity::handleSelection() {
-  const uint8_t langIndex = visibleIndices[selectedIndex];
-
+  timezones::applyToClock();
   {
     RenderLock lock(*this);
-    I18N.setLanguage(static_cast<Language>(langIndex));
+    I18N.setLanguage(language);
   }
 
-  SETTINGS.language = langIndex;
-  SETTINGS.saveToFile();
-
-  // Return to previous page
-  onBack();
+#ifndef SIMULATOR
+  halClock.setUseChinaServers(SETTINGS.contentProfile == CrossPointSettings::ContentProfile::China);
+#endif
+  if (isOnboarding()) {
+    onGoHome();
+  } else {
+    finish();
+  }
 }
 
-void LanguageSelectActivity::render(RenderLock&&) {
-  renderer.clearScreen();
+void LanguageSelectActivity::onBackButton() {
+  if (!isOnboarding()) finish();
+}
 
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
-  auto metrics = UITheme::getInstance().getMetrics();
-
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_LANGUAGE));
-
-  // Current language marker
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
-  const auto currentLang = static_cast<uint8_t>(I18N.getLanguage());
-  GUI.drawList(
-      renderer, Rect{0, contentTop, pageWidth, contentHeight}, totalItems, selectedIndex,
-      [this](int index) { return I18N.getLanguageName(static_cast<Language>(visibleIndices[index])); }, nullptr,
-      nullptr, [this, currentLang](int index) { return visibleIndices[index] == currentLang ? tr(STR_SELECTED) : ""; },
-      true);
-
-  // Button hints
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+void LanguageSelectActivity::drawFooter() {
+  const auto labels =
+      mappedInput.mapLabels(isOnboarding() ? "" : tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+}
 
-  renderer.displayBuffer();
+void LanguageSelectActivity::buildScreen(UiScreen& screen) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  // Content: the safe area minus the header band GUI.drawHeader paints.
+  screen.setContentMarginFromScreen(fui::Insets{
+      static_cast<int16_t>(safe.y + metrics.topPadding + metrics.headerHeight),
+      static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width)),
+      static_cast<int16_t>(renderer.getScreenHeight() - (safe.y + safe.height)), static_cast<int16_t>(safe.x)});
+  screen.spacer(static_cast<int16_t>(metrics.verticalSpacing));
+
+  // rowItems was built once in onEnter() and is reused here on every repaint.
+  fui::ListProps props;
+  props.items = rowItems;
+  props.count = static_cast<uint16_t>(totalItems);
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;  // physical buttons stay in loop()
+  if (SETTINGS.uiTheme != CrossPointSettings::INX) {
+    props.labelText = screen.theme().smallText;
+    props.labelText.maxLines = 2;
+  }
+  syncListViewport(screen, props);
+  screen.list(props);
 }

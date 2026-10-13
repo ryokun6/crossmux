@@ -1,6 +1,7 @@
 #include "KOReaderSyncClient.h"
 
 #include <ArduinoJson.h>
+#include <HalMemory.h>
 #include <Logging.h>
 #include <SecureHttpClient.h>
 #include <base64.h>
@@ -30,19 +31,18 @@ constexpr char DEVICE_ID[] = "crosspoint-reader";
 // gate — the gate only needs to keep out states where a doomed handshake
 // would waste tens of seconds, not guarantee success.
 //
-// Free and largest-block have separate requirements: with SP ECC
-// (WOLFSSL_HAVE_SP_ECC) the handshake's crypto uses fixed 256-bit arrays, so
-// the largest single TLS allocation is the ~17 KB wolfSSL record buffer, not
-// a run of fast-math bignums. A handshake was measured succeeding inside a
-// 43 KB largest block; requiring 50 KB contiguous refused syncs that fit.
+// Free and largest-block have separate requirements: SP ECC and SP RSA keep
+// public-key crypto in fixed-width workspaces (the largest RSA-4096 temporary
+// is about 2.8 KB), so the largest single TLS allocation is the ~17 KB wolfSSL
+// record buffer. A handshake was measured succeeding inside a 43 KB largest
+// block; requiring 50 KB contiguous refused syncs that fit.
 //
-// The 35 KB free floor covers the measured peak of what remains after the SP
-// ECC + X25519 work: session object plus record buffer plus RSA cert-verify
-// temps (2 KB apiece at FP_MAX_BITS 8192) totals ~30-40 KB transient. The old
-// 50 KB floor was calibrated against the fast-math bignum failure mode that
-// SP ECC removed, and sat inside the 51.9-58.2 KB band a reading session
-// normally leaves, refusing syncs that would have succeeded. A wrong guess
-// here fails soft: MEMORY_E aborts the handshake within its 15 s deadline.
+// Keep the measured 35 KB free floor until field data establishes a lower
+// bound for the session object, record buffer, parser, and fixed SP workspaces.
+// The old 50 KB floor was calibrated against fast-math bignums and sat inside
+// the 51.9-58.2 KB band a reading session normally leaves, refusing syncs that
+// fit. A wrong guess here fails soft: MEMORY_E aborts the handshake within its
+// 15 s deadline.
 constexpr uint32_t MIN_FREE_FOR_TLS = 35000;
 constexpr uint32_t MIN_BLOCK_FOR_TLS = 20000;
 
@@ -59,11 +59,11 @@ void applyAuthHeaders(freeink::SecureHttpClient& http) {
 
 // True when free heap is too low to risk a TLS handshake.
 bool insufficientHeap() {
-  const uint32_t freeHeap = ESP.getFreeHeap();
-  const uint32_t maxAllocHeap = ESP.getMaxAllocHeap();
-  if (freeHeap < MIN_FREE_FOR_TLS || maxAllocHeap < MIN_BLOCK_FOR_TLS) {
-    LOG_ERR("KOSync", "Insufficient heap for TLS handshake: %u bytes free (need %u), %u max alloc (need %u)", freeHeap,
-            MIN_FREE_FOR_TLS, maxAllocHeap, MIN_BLOCK_FOR_TLS);
+  const auto heap = HalMemory::getDefaultHeap();
+  if (heap.freeBytes < MIN_FREE_FOR_TLS || heap.largestBlockBytes < MIN_BLOCK_FOR_TLS) {
+    LOG_ERR("KOSync",
+            "Insufficient allocatable heap for TLS handshake: %zu bytes free (need %u), %zu max alloc (need %u)",
+            heap.freeBytes, MIN_FREE_FOR_TLS, heap.largestBlockBytes, MIN_BLOCK_FOR_TLS);
     return true;
   }
   return false;
@@ -95,7 +95,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::authenticate() {
   LOG_DBG("KOSync", "Auth response: %d", httpCode);
 
   if (httpCode <= 0) return NETWORK_ERROR;
-  if (httpCode == 200) return OK;
+  if (httpCode >= 200 && httpCode < 300) return OK;
   if (httpCode == 401) return AUTH_FAILED;
   return SERVER_ERROR;
 }
@@ -132,7 +132,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::createUser() {
   LOG_DBG("KOSync", "Create user response: %d", httpCode);
 
   if (httpCode <= 0) return NETWORK_ERROR;
-  if (httpCode == 200 || httpCode == 201) return OK;
+  if (httpCode >= 200 && httpCode < 300) return OK;
   if (httpCode == 402) return USER_EXISTS;
   return SERVER_ERROR;
 }
@@ -166,7 +166,12 @@ KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& doc
     return NETWORK_ERROR;
   }
 
-  if (httpCode == 200) {
+  if (httpCode == 204) {
+    http.end();
+    return NOT_FOUND;
+  }
+
+  if (httpCode >= 200 && httpCode < 300) {
     JsonDocument doc;
     const DeserializationError error = deserializeJson(doc, http.getString().c_str());
     http.end();
@@ -183,22 +188,23 @@ KOReaderSyncClient::Error KOReaderSyncClient::getProgress(const std::string& doc
     outProgress.deviceId = doc["device_id"].as<std::string>();
     outProgress.timestamp = doc["timestamp"].as<int64_t>();
 
-    // Extended crosspoint-sync field; absent on plain kosync servers.
     outProgress.position.reset();
-    const JsonObjectConst pos = doc["position"].as<JsonObjectConst>();
-    if (!pos.isNull()) {
-      KOReaderRichPosition rich;
-      rich.pctQ = pos["pctQ"].as<uint32_t>();
-      rich.spineIndex = pos["spine"].as<uint16_t>();
-      rich.pageNumber = pos["page"].as<uint16_t>();
-      const uint16_t pages = pos["pages"].as<uint16_t>();
-      rich.totalPages = pages > 0 ? pages : 1;
-      const uint16_t para = pos["para"].as<uint16_t>();
-      if (para > 0) rich.paragraphIndex = para;
-      rich.xpath = pos["xpath"].as<const char*>() ? pos["xpath"].as<const char*>() : "";
-      LOG_DBG("KOSync", "Got rich position: spine=%u page=%u/%u para=%u", rich.spineIndex, rich.pageNumber,
-              rich.totalPages, para);
-      outProgress.position = std::move(rich);
+    if (KOREADER_STORE.usesCrossPointSyncServer()) {
+      const JsonObjectConst pos = doc["position"].as<JsonObjectConst>();
+      if (!pos.isNull()) {
+        KOReaderRichPosition rich;
+        rich.pctQ = pos["pctQ"].as<uint32_t>();
+        rich.spineIndex = pos["spine"].as<uint16_t>();
+        rich.pageNumber = pos["page"].as<uint16_t>();
+        const uint16_t pages = pos["pages"].as<uint16_t>();
+        rich.totalPages = pages > 0 ? pages : 1;
+        const uint16_t para = pos["para"].as<uint16_t>();
+        if (para > 0) rich.paragraphIndex = para;
+        rich.xpath = pos["xpath"].as<const char*>() ? pos["xpath"].as<const char*>() : "";
+        LOG_DBG("KOSync", "Got rich position: spine=%u page=%u/%u para=%u", rich.spineIndex, rich.pageNumber,
+                rich.totalPages, para);
+        outProgress.position = std::move(rich);
+      }
     }
 
     LOG_DBG("KOSync", "Got progress: %.2f%% at %s", outProgress.percentage * 100, outProgress.progress.c_str());
@@ -230,13 +236,25 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgr
     meta["filename"] = progress.metadata->filename;
     meta["title"] = progress.metadata->title;
     meta["authors"] = progress.metadata->authors;
+    JsonDocument extra;
+    if (!progress.metadata->extraJson.empty() &&
+        deserializeJson(extra, progress.metadata->extraJson) == DeserializationError::Ok) {
+      for (JsonPairConst kv : extra.as<JsonObjectConst>()) {
+        // Flat strings, numbers, and booleans keep their JSON type; null and
+        // nested values are skipped, and the reserved keys above always win.
+        const JsonVariantConst value = kv.value();
+        if (!(value.is<const char*>() || value.is<bool>() || value.is<long long>() || value.is<double>())) continue;
+        if (!meta[kv.key().c_str()].isNull()) continue;
+        meta[kv.key().c_str()] = value;
+      }
+    }
   }
   doc["progress"] = progress.progress;
   doc["percentage"] = progress.percentage;
   doc["device"] = DEVICE_NAME;
   doc["device_id"] = DEVICE_ID;
-  if (progress.position.has_value()) {
-    // Extended crosspoint-sync field; kosync servers ignore unknown keys.
+  if (progress.position.has_value() && KOREADER_STORE.usesCrossPointSyncServer()) {
+    // CrossPoint-specific extension: do not send it to third-party KOSync servers.
     const auto& p = *progress.position;
     auto pos = doc["position"].to<JsonObject>();
     pos["pctQ"] = p.pctQ;
@@ -268,7 +286,7 @@ KOReaderSyncClient::Error KOReaderSyncClient::updateProgress(const KOReaderProgr
   LOG_DBG("KOSync", "Update progress response: %d", httpCode);
 
   if (httpCode <= 0) return NETWORK_ERROR;
-  if (httpCode == 200 || httpCode == 202) return OK;
+  if (httpCode >= 200 && httpCode < 300) return OK;
   if (httpCode == 401) return AUTH_FAILED;
   return SERVER_ERROR;
 }

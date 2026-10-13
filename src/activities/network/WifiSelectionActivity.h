@@ -9,6 +9,7 @@
 
 #include "ScopedSdFontUnload.h"
 #include "activities/Activity.h"
+#include "components/UiAppHost.h"
 #include "util/ButtonNavigator.h"
 
 struct Rect;
@@ -27,6 +28,7 @@ struct WifiNetworkInfo {
 // WiFi selection states
 enum class WifiSelectionState {
   AUTO_CONNECTING,    // Trying to connect to the last known network
+  NETWORK_ERROR,      // WiFi startup or scan failed; explicit retry required
   SCANNING,           // Scanning for networks
   NETWORK_LIST,       // Displaying available networks
   HIDDEN_SSID_ENTRY,  // Entering SSID for a hidden network
@@ -49,7 +51,7 @@ enum class WifiSelectionState {
  *
  * The onComplete callback receives true if connected successfully, false if cancelled.
  */
-class WifiSelectionActivity final : public Activity {
+class WifiSelectionActivity final : public Activity, private UiAppHost {
   ButtonNavigator buttonNavigator;
 
   WifiSelectionState state = WifiSelectionState::SCANNING;
@@ -57,6 +59,14 @@ class WifiSelectionActivity final : public Activity {
   std::vector<WifiNetworkInfo> networks;
   // Number of real (scanned) networks, excluding the synthetic hidden-network entry
   size_t realNetworkCount = 0;
+
+  // Row buffers derived from `networks`, rebuilt only when it changes
+  // (processWifiScanResults()) instead of on every repaint — buildListScreen()
+  // used to re-derive a "+ * ||||" status string per network on every render
+  // (cursor move, tap flash, ...).
+  std::vector<std::string> networkStatuses;
+  std::vector<freeink::ui::ListItem> networkRowItems;
+  void rebuildNetworkRowItems();
 
   // Selected network for connection
   std::string selectedSSID;
@@ -81,7 +91,7 @@ class WifiSelectionActivity final : public Activity {
   // Whether we are attempting to auto-connect or auto-scan saved networks.
   bool autoConnecting = false;
 
-  // True when the user stopped auto-connect and asked to see the scan result.
+  // True from the Confirm press that stops auto-connect until that button is released.
   bool manualNetworkListRequested = false;
 
   // Saved SSIDs already attempted during the current auto-connect session.
@@ -96,18 +106,36 @@ class WifiSelectionActivity final : public Activity {
   static constexpr unsigned long AUTO_CONNECTION_TIMEOUT_MS = 7000;
   unsigned long connectionStartTime = 0;
 
-  // Engaged in onEnter before scan/connect; released in onExit (no silentRestart
-  // here — destructor would also reload). See CrossPointWebServerActivity.h:77.
+  // Drop a resident SD reader font before scan/connect. It pins a large internal
+  // heap block that can starve the Wi-Fi driver. Released in onExit.
   std::optional<ScopedSdFontUnload> fontUnload_;
 
-  void renderNetworkList(const Rect* screen, const ThemeMetrics* metrics) const;
+  // The UiAppHost app hosts the network list and the save/forget prompts
+  // (themed rows and dialogs, touch routing). Connecting/scanning share the
+  // centered-text renderer; touch screens reserve their controls first.
+  // Viewport memory (top/visibleRows) for the network list; `selected` is
+  // mirrored from selectedNetworkIndex at build/move time.
+  freeink::ui::ListNav listNav;
+
+  static void listScreen(UiScreen& screen, void* user);
+  static void onRowEvent(const freeink::ui::ActionEvent& event, void* user);
+  static void onScanEvent(const freeink::ui::ActionEvent& event, void* user);
+  static void onCancelEvent(const freeink::ui::ActionEvent& event, void* user);
+  static void onReturnEvent(const freeink::ui::ActionEvent& event, void* user);
+  void addTouchControls(UiScreen& screen, const char* label, freeink::ui::ActionId action);
+  void returnFromFailure();
+  static void onPromptEvent(const freeink::ui::ActionEvent& event, void* user);
+  int subtitleHeight() const;
+  void buildListScreen(UiScreen& screen);
+  void buildPromptDialog(UiScreen& screen);
+
+  void renderNetworkList(const Rect* screen, const ThemeMetrics* metrics);
   void renderPasswordEntry(const Rect* screen, const ThemeMetrics* metrics) const;
   void renderConnecting(const Rect* screen, const ThemeMetrics* metrics) const;
   void renderConnected(const Rect* screen, const ThemeMetrics* metrics) const;
-  void renderSavePrompt(const Rect* screen, const ThemeMetrics* metrics) const;
   void renderConnectionFailed(const Rect* screen, const ThemeMetrics* metrics) const;
-  void renderForgetPrompt(const Rect* screen, const ThemeMetrics* metrics) const;
 
+  void showNetworkError();
   void startWifiScan(bool autoScan = false);
   void processWifiScanResults();
   void appendHiddenNetworkEntry();
@@ -121,15 +149,15 @@ class WifiSelectionActivity final : public Activity {
   void handleAutoConnectFailure();
   void showNetworkListFromAutoConnect();
   bool hasAttemptedAutoSsid(const std::string& ssid) const;
-  std::string getSignalStrengthIndicator(int32_t rssi) const;
+  static std::string getSignalStrengthIndicator(int32_t rssi);
 
   void onComplete(bool connected);
 
  public:
-  explicit WifiSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool autoConnect = true)
-      : Activity("WifiSelection", renderer, mappedInput), allowAutoConnect(autoConnect) {}
+  explicit WifiSelectionActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, bool autoConnect = true);
   void onEnter() override;
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
+  bool preventAutoSleep() override { return true; }
 };

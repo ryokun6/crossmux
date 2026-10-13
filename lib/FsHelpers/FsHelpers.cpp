@@ -1,7 +1,10 @@
 #include "FsHelpers.h"
 
+#include <Utf8.h>
+
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <vector>
@@ -161,6 +164,10 @@ bool hasPngExtension(std::string_view fileName) { return checkFileExtension(file
 
 bool hasBmpExtension(std::string_view fileName) { return checkFileExtension(fileName, ".bmp"); }
 
+bool hasImageExtension(std::string_view fileName) {
+  return hasBmpExtension(fileName) || hasJpgExtension(fileName) || hasPngExtension(fileName);
+}
+
 bool hasGifExtension(std::string_view fileName) { return checkFileExtension(fileName, ".gif"); }
 
 bool hasEpubExtension(std::string_view fileName) { return checkFileExtension(fileName, ".epub"); }
@@ -173,6 +180,10 @@ bool hasTxtExtension(std::string_view fileName) { return checkFileExtension(file
 
 bool hasMarkdownExtension(std::string_view fileName) { return checkFileExtension(fileName, ".md"); }
 
+bool hasReflowableBookExtension(std::string_view fileName) {
+  return hasEpubExtension(fileName) || hasTxtExtension(fileName) || hasMarkdownExtension(fileName);
+}
+
 bool hasCssExtension(std::string_view fileName) { return checkFileExtension(fileName, ".css"); }
 
 std::string extractFolderPath(const std::string& filePath) {
@@ -181,6 +192,52 @@ std::string extractFolderPath(const std::string& filePath) {
     return "/";
   }
   return filePath.substr(0, lastSlash);
+}
+
+bool isValidPathComponent(const std::string_view component) {
+  if (component.empty() || component.size() > 255 || component == "." || component == ".." || component.back() == '.' ||
+      component.back() == ' ') {
+    return false;
+  }
+  for (const unsigned char c : component) {
+    if (c <= 0x1f || c == '\\' || c == '/' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' ||
+        c == '|') {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isProtectedPathComponent(const std::string_view component) {
+  return component.empty() || component.front() == '.' || component == "System Volume Information" ||
+         component == "XTCache";
+}
+
+bool isSameOrDescendantPath(const std::string_view path, const std::string_view root) {
+  if (path == root) return true;
+  if (root == "/") return !path.empty() && path.front() == '/';
+  return path.size() > root.size() && path.compare(0, root.size(), root) == 0 && path[root.size()] == '/';
+}
+
+std::string rebasePath(const std::string_view path, const std::string_view oldRoot, const std::string_view newRoot) {
+  if (!isSameOrDescendantPath(path, oldRoot)) return std::string(path);
+  std::string result(newRoot);
+  result.append(path.substr(oldRoot.size()));
+  return result;
+}
+
+std::string getFileNameWithoutExtension(std::string_view filePath) {
+  const auto lastSlash = filePath.find_last_of("/\\");
+  std::string_view filename = (lastSlash != std::string_view::npos) ? filePath.substr(lastSlash + 1) : filePath;
+  const auto lastDot = filename.find_last_of('.');
+  if (lastDot != std::string_view::npos && lastDot > 0) {
+    filename = filename.substr(0, lastDot);
+  }
+  return std::string(filename);
+}
+
+bool isSafePathComponent(std::string_view name) {
+  return !name.empty() && name.find_first_of("/\\") == std::string_view::npos && name != "." && name != "..";
 }
 
 void sanitizePathComponentForFat32(const char* input, char* output, size_t maxLen) {
@@ -198,6 +255,8 @@ void sanitizePathComponentForFat32(const char* input, char* output, size_t maxLe
       output[i] = c;
     }
   }
+  // If the last character was cut in half, drop its leftover bytes.
+  i = static_cast<size_t>(utf8SafeTruncateBuffer(output, static_cast<int>(i)));
   output[i] = '\0';
 }
 

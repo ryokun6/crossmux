@@ -1,10 +1,10 @@
 #pragma once
+#include <CancelCheck.h>
 #include <HalStorage.h>
 
 #include <deque>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 
 class ZipFile {
  public:
@@ -39,11 +39,18 @@ class ZipFile {
   }
 
  private:
+  struct CentralEntry {
+    uint16_t method = 0;
+    uint32_t crc32 = 0;
+    uint32_t compressedSize = 0;
+    uint32_t uncompressedSize = 0;
+    uint32_t localHeaderOffset = 0;
+    uint16_t nameLength = 0;
+  };
+
   const std::string& filePath;
   HalFile file;
   ZipDetails zipDetails = {0, 0, false};
-  std::unordered_map<std::string, FileStatSlim> fileStatSlimCache;
-
   // Cursor for sequential central-dir scanning optimization
   uint32_t lastCentralDirPos = 0;
   bool lastCentralDirPosValid = false;
@@ -51,6 +58,7 @@ class ZipFile {
   bool loadFileStatSlim(const char* filename, FileStatSlim* fileStat);
   long getDataOffset(const FileStatSlim& fileStat);
   bool loadZipDetails();
+  bool readCentralEntry(CentralEntry& entry, char* name, size_t nameCapacity);
 
  public:
   explicit ZipFile(const std::string& filePath) : filePath(filePath) {}
@@ -60,7 +68,6 @@ class ZipFile {
   bool isOpen() const { return !!file; }
   bool open();
   bool close();
-  bool loadAllFileStatSlims();
   bool getInflatedFileSize(const char* filename, size_t* size);
   // Batch lookup: scan ZIP central dir once and fill sizes for matching targets.
   // targets must be sorted by (hash, len). sizes[target.index] receives uncompressedSize.
@@ -72,17 +79,11 @@ class ZipFile {
   // allowEarlyStop: a short write from `out` is treated as the sink asking to
   // stop (returns true) instead of a write failure — used by header probes
   // that only need the first bytes of an entry.
-  bool readFileToStream(const char* filename, Print& out, size_t chunkSize, bool allowEarlyStop = false);
+  bool readFileToStream(const char* filename, Print& out, size_t chunkSize, bool allowEarlyStop = false,
+                        size_t psramChunkSize = 0, CancelCheck cancellation = {});
 
   template <typename F>
   bool enumerateFilePaths(F&& callback) {
-    if (!fileStatSlimCache.empty()) {
-      for (const auto& entry : fileStatSlimCache) {
-        callback(std::string_view{entry.first});
-      }
-      return true;
-    }
-
     return enumerateFileEntries([&callback](std::string_view path, uint32_t, uint32_t) { callback(path); });
   }
 
@@ -103,37 +104,21 @@ class ZipFile {
       return false;
     }
 
-    file.seek(zipDetails.centralDirOffset);
-
-    uint32_t sig;
+    if (!file.seek(zipDetails.centralDirOffset)) {
+      if (!wasOpen) close();
+      return false;
+    }
     char itemName[256];
 
-    while (file.available()) {
-      file.read(&sig, 4);
-      if (sig != 0x02014b50) {
-        break;
+    for (uint16_t i = 0; i < zipDetails.totalEntries; ++i) {
+      CentralEntry entry;
+      if (!readCentralEntry(entry, itemName, sizeof(itemName))) {
+        if (!wasOpen) close();
+        return false;
       }
-
-      file.seekCur(12);
-      uint32_t crc32, compressedSize;
-      file.read(&crc32, 4);
-      file.read(&compressedSize, 4);
-      file.seekCur(4);
-      uint16_t nameLen, m, k;
-      file.read(&nameLen, 2);
-      file.read(&m, 2);
-      file.read(&k, 2);
-      file.seekCur(12);
-
-      if (nameLen < sizeof(itemName)) {
-        file.read(itemName, nameLen);
-        itemName[nameLen] = '\0';
-        callback(std::string_view{itemName, nameLen}, crc32, compressedSize);
-      } else {
-        file.seekCur(nameLen);
+      if (entry.nameLength < sizeof(itemName)) {
+        callback(std::string_view{itemName, entry.nameLength}, entry.crc32, entry.compressedSize);
       }
-
-      file.seekCur(m + k);
     }
 
     if (!wasOpen) {

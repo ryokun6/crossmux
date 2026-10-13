@@ -142,6 +142,20 @@ typedef struct {
   uint32_t offset;  ///< Index of the first code point into the glyph array
 } EpdUnicodeInterval;
 
+/// GCC/Clang (the ESP32 firmware toolchain) pack structs with __attribute__((packed)).
+/// MSVC (host unit tests) has no equivalent attribute and instead needs a #pragma pack
+/// region achieving the same 1-byte alignment. These macros keep the on-disk font layout
+/// identical across both toolchains.
+#if defined(_MSC_VER)
+#define EPD_PACKED_BEGIN __pragma(pack(push, 1))
+#define EPD_PACKED_END __pragma(pack(pop))
+#define EPD_PACKED_ATTR
+#else
+#define EPD_PACKED_BEGIN
+#define EPD_PACKED_END
+#define EPD_PACKED_ATTR __attribute__((packed))
+#endif
+
 /// Maps a codepoint to a kerning class ID, sorted by codepoint for binary search.
 /// Class IDs are 1-based; codepoints not in the table have implicit class 0 (no kerning).
 typedef struct {
@@ -171,7 +185,34 @@ typedef struct {
   const uint16_t* glyphToGroup;               ///< Per-glyph group ID (nullptr for contiguous-group fonts)
   const EpdKernClassEntry* kernLeftClasses;   ///< Sorted left-side class map (nullptr if none)
   const EpdKernClassEntry* kernRightClasses;  ///< Sorted right-side class map (nullptr if none)
-  const int8_t* kernMatrix;              ///< Flat leftClassCount x rightClassCount matrix, 4.4 fixed-point in pixels
+  /// Split form of the two class maps, used by the built-in fonts instead of the packed
+  /// EpdKernClassEntry arrays above (which are left null for them). Same total size — 2 + 1 bytes
+  /// per entry either way — but measurably faster: the class lookups are ~96% of getKerning(),
+  /// and splitting them measured -13 to -14% on that path. Two reasons. The binary search only
+  /// ever reads codepoints, so keeping the classId payload out of the searched array shrinks its
+  /// footprint by a third; and a uint16 array is naturally aligned where a 3-byte packed struct
+  /// leaves two of every three codepoint reads unaligned.
+  ///
+  /// SD-card fonts keep the packed form: the .cpfont format stores it verbatim and maps it in
+  /// place (see the static_asserts in SdCardFont.cpp). Whichever pointer is non-null selects the
+  /// representation, so the two coexist with one branch.
+  const uint16_t* kernLeftCodepoints;   ///< nullptr when this font uses the packed form
+  const uint8_t* kernLeftClassIds;      ///< parallel to kernLeftCodepoints
+  const uint16_t* kernRightCodepoints;  ///< nullptr when this font uses the packed form
+  const uint8_t* kernRightClassIds;     ///< parallel to kernRightCodepoints
+  const int8_t* kernMatrix;             ///< Flat leftClassCount x rightClassCount matrix, 4.4 fixed-point in pixels
+  /// Sparse (CSR) kerning — the built-in fonts use this instead of `kernMatrix`, which is left
+  /// null for them. Measured across the built-in set, 86.6% of the dense matrix entries are zero,
+  /// so storing only the non-zero ones is roughly a quarter of the size. Values are identical, so
+  /// layout and pagination are unaffected. SD-card fonts keep the dense matrix, same reason as
+  /// the class maps above.
+  ///
+  /// kernRowOffsets has kernLeftClassCount + 1 entries; row `l` occupies
+  /// [kernRowOffsets[l], kernRowOffsets[l+1]) in the other two arrays, sorted ascending by
+  /// column so the lookup can scan it and stop early.
+  const uint16_t* kernRowOffsets;        ///< nullptr when this font uses the dense matrix
+  const uint8_t* kernSparseCols;         ///< 0-based right class of each stored entry
+  const int8_t* kernSparseValues;        ///< 4.4 fixed-point value of each stored entry
   uint16_t kernLeftEntryCount;           ///< Entries in kernLeftClasses
   uint16_t kernRightEntryCount;          ///< Entries in kernRightClasses
   uint8_t kernLeftClassCount;            ///< Number of distinct left classes (matrix rows)
@@ -181,8 +222,8 @@ typedef struct {
 
   /// On-demand glyph loading for fonts that don't keep all glyphs in RAM (e.g. SD card fonts).
   /// Called by getGlyph() when a codepoint is not found in the interval table.
-  /// Returns a valid EpdGlyph* with correct metadata, or nullptr to fall back to the
-  /// replacement glyph.  The returned pointer is valid until the next glyphMissHandler
+  /// Returns a valid EpdGlyph* with correct metadata, or nullptr for the renderer's
+  /// outline placeholder. The returned pointer is valid until the next glyphMissHandler
   /// call that causes a ring-buffer eviction — callers must consume it (measure or draw)
   /// before requesting another missed glyph.
   const EpdGlyph* (*glyphMissHandler)(void* ctx, uint32_t codepoint);
@@ -192,8 +233,45 @@ typedef struct {
   void* glyphMissCtx;
 
   /// Full-coverage query for fonts whose interval table only reflects what is
-  /// currently in RAM (SD card fonts). Called by hasCodepoint() on interval miss;
-  /// must answer from RAM without storage I/O. Shares glyphMissCtx. nullptr for
-  /// built-ins whose interval table is already complete.
+  /// currently in RAM (SD card fonts: stub/mini data cover at most one page of
+  /// glyphs). Called by hasCodepoint() when the interval table misses; a paged
+  /// coverage index may read storage, but never substitutes a glyph. Shares glyphMissCtx.
+  /// nullptr for fonts whose interval table is already complete (built-ins).
   bool (*coverageHandler)(void* ctx, uint32_t codepoint);
+
+  /// Vector-font bitmap accessor (FreeInkFont / TtfEpdFont). When non-null,
+  /// GfxRenderer::getGlyphBitmap() returns vectorBitmapHandler(glyphMissCtx, glyph)
+  /// instead of indexing ->bitmap or going through the SdCardFont overflow path.
+  /// This lets a runtime-rasterized TTF fault + cache glyphs on ANY draw path
+  /// (via glyphMissHandler) without pre-warming. nullptr for every other font,
+  /// so the SD/built-in bitmap paths are unaffected (all fonts zero-init this).
+  const uint8_t* (*vectorBitmapHandler)(void* ctx, const EpdGlyph* glyph);
+
+  /// Dynamic kerning for handler-backed fonts (TTF via FreeInkFont): returns
+  /// the 4.4 fixed-point pixel adjustment for the pair, 0 when none. Checked
+  /// by getKerning() before the static class tables (handler fonts carry
+  /// none). Shares glyphMissCtx. nullptr for built-in and SD fonts, whose
+  /// kerning is baked into the tables above (all fonts zero-init this).
+  int8_t (*kernHandler)(void* ctx, uint32_t leftCp, uint32_t rightCp);
+
+  /// 4 位覆盖度（两个像素一字节，高半字节在前，0 = 全透明，15 = 满墨）。
+  /// 只有矢量字体（TtfEpdFont）会置位：FreeType 本来就算出 8 位覆盖度，压成 2 位等于把
+  /// 抗锯齿的层次丢掉。预烤好的 .cpfont 位图仍是 2 位，所以它为 false。
+  /// 渲染器据此选择读取路径：见 GfxRenderer 的 get4BitCoverage()。
+  ///
+  /// 必须留在结构体**最末尾**：内置字体（lib/EpdFont/builtinFonts/*.h）是用位置初始化
+  /// 填这张表的，插在中间会让后面每个字段的取值整体错位 —— 编译期就会报
+  /// "invalid conversion from 'int' to 'const EpdFontGroup*'"。放在最后则既不影响它们
+  /// （新字段零初始化 = false），也不影响按名字赋值的 TtfEpdFont。
+  /// / 4-bit coverage (two pixels per byte, high nibble first, 0 = transparent, 15 = full
+  /// ink). Set only by vector faces: FreeType already computes 8-bit coverage, and packing
+  /// it to 2 bits throws away the anti-aliasing depth. Pre-rasterised .cpfont bitmaps stay
+  /// 2-bit, so this is false for them. GfxRenderer::get4BitCoverage() reads it.
+  ///
+  /// It MUST stay the last member: the built-in fonts initialise this table positionally,
+  /// so a field inserted anywhere else shifts every following value and fails to compile
+  /// ("invalid conversion from 'int' to 'const EpdFontGroup*'"). Last means they are
+  /// untouched (the new field zero-initialises to false) and name-wise writers such as
+  /// TtfEpdFont are unaffected too.
+  bool is4Bit = false;
 } EpdFontData;
