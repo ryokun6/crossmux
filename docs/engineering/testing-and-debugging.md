@@ -19,6 +19,12 @@ pio run -t upload
 # Build specific environment
 pio run -e gh_release
 
+# Build and run a native device simulator
+pio run -e simulator -t run_simulator
+pio run -e simulator_x3 -t run_simulator
+pio run -e simulator_eego_a4 -t run_simulator
+pio run -e simulator_murphy_m4 -t run_simulator
+
 # Clean build artifacts
 pio run -t clean
 
@@ -48,15 +54,19 @@ pio run -t upload && pio device monitor
 ## Code Quality
 
 ```bash
-# Static analysis (cppcheck)
-pio check
+# Complete local CI suite: format, static analysis, firmware builds, host tests
+./bin/ci-check
 
-# Format code (clang-format) - Windows Git Bash
-find src -name "*.cpp" -o -name "*.h" | xargs clang-format -i
+# Check formatting without modifying files
+./bin/clang-format-fix --check
 
-# Format code (clang-format) - Linux
-clang-format -i src/**/*.cpp src/**/*.h
+# Apply formatting
+./bin/clang-format-fix
 ```
+
+For documentation-only changes, check local links, anchors, documented commands,
+and `git diff --check`; firmware builds and device tests are unnecessary. For
+script or workflow changes, run the focused checks and report any limitations.
 
 ## Debugging Crashes
 
@@ -76,7 +86,8 @@ clang-format -i src/**/*.cpp src/**/*.h
    ```
    - Occurs during deep recursion or large local variables
    - Increase task stack size in `xTaskCreate()` (2048 → 4096)
-   - Move large buffers to heap with malloc
+   - Reduce the frame or reuse an existing bounded scratch buffer; use a
+     checked nothrow heap allocation only when no scoped scratch is available
 
 3. **Use-After-Free**:
    - Activity deleted but task still running
@@ -84,14 +95,131 @@ clang-format -i src/**/*.cpp src/**/*.h
    - Set pointers to `nullptr` after `free()`
 
 4. **Corrupt Cache Files**:
-   - Delete `.crosspoint/` directory on SD card
-   - Forces clean re-parse of all EPUBs
+   - Back up the SD data, then clear only the affected book cache
+   - Do not delete all of `/.crosspoint/` merely to rebuild a book: it also
+     holds settings and reading progress. See [cache-management.md](cache-management.md)
    - Check file format versions in [../file-formats.md](../file-formats.md)
 
 5. **Watchdog Timeout**:
    - Loop/task blocked for >5 seconds
    - Add `vTaskDelay(1)` in tight loops
    - Check for blocking I/O operations
+
+### EPUB memory fallback on devices without PSRAM
+
+Styled chapter parsing stops below 48 KiB free heap or 16 KiB largest block.
+Allocation failures also stop parsing, including table and trailing-page layout.
+The reader discards the failed build and retries once with embedded CSS disabled
+for that reading session, retaining the selected font and content offset. XML
+and I/O errors do not trigger this retry. A failed basic build shows the existing
+index-failed popup. No failed build may become a complete or partial cache.
+
+`EpubReaderActivity::handleBuildFailure()` owns the retry decision, reader
+resource cleanup and failure latch for foreground and background builds. Callers
+pass `Section::BuildError` explicitly, including `OutOfMemory` when the Section
+object itself could not be allocated. The
+error popup only draws. `Section::releaseBuildResources()` closes and removes
+uncommitted resources without deciding whether an existing cache is valid:
+initialization failures preserve it, while `abandonBuild()` invalidates it after
+a parse failure. Cleanup leaves `BuildError` available to the reader.
+
+Before starting or continuing a chapter, low-heap no-PSRAM builds reclaim
+rebuildable font caches. Optional font prewarm must leave 16 KiB free heap and
+8 KiB contiguous headroom; a skipped cache uses on-demand reads. Basic layout
+keeps the 320-token soft-flush threshold instead of reverting to 750 tokens.
+
+Build and run the `ChapterHtmlSlimParserTest`, `SdCardFontMemoryTest`, `PageLinkTest`,
+`footnote_list_test`, and `CssParserTest` host targets for fault injection,
+text/offset preservation, and cache capability checks. These include each mini-cache
+replacement allocation failing, initialization failures preserving an existing
+complete/partial cache, and a pre-refactor mixed-text cache/LUT digest. The digest
+uses the host page-serialization stub; it does not establish pixel equivalence.
+`ReaderBuildFailureTest` compiles the actual failure-handling method with
+lightweight collaborators for no-PSRAM and PSRAM policies. It covers allocation
+failure before a Section exists, one CSS retry, target preservation and repeated
+failures; it is not a full Activity or device-lifecycle integration test.
+Build firmware with
+`pio run -e default -e simulator_x3 -e murphy_m4`.
+
+Hardware acceptance still requires **both X3 and X4**: open the reported EPUB
+with a cold section cache using LXGW WenKai size 18, turn across chapters, and
+reopen it. Check text against the source for missing or reordered words/lines.
+Capture `SCT` cache-reclaim, `SDCF` prewarm-budget, `EHP` failure-stage and
+`ERS` fallback/ready/error logs, including
+`free/min/maxAlloc`. Under additional pressure, basic styling or an index error
+is acceptable; a restart or silently incomplete text is not. Exit and reopen to
+confirm the next session attempts the user's embedded-style setting again.
+Compilation and simulator checks do not establish hardware acceptance.
+
+### September 6, 2026: reader memory hardening checkpoint
+
+This checkpoint is **not full hardware acceptance**. The preceding X4 candidate
+application had SHA256
+`7b030e735aa636b96360ce5c7b34d0152526f00edbde601496a9a8800c4b23fa`.
+Application readback matched that candidate and the then-current build byte for
+byte; the indexing failure was not an older firmware image.
+
+With the reported Jobs biography, LXGW WenKai size 18 and Flash font reads:
+
+| Observation | Result |
+| --- | --- |
+| Ordinary reopen at spine 41, saved page 2 | CSS retry occurred; basic layout failed after page 6 |
+| Failing line-break workspace | 334 tokens, 2,672 bytes requested; maxAlloc 2,036 bytes |
+| Free heap after CSS-retry cleanup in failing session | 36,756 bytes |
+| Same candidate after a commanded reset | Spine 41 completed all 11 pages; restored offset 390/page 2 and continued into spine 42 |
+| Free heap after CSS-retry cleanup following reset | 55,808 bytes |
+
+The 19,052-byte difference identifies a session-dependent memory baseline, not
+its owner. Standby clock synchronization/network lifetime is a hypothesis for
+follow-up, not a confirmed leak or a fix included in this checkpoint. A reset
+that permits reading does not resolve the ordinary-reopen failure.
+
+The phase-closing candidate application has SHA256
+`e64b85aa5c8b0f297526a75cdcf66c143211ad7a753ee9ba0bf0b0d9b9cd3da3`
+and is 5,905,008 bytes. Its production source is recorded in commit `ef006bf0`;
+use the binary hash to identify it, since the build began before that commit.
+All 63 targeted host checks, clang-format checks, and the `default`,
+`simulator_x3`, and `murphy_m4` builds passed. The hardware builds reported an
+existing WebSockets dependency warning about deprecated `NetworkClient::flush()`.
+X4 application flashing and hash verification succeeded; a separate capture
+started for this candidate. Reading/visual acceptance remains incomplete and
+must not inherit the preceding candidate's results.
+
+Keep X3 acceptance, SD-direct font mode, and physical text completeness separate.
+For subsequent candidates, record the new application hash and repeat cold-cache
+opening, spine 5 and 41, cross-chapter turns, TOC navigation, exit/reopen, and
+standby/clock-sync followed by reading. An index error during ordinary use fails
+acceptance; safe error handling is acceptable only in additional-pressure tests.
+Do not infer hardware acceptance from host serialization stubs or successful
+firmware builds. Binary images, original books and device-specific raw logs are
+local artifacts and are not committed to the repository.
+
+### C3 Bluetooth page-turner development validation
+
+See [C3 Bluetooth](c3-bluetooth.md) for the shared hardware build profiles,
+lifecycle and font-memory ownership, reproducible checks, X4 evidence and
+remaining acceptance limits. Hardware builds include BLE; the runtime switch
+defaults off. Distinguish host/build success, application hash verification
+and physical-device acceptance.
+
+### Distinguishing TCP Stalls, Watchdogs, and Restarts
+
+- A task-watchdog failure prints the task watchdog banner and subscribed task
+  names before the register dump. A later `RTC_SW_CPU_RST` is the panic restart
+  path; it does not make the original failure an intentional software restart.
+- A normal software restart has no preceding watchdog or panic report. Check
+  the earlier application log for an expected transition such as leaving
+  network mode before treating the reset reason itself as a crash.
+- A slow HTTP reader can fill the TCP send window and keep a synchronous SDK
+  write waiting for several seconds. Correlate the request URI and elapsed
+  time with the serial log. Do not classify this as OOM solely from the minimum
+  historical heap value; also inspect current free heap and the largest
+  allocatable block.
+- Web request handlers execute on the task that calls `handleClient()`. Do not
+  subscribe that task to the task watchdog merely so handlers can feed it: a
+  legitimate SDK network wait can then be misclassified as a CPU lockup. Keep
+  explicit watchdog resets conditional so other platform configurations remain
+  compatible.
 
 **Verification Steps**:
 1. Check serial output for stack traces
@@ -107,7 +235,7 @@ clang-format -i src/**/*.cpp src/**/*.h
 
 **AI agent scope** (what you CAN verify):
 1. ✅ **Build**: `pio run -t clean && pio run` (0 errors/warnings)
-2. ✅ **Quality**: `pio check` + `find src -name "*.cpp" -o -name "*.h" | xargs clang-format -i`
+2. ✅ **Quality**: `./bin/ci-check` and `./bin/clang-format-fix --check`
 3. ✅ **Format**: Commit messages (`feat:`/`fix:`), no `.gitignore`-excluded files staged (e.g., `*.generated.h`, `.pio/`, `platformio.local.ini`)
 4. ✅ **CI**: Fix GitHub Actions failures before review
 5. ✅ **Code review**: Ensure orientation-aware logic is correct in all 4 modes by inspecting switch/case coverage
@@ -115,7 +243,10 @@ clang-format -i src/**/*.cpp src/**/*.h
 **Human tester scope** (flag these for the user):
 6. 🔲 **Device**: Test on hardware
 7. 🔲 **Orientations**: Verify all 4 modes (Portrait/Inverted/Landscape CW/CCW)
-8. 🔲 **Heap**: `ESP.getFreeHeap()` > 50KB, no leaks
+8. 🔲 **Memory**: record `ESP.getFreeHeap()`, `ESP.getMinFreeHeap()`,
+   `ESP.getMaxAllocHeap()`, and task stack high-water marks. Memory-sensitive
+   EPUB paths must still work when the largest contiguous block is about 16–19KB;
+   no task may fall below 512 bytes of remaining stack.
 9. 🔲 **Cache**: If EPUB modified, delete `.crosspoint/` and verify re-parse
 
 ### CI/CD Pipeline Awareness
@@ -124,16 +255,30 @@ clang-format -i src/**/*.cpp src/**/*.h
 
 | Workflow | File | Purpose |
 |----------|------|---------|
-| Build Check | `.github/workflows/ci.yml` | Verifies code compiles |
+| Core Build Check | `.github/workflows/ci.yml` | Builds `default` (shared X3/X4) and `x4pro` |
+| Hardware CI | `.github/workflows/hardware-ci.yml` | Builds all simulators and global S3 targets for hardware-sensitive changes or manual runs |
 | Format Check | `.github/workflows/pr-formatting-check.yml` | Validates clang-format |
-| Release Build | `.github/workflows/release.yml` | Production releases |
-| RC Build | `.github/workflows/release_candidate.yml` | Release candidates |
+| Firmware Release | `.github/workflows/nightly.yml` | Stable releases from SemVer tags and scheduled/manual Nightly releases |
 
 **Rules**:
 - **Fix CI failures BEFORE** requesting review
 - CI runs on: Push to PR, PR updates
+- Hardware CI runs only for its configured paths, or from **Run workflow**
 - Format check fails → Run clang-format locally
 - Build check fails → Fix compile errors
+
+Firmware build jobs call `select-build-runner.yml` before they start. Trusted
+same-repository PRs, pushes, tags, schedules, and manual runs use the H2O
+self-hosted runner only when it is online and idle; fork PRs, Dependabot, a
+missing `H2O_RUNNER_TOKEN`, API errors, and an unavailable H2O fall back to
+`ubuntu-latest`. The token must be repository-scoped with read-only
+Administration permission. Selection is best effort: a runner that disconnects
+after selection can still leave the selected job queued. Formatting, static
+analysis, unit tests, and GitHub publishing remain GitHub-hosted. Nightly COS
+publishing is the exception: it requires the H2O labels with no fallback, has
+read-only repository contents, and receives COS credentials but no GitHub write
+credential. If H2O is unavailable, that regional job waits while the independent
+GitHub publish job can continue.
 
 ---
 
@@ -152,3 +297,63 @@ clang-format -i src/**/*.cpp src/**/*.h
 **Flush**: `logSerial.flush();` (force output before crash)
 
 **Port Detection**: Windows: `mode` | Linux: `ls /dev/ttyUSB* /dev/ttyACM*` or `dmesg | grep tty`
+
+### Standby power-button wake on X3/X4
+
+Test on battery power: USB prevents standby light sleep. Disconnect USB, enter
+standby, and leave it untouched for at least 45 seconds (the idle threshold is
+35 seconds). The title disappearing only indicates immersive display mode.
+During light sleep, other buttons should have no effect; a short power-button
+press and release should restore the title and hints without also confirming,
+turning a page, or entering sleep again.
+
+If the clock updates but power-button wake stalls, distinguish GPIO wake from
+the work after wake. Capture the GPIO level, sleep return value, wake reason,
+cleanup result, and entry/exit of CPU frequency restoration with task names.
+In the X4 regression, GPIO3 woke successfully, but `ActivityManager` and
+`loopTask` both entered frequency restoration and neither completed. Timer
+updates waited for rendering, so they did not expose the same concurrency.
+See the [clock serialization invariant](architecture-and-patterns.md).
+
+When collecting the existing RTC log ring (`lib/Logging/Logging.cpp`), avoid
+serial monitors that toggle DTR/RTS: a reset followed by normal startup clears
+the retained log. For a temporary diagnostic build with a log export command,
+open pyserial without changing those lines:
+
+```python
+import serial
+
+class NoResetSerial(serial.Serial):
+    def _update_dtr_state(self):
+        pass
+
+    def _update_rts_state(self):
+        pass
+
+with NoResetSerial("/dev/cu.usbmodem101", 115200, timeout=0.2) as port:
+    # Send the temporary build's log export command here, then read its reply.
+    pass
+```
+
+Reconnect promptly after the wake attempt; frequent draw logs can overwrite
+the small RTC ring. If the app is deadlocked, read RTC memory through the ROM
+loader without booting the app afterward, using symbol addresses from that
+exact ELF. Remove temporary diagnostics before the final build.
+
+Run `python3 -m unittest discover -v -s scripts/tests` for the compiled-production
+power regression in `test_ble_c3_config.py`. It covers BLE/Wi-Fi guards,
+concurrent restoration, repeated requests, failed transitions, and retries.
+Host tests do not prove physical sleep or Bluetooth page turning. Record each
+device and firmware hash separately, including:
+
+- BLE off: ten consecutive power-button wakes and at least ten minutes of clock updates.
+- BLE connected: five cycles of reading/page turning, standby, power-button wake, and resumed Bluetooth page turning.
+- No extra action from the wake gesture; normal buttons, display, and SD reading after leaving standby.
+- Whether the final build without diagnostics was flashed and retested. Report X3 and X4 results independently.
+
+## X3/X4 font downloads and OTA memory
+
+See [download memory](network-memory-validation.md) for the BLE/static-heap
+findings, foreground statistics lifetime, diagnostic review and hardware
+regression procedure. The production lifecycle check runs as
+`DownloadMemoryLifecycle` in the host suite.

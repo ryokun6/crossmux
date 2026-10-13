@@ -6,51 +6,47 @@
 #include <vector>
 
 #include "OpdsServerStore.h"
-#include "activities/Activity.h"
-#include "util/ButtonNavigator.h"
+#include "activities/CatalogActivity.h"
 
 /**
  * Activity for browsing and downloading books from an OPDS server.
  * Supports navigation through catalog hierarchy and downloading EPUBs.
  */
-class OpdsBookBrowserActivity final : public Activity {
+class OpdsBookBrowserActivity final : public CatalogActivity {
  public:
-  enum class BrowserState { CHECK_WIFI, WIFI_SELECTION, LOADING, BROWSING, DOWNLOADING, ERROR, SEARCH_INPUT };
-
-  explicit OpdsBookBrowserActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, OpdsServer server)
-      : Activity("OpdsBookBrowser", renderer, mappedInput), buttonNavigator(), server(std::move(server)) {}
+  explicit OpdsBookBrowserActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, OpdsServer server);
 
   void onEnter() override;
   void onExit() override;
-  void loop() override;
-  void render(RenderLock&&) override;
 
  private:
-  ButtonNavigator buttonNavigator;
-  BrowserState state = BrowserState::LOADING;
   std::vector<OpdsEntry> entries;
+  // Row buffer, built whenever entries changes (fetchFeed()/releaseEntries())
+  // so buildBrowsingScreen() reuses it on every repaint instead of rebuilding
+  // a ListItem vector per render.
+  std::vector<freeink::ui::ListItem> rowItems;
+  void rebuildRowItems();
   std::vector<std::string> navigationHistory;
   std::string currentPath;
   std::string searchTemplate;
-  bool consumeConfirm = false;
-  bool consumeBack = false;  // Added missing member
-  int selectorIndex = 0;
-  std::string errorMessage;
-  std::string statusMessage;
-  size_t downloadProgress = 0;
-  size_t downloadTotal = 0;
-
+  // Synthetic pager rows fetchFeed() bracketed the entries with; their footer
+  // hint is Fetch (a server round-trip), not Open.
+  bool prevRowPresent = false;
+  bool nextRowPresent = false;
   OpdsServer server;  // Copied at construction — safe even if the store changes during browsing
 
-  void checkAndConnectWifi();
-  void launchWifiSelection();
-  void onWifiSelectionComplete(bool connected);
+  int listCount() const override { return state == State::BROWSING ? static_cast<int>(entries.size()) : 0; }
+  bool hasSearch() const override { return !searchTemplate.empty(); }
+  void activateIndex(int index) override;
+  void buildScreen(UiScreen& screen) override;
+  void drawFooter() override;
+  void buildBrowsingScreen(UiScreen& screen);
+  void startBrowse() override;
+  void downloadFinished(bool) override { startBrowse(); }
   void fetchFeed(const std::string& path);
   void releaseEntries();
   void navigateToEntry(const OpdsEntry& entry);
-  void navigateBack();
+  void onBackButton() override;
   void downloadBook(const OpdsEntry& book);
-  void launchSearch();
-  void performSearch(const std::string& query);
-  bool preventAutoSleep() override { return true; }
+  void performSearch(const std::string& query) override;
 };

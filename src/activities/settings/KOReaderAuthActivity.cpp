@@ -2,37 +2,35 @@
 
 #include <GfxRenderer.h>
 #include <I18n.h>
+#include <Logging.h>
 #include <WiFi.h>
 
 #include "KOReaderCredentialStore.h"
 #include "KOReaderSyncClient.h"
 #include "MappedInputManager.h"
+#include "NetworkStartup.h"
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "components/SubpageLayout.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
+#include "network/WifiPowerSaveGuard.h"
 
 void KOReaderAuthActivity::onWifiSelectionComplete(const bool success) {
   if (!success) {
     {
       RenderLock lock(*this);
       state = FAILED;
-      credentialFailure = false;
       errorMessage = tr(STR_WIFI_CONN_FAILED);
     }
     requestUpdate();
     return;
   }
 
-  // authenticate() is TLS to os.ryo.lu and is gated on 40KB free heap
-  // (KOReaderSyncClient.cpp:39); a resident SD reader font pins ~75KB and makes
-  // that gate unpassable. This screen only draws UI_10 status text.
-  fontUnload_.emplace(renderer);
-
   {
     RenderLock lock(*this);
     state = AUTHENTICATING;
-    statusMessage = tr(STR_AUTHENTICATING);
+    statusMessage = mode == Mode::SIGN_UP ? tr(STR_CREATING_ACCOUNT) : tr(STR_AUTHENTICATING);
   }
   requestUpdate();
 
@@ -40,24 +38,18 @@ void KOReaderAuthActivity::onWifiSelectionComplete(const bool success) {
 }
 
 void KOReaderAuthActivity::performAuthentication() {
-  const auto result = KOReaderSyncClient::authenticate();
+  WifiPowerSaveGuard psGuard;
+  const auto result = mode == Mode::SIGN_UP ? KOReaderSyncClient::createUser() : KOReaderSyncClient::authenticate();
 
   {
     RenderLock lock(*this);
     if (result == KOReaderSyncClient::OK) {
       state = SUCCESS;
-      statusMessage = tr(STR_AUTH_SUCCESS);
+      statusMessage = mode == Mode::SIGN_UP ? tr(STR_ACCOUNT_CREATED) : tr(STR_AUTH_SUCCESS);
     } else {
       state = FAILED;
-      // Credential problems show the ryOS account blurb; other failures keep
-      // the transport/server detail from errorString().
-      if (result == KOReaderSyncClient::USER_EXISTS) {
-        errorMessage = tr(STR_USERNAME_TAKEN);
-        credentialFailure = false;
-      } else {
-        credentialFailure = (result == KOReaderSyncClient::AUTH_FAILED || result == KOReaderSyncClient::NO_CREDENTIALS);
-        errorMessage = credentialFailure ? tr(STR_LOGIN_SETTINGS_HINT) : KOReaderSyncClient::errorString(result);
-      }
+      errorMessage =
+          result == KOReaderSyncClient::USER_EXISTS ? tr(STR_USERNAME_TAKEN) : KOReaderSyncClient::errorString(result);
     }
   }
   requestUpdate();
@@ -65,16 +57,23 @@ void KOReaderAuthActivity::performAuthentication() {
 
 void KOReaderAuthActivity::onEnter() {
   Activity::onEnter();
+  // A resident SD reader font can starve the Wi-Fi driver on this screen.
+  fontUnload_.emplace(renderer);
 
   // Check if already connected
   if (WiFi.status() == WL_CONNECTED) {
+    NetworkStartup::prepare(renderer);
     onWifiSelectionComplete(true);
     return;
   }
 
   // Launch WiFi selection
-  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
-                         [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
+  if (!startActivityForResultWith<WifiSelectionActivity>(
+          [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); })) {
+    state = FAILED;
+    errorMessage = tr(STR_MEMORY_ERROR);
+    requestUpdate();
+  }
 }
 
 void KOReaderAuthActivity::onExit() {
@@ -85,34 +84,70 @@ void KOReaderAuthActivity::onExit() {
     delay(30);
     silentRestart();
   }
-
-  // Only reached when the silent reboot above didn't happen (Wi‑Fi never came up,
-  // or deep sleep is already committed); the reboot reloads the font otherwise.
-  fontUnload_.reset();
 }
 
 void KOReaderAuthActivity::render(RenderLock&&) {
+  if (!UITheme::getInstance().hasMainTabs()) {
+    renderer.clearScreen();
+
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const auto pageWidth = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
+                   mode == Mode::SIGN_UP ? tr(STR_SIGN_UP) : tr(STR_KOREADER_AUTH));
+    const auto height = renderer.getLineHeight(UI_10_FONT_ID);
+    const auto top = (pageHeight - height) / 2;
+
+    if (state == AUTHENTICATING) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, statusMessage.c_str());
+    } else if (state == SUCCESS) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top,
+                                mode == Mode::SIGN_UP ? tr(STR_ACCOUNT_CREATED) : tr(STR_AUTH_SUCCESS), true,
+                                EpdFontFamily::BOLD);
+      renderer.drawCenteredText(UI_10_FONT_ID, top + height + 10, tr(STR_SYNC_READY));
+    } else if (state == FAILED) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, mode == Mode::SIGN_UP ? tr(STR_SIGNUP_FAILED) : tr(STR_AUTH_FAILED),
+                                true, EpdFontFamily::BOLD);
+      renderer.drawCenteredText(UI_10_FONT_ID, top + height + 10, errorMessage.c_str());
+    }
+
+    const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    renderer.displayBuffer();
+
+    return;
+  }
+
   renderer.clearScreen();
 
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
+  const Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
 
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_KOREADER_AUTH));
-  const auto height = renderer.getLineHeight(UI_10_FONT_ID);
-  const auto top = (pageHeight - height) / 2;
+  GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                 mode == Mode::SIGN_UP ? tr(STR_SIGN_UP) : tr(STR_KOREADER_AUTH));
+  const Rect content = SubpageLayout::contentRect(safeArea, metrics);
+  const Rect textBounds = SubpageLayout::insetHorizontal(content, metrics.contentSidePadding);
+  const int titleHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+  const int relatedGap = SubpageLayout::relatedGap(metrics);
 
   if (state == AUTHENTICATING) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, statusMessage.c_str());
+    UITheme::drawCenteredWrappedText(renderer, textBounds, UI_10_FONT_ID, statusMessage.c_str(), 2);
   } else if (state == SUCCESS) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_AUTH_SUCCESS), true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, top + height + 10, tr(STR_SYNC_READY));
+    const int top = SubpageLayout::centeredTop(content, titleHeight + relatedGap + lineHeight);
+    UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, top,
+                              mode == Mode::SIGN_UP ? tr(STR_ACCOUNT_CREATED) : tr(STR_AUTH_SUCCESS), true,
+                              EpdFontFamily::BOLD);
+    UITheme::drawCenteredText(renderer, textBounds, UI_10_FONT_ID, top + titleHeight + relatedGap, tr(STR_SYNC_READY));
   } else if (state == FAILED) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_AUTH_FAILED), true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, top + height + 10, errorMessage.c_str());
-    if (credentialFailure) {
-      renderer.drawCenteredText(UI_10_FONT_ID, top + 2 * (height + 10), tr(STR_RYOS_ACCOUNT_HINT));
-    }
+    const int top = SubpageLayout::centeredTop(content, titleHeight + relatedGap + lineHeight * 2);
+    UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, top,
+                              mode == Mode::SIGN_UP ? tr(STR_SIGNUP_FAILED) : tr(STR_AUTH_FAILED), true,
+                              EpdFontFamily::BOLD);
+    UITheme::drawCenteredWrappedText(
+        renderer, Rect{textBounds.x, top + titleHeight + relatedGap, textBounds.width, lineHeight * 2}, UI_10_FONT_ID,
+        errorMessage.c_str(), 2, true, EpdFontFamily::REGULAR, UITheme::TextVerticalAlignment::TOP);
   }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
@@ -122,8 +157,10 @@ void KOReaderAuthActivity::render(RenderLock&&) {
 
 void KOReaderAuthActivity::loop() {
   if (state == SUCCESS || state == FAILED) {
+    int x = 0;
+    int y = 0;
     if (mappedInput.wasPressed(MappedInputManager::Button::Back) ||
-        mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+        mappedInput.wasPressed(MappedInputManager::Button::Confirm) || mappedInput.wasScreenTapped(x, y)) {
       finish();
     }
   }

@@ -20,7 +20,7 @@ struct KeyboardResult {
 struct MenuResult {
   int action = -1;
   uint8_t orientation = 0;
-  uint8_t pageTurnOption = 0;
+  uint8_t pageTurnRate = 0;
   uint8_t writingMode = 0;
 };
 
@@ -34,7 +34,7 @@ struct PercentResult {
 };
 
 struct IntervalResult {
-  uint32_t value = 0;
+  int32_t value = 0;
 };
 
 struct ChapterRangeResult {
@@ -46,6 +46,10 @@ struct PageResult {
   uint32_t page = 0;
 };
 
+struct TxtOffsetResult {
+  uint32_t sourceOffset = 0;
+};
+
 struct ProgressChangeResult {
   int spineIndex = 0;
   int page = 0;
@@ -53,6 +57,10 @@ struct ProgressChangeResult {
   std::string xpath;
   float percentage = 0.0f;
   bool hasSavedProgress = false;
+  // Exact visible-codepoint offset within spineIndex, when the source (a bookmark) has one.
+  // Preferred over xpath/percentage on resolution: it is immune to re-pagination.
+  bool hasVisibleTextOffset = false;
+  uint32_t visibleTextOffset = 0;
 };
 
 enum class NetworkMode;
@@ -70,8 +78,8 @@ struct FilePathResult {
 };
 
 using ResultVariant = std::variant<std::monostate, WifiResult, KeyboardResult, MenuResult, ChapterResult, PercentResult,
-                                   IntervalResult, ChapterRangeResult, PageResult, ProgressChangeResult,
-                                   NetworkModeResult, FootnoteResult, FilePathResult>;
+                                   IntervalResult, ChapterRangeResult, PageResult, TxtOffsetResult,
+                                   ProgressChangeResult, NetworkModeResult, FootnoteResult, FilePathResult>;
 
 struct ActivityResult {
   bool isCancelled = false;

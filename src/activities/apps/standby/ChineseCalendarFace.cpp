@@ -12,30 +12,24 @@
 #include <cstdio>
 #include <cstring>
 
-#include "../../../util/TimeUtils.h"
 #include "ChineseAlmanac.h"
 #include "I18nKeys.h"
-#include "SloppyAlphabets.h"
 #include "fontIds.h"
+#include "util/TimeUtils.h"
 
 // CN font-coverage rule (drives every fontId choice in this file):
 //
-//   8 / 10 / 12 / 14 pt  → CN bitmap built from cn_common_chars.txt (~3500
-//                          chars).  Safe for any CJK glyph used in the design.
-//   16 / 18 pt           → CN bitmap built from cn_i18n_chars.txt (~650 chars,
-//                          chinese.yaml + feature requirements). Glyphs absent
-//                          from that file render as no-ops (getGlyph returns
-//                          nullptr → silent skip).
+//   8 / 10 / 12 pt  → CN bitmap built from cn_common_chars.txt (~3500 chars).
+//   14 / 16 / 18 pt → CN bitmap built from cn_i18n_chars.txt (747 chars from
+//                     chinese.yaml + feature requirements). Glyphs absent from
+//                     that file render as no-ops (getGlyph returns nullptr →
+//                     silent skip).
 //
-// Therefore: every Chinese-text drawText / drawCenteredText / drawCenteredRow
-// call in this file uses ≤14pt, with one exception — the lunar row uses 18pt
-// for visual emphasis.  Every CJK char this face renders that isn't naturally
-// in the 3500 SC pool *or* in a chinese.yaml STR_ value (i.e. wouldn't end up
-// in cn_i18n_chars.txt) is listed in lib/EpdFont/scripts/cn_almanac_chars.txt
-// — currently 戊庚壬癸寅卯巳酉戌廿蛰 (ganzhi + 惊蛰, ≤14pt) and 闰初七八九
-// 十冬腊 (lunar row, 18pt).  When new vocabulary is added, append the new
-// chars to that file and regenerate the CJK fonts.  ASCII digits at any size
-// are fine because basic Latin (U+0020-007E) is always in the OTF subset.
+// Every CJK char this face renders that isn't in a chinese.yaml STR_ value is
+// therefore listed in lib/EpdFont/scripts/cn_almanac_chars.txt. This keeps the
+// 14pt rows and 18pt lunar row complete. When new vocabulary is added, append
+// it there and regenerate the CJK fonts. ASCII digits at any size are covered
+// because basic Latin (U+0020-007E) is always in the OTF subset.
 
 namespace {
 
@@ -57,7 +51,7 @@ constexpr const char* kCjkDigits[10] = {
 //          divider Y is the anchor; 农历 + 生肖 hang off it.
 //   Lower: 节气 / 宜·忌 boxes / footer
 //          pinned to their own ratios so upper edits don't push them.
-// Hero geometry: SloppyEngine is width-bound on "18" (template aspect 1.36
+// Hero geometry: SloppyDigits is width-bound on "18" (template aspect 1.36
 // > 1.0), so the visible digit size is governed by kHeroWidthRatio; the
 // height ratio only sizes the bounding box and affects divider clearance.
 constexpr float kHeroTopRatio = 0.18f;
@@ -125,7 +119,7 @@ void formatClash(const AlmanacDay& d, char* buf, size_t sz) {
 
 // Draw a row of inline tokens (same font) centred horizontally in the viewport.
 // `gapPx` is the literal pixel spacer between adjacent tokens.
-void drawCenteredRow(GfxRenderer& renderer, int fontId, const Rect& viewport, int y, const char* const* tokens,
+void drawCenteredRow(const GfxRenderer& renderer, int fontId, const Rect& viewport, int y, const char* const* tokens,
                      int tokenCount, int gapPx) {
   if (tokenCount <= 0) return;
   int total = 0;
@@ -179,7 +173,7 @@ void drawYiJiBox(const GfxRenderer& renderer, int x, int y, int w, int h, const 
 }
 
 // Renders the full almanac page within `viewport`. Caller has already
-// cleared the screen.  `heroStyle`/`heroSeeds` parameterize the SloppyEngine
+// cleared the screen.  `heroStyle`/`heroSeeds` parameterize SloppyDigits
 // rendering of the big公历日 digit.
 void drawAlmanacPage(GfxRenderer& renderer, const Rect& viewport, const AlmanacDay& day, const sloppy::Style& heroStyle,
                      const sloppy::Seeds& heroSeeds) {
@@ -206,7 +200,7 @@ void drawAlmanacPage(GfxRenderer& renderer, const Rect& viewport, const AlmanacD
     drawCenteredRow(renderer, NOTOSANS_14_FONT_ID, viewport, viewport.y + 80, row, 2, /*gap=*/40);
   }
 
-  // Hero day digit — SloppyEngine fits to the bounding rect; width-bound.
+  // Hero day digit — SloppyDigits fits to the bounding rect; width-bound.
   {
     const int heroW = static_cast<int>(vw * kHeroWidthRatio);
     const int heroH = static_cast<int>(vh * kHeroHeightRatio);
@@ -214,7 +208,7 @@ void drawAlmanacPage(GfxRenderer& renderer, const Rect& viewport, const AlmanacD
     const int heroY = viewport.y + static_cast<int>(vh * kHeroTopRatio);
     char buf[4];
     std::snprintf(buf, sizeof(buf), "%u", static_cast<unsigned>(day.gregDay));
-    sloppy::draw(renderer, heroStyle, heroSeeds, buf, Rect{heroX, heroY, heroW, heroH});
+    sloppy::draw(renderer, heroStyle, heroSeeds, buf, sloppy::Bounds{heroX, heroY, heroW, heroH});
   }
 
   // Bold divider — sits on the screen's vertical midline.
@@ -327,7 +321,7 @@ void ChineseCalendarFace::onEnter() {
   heroStyle_->digitRotateMax = 0.0f;
   heroStyle_->digitGap = 18;
   heroStyle_->oneIsPlain = false;
-  sloppy::preRollSeeds(/*seed=*/1u, sloppy::getAlphabet(heroStyle_->alphabet), *heroSeeds_);
+  sloppy::prepareSeeds(/*seed=*/1u, *heroStyle_, *heroSeeds_);
 
   dayOffset_ = 0;
   refreshCachedDay();
@@ -386,23 +380,23 @@ void ChineseCalendarFace::onPageNext() {
   }
 }
 
-bool ChineseCalendarFace::tick() {
+StandbyFace::TickResult ChineseCalendarFace::tick() {
   // If user is parked on today (offset 0) and the wall clock has crossed
   // midnight, recompute. Otherwise stay put.
-  if (dayOffset_ != 0) return false;
+  if (dayOffset_ != 0) return TickResult::None;
   struct tm today;
-  if (!getTodayLocal(today)) return false;
+  if (!getTodayLocal(today)) return TickResult::None;
   const int32_t key = today.tm_year * 512 + today.tm_yday;
-  if (key == cachedBaseDayKey_) return false;
+  if (key == cachedBaseDayKey_) return TickResult::None;
   refreshCachedDay();
-  return true;
+  return TickResult::Redraw;
 }
 
 StrId ChineseCalendarFace::titleId() const { return StrId::STR_FACE_CHINESE_CALENDAR; }
 
 uint32_t ChineseCalendarFace::secondsUntilNextWake() const {
   // No time-dependent UI inside the page (we only repaint at day crossover).
-  // Return a large value; StandbyActivity's loop is event-driven anyway.
+  // StandbyActivity bounds this interval so USB state is still polled regularly.
   return 3600u;
 }
 

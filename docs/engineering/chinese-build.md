@@ -17,7 +17,7 @@ neither flag.
 The `-DENABLE_CHINESE_VERSION` flag in [platformio.ini](../../platformio.ini)
 gates every Chinese-only resource:
 
-| Resource | Behavior under ENABLE_CHINESE_VERSION |
+| Resource | Unified behavior |
 |---|---|
 | i18n string table (`gen_i18n.py`) | Emits **EN + ZH_TW** (TC) or synthesizes **EN + ZH_CN** via OpenCC **tw2sp** from the same Taiwan-terminology `chinese.yaml` when `CHINESE_UI_SIMPLIFIED` is set (檔案→文件, 網路→网络, …). Persisted codes are BCP47 `zh-TW` / `zh-CN` (`_locale`). |
 | Built-in fonts ([lib/EpdFont/builtinFonts/all.h](../../lib/EpdFont/builtinFonts/all.h)) | Latin headers skipped. Six per-size CJK headers — TC files `notosans_cjk_*.h` or SC files `notosans_sc_*.h` — raw 2-bit bitmaps. Coverage tiers: 8/10/12pt ~3500 common; 14pt ~7000 + symbols; 16/18pt i18n-only. |
@@ -39,8 +39,35 @@ gates every Chinese-only resource:
 | **Total (measured post-1.5.1 sync / #27)** | SC ~95.4% / TC ~98.1% of 6.25 MB app slot (WeRead + GenSen + wolfSSL) |
 | **After EN-only hyphen** | TC **93.2%** (6,107,031 / 6,553,600); SC **90.5%** (5,932,941 / 6,553,600) |
 
-A/B OTA rollback works exactly like the Latin build — the firmware fits in
-both app slots, and a failed update can auto-revert.
+These are same-checkout `.bin` measurements, including image padding. The two
+changes save 180,960 B (176.7 KiB) without changing supported CJK characters,
+glyph bitmaps or metrics. Sharing the 2,523-entry Unicode index removes
+60,552 B of duplicate data; the image shrinks by 60,544 B after alignment.
+No new runtime allocations are introduced. The remaining 355 KiB headroom
+is still below the 512 KiB release budget; a further 160,768 B must be removed
+to reach that target. Physical X3/X4 display validation remains outstanding.
+
+Sticky smoke test (2026-09-17): flashed the 5,796,752-byte `sticky` image
+with write/hash verification. Wake, calculator rendering, return to the reader
+and EPUB page turns were observed in serial logs; the tester confirmed normal
+calculator display. The reader used an SD font, so this does not validate the
+built-in 12pt CJK reader fallback. Dedicated 8/10/12pt visual checks remain
+outstanding. Firmware SHA-256:
+`f1bec28a4d10e5e87af9f25c484bad379831fd92be777465b2559c53bb5088d6`.
+
+X3 smoke test (2026-09-17): rebuilt and flashed the 6,190,080-byte
+`gh_release` image to ESP32-C3 MAC `70:af:09:5f:81:3c`; write/hash verification
+passed. Font manifest loading failed after reboot (also confirmed by the tester):
+both automatic and TLS 1.2 handshakes timed out, with only 3,024 / 3,652 bytes
+of free heap respectively. After failure, free/minimum/largest-block heap was
+15,892 / 2,568 / 10,740 bytes. This download check failed; reading/standby
+comparison and physical font display checks remain pending. Local evidence:
+`build/font-shrink-x3-upload.log` and `build/font-shrink-x3-test.log`.
+Firmware SHA-256:
+`e9d00e976050318937830126da43171b71f5494abeecfe5011019fa1c7d1124c`.
+
+A/B OTA remains unchanged: both app slots are 6,553,600 bytes. Release builds
+must stay at or below 6,029,312 bytes to retain at least 512 KiB headroom.
 
 > **Historical note (2026-05-19)**: the committed `notosans_cjk_*.h` headers
 > had drifted from `cn_common_chars.txt` in earlier PRs — the headers held
@@ -57,33 +84,118 @@ both app slots, and a failed update can auto-revert.
 > deliberately; the headroom is still ~500 KB. 8/10/12pt and 16/18pt sizes
 > were intentionally left at their existing coverage to keep the budget
 > in check.
+>
+> **Update (2026-07-24)**: 14pt returned to the common tier and the extended
+> symbol ranges were removed. The common tier now preserves the complete
+> 3500-char source pool before adding all required glyphs; the i18n tier now
+> contains every CJK glyph scanned from `chinese.yaml` and feature files.
+> Relative to the 6,502,659-byte RC baseline, the RC image is 736,664 bytes
+> smaller while adding the previously missing required glyphs.
+>
+> **Update (2026-08-06)**: 14pt moved to the i18n-only tier. Its 747 required
+> CJK glyphs keep every built-in UI and feature string renderable, while broad
+> Chinese EPUB coverage now uses the downloadable SD-card font. This removes
+> 587,322 bytes of raw bitmap and glyph metadata from the firmware. Regeneration
+> also picked up 14 UI glyphs that had been added since the previous font build.
 
-The CN build keeps two size strategies stacked together to land in that
-budget:
+The unified build keeps LTO disabled. Combining LTO with the custom ESP-IDF core
+rebuild previously allowed cache-critical SPI flash helpers to be linked into
+Flash; calling them while cache was disabled caused an early-boot Cache Error.
+Do not re-enable LTO without checking the final ELF and map for the affected
+IRAM mappings.
 
-1. **LTO on** for all CJK envs, worth ~186 KB of flash (TC went 96.1% → 93.2%
-   of the app slot). It is enabled by putting `-fno-lto` in `build_unflags`
-   and **nothing** in `build_flags`: pioarduino reacts to that unflag by adding
-   `-flto=auto` to the framework's compile flags and `-flto` to its
-   `LINKFLAGS`, and it only does so in the Arduino pass. Adding `-flto=auto`
-   to `build_flags` as well is what used to break the link — `build_flags`
-   reach every pass, including the hybrid ESP-IDF pass that
-   `custom_sdkconfig` triggers, so that pass emitted slim LTO objects and then
-   linked them without the LTO plugin. It was previously misdiagnosed as
-   "hybrid LTO of rebuilt IDF libs breaks the link"; the `undefined reference
-   to 'end'` and missing `call_start_cpu0` were downstream symptoms of slim
-   objects carrying no machine code. `-Oz` was tested and produced
-   byte-identical output to the framework's default `-Os` on this codebase, so
-   it is *not* enabled (would only add configuration complexity).
-2. **Per-size CJK character coverage** in `build-cn-builtin-fonts.sh`
-   (see "Regenerating the CJK fonts" below). 8/10/12pt carry the small
-   ~3500-char UI subset; **14pt carries the reader-default 7000 通用汉字
-   subset plus extended symbol ranges**; 16/18pt carry an i18n-only subset
-   (~700 chars from `chinese.yaml`). The tiering keeps the heavy 7000-char
-   bitmap to a single point size and shrinks 16/18pt to i18n-only,
-   saving ~1 MB vs running the full 7000-char subset at every size.
+The active size strategy is to embed only 8/10/12pt CJK subsets and externalize
+large reading faces to `.cpfont`. This removes flash data without introducing a
+decompression buffer or a new long-lived heap allocation.
+
+## WeRead transport
+
+The root headers below `src/activities/apps/weread/` are compile-time-only
+selection points. The public build uses the UI in `webapi/` with
+`lib/WeReadWebApi`; there is no runtime backend switch.
+
+WeRead owns its transport in `lib/WeReadWebApi/src/WeReadHttpClient.*`;
+the public `HttpDownloader` has no WeRead-specific session, Cookie, or protocol
+logic. On device, the client uses wolfSSL through `freeink::SecureClient`, a
+caller-owned 4 KB work buffer, and one best-effort persistent connection.
+Chapter images are streamed to SD and scheduled in batches by HTTPS host, so
+requests for the same host reuse that single connection. Redirects may change
+the active host, but only `weread.qq.com` and its subdomains receive the WeRead
+Cookie. The connection closes before EPUB packaging, and also closes early
+when free heap falls below 20 KB or the largest block falls below 8 KB.
+
+The pinned SDK owns the maximum-fragment request: `HAVE_MAX_FRAGMENT` remains
+enabled and `SecureClient` requests 2 KiB before the handshake. There is no
+application SNI wrapper. This preserves the effective request on the original
+SDK path; it does not prove that the peer accepted it. HTTP buffer sizes do not
+establish TLS record sizes. Cipher suites and hardware acceleration are unchanged.
+
+Chapter shard merging and Base64 input reuse the Operation's 4 KiB buffer instead
+of allocating a temporary 1 KiB buffer per chapter; Base64 output writes remain
+unchanged. Downloads remain serial on C3 and S3. UI stage numbers and labels share
+one mapping and drawing path; chapter progress refresh requests use 5% buckets,
+while images retain 10% buckets. Unknown totals show waiting text rather than a
+percentage. DEBUG-only diagnostic sampling is compiled out at lower log levels.
+Timing includes synchronous SD I/O and must not be interpreted as pure CPU work.
+See the [WeRead README](../../src/activities/apps/weread/README.md) for measurement
+boundaries, cold-cache test records, and unverified hardware checks.
+
+Device requests call `setInsecure()`: traffic is encrypted, but the CA and host
+identity are not verified. This makes session credentials and downloaded
+content vulnerable to a man-in-the-middle attacker. The native simulator takes
+a different path, `WeReadHttpClient -> simulator esp_http_client shim -> curl`,
+and uses the host trust store for certificate verification. WeRead uses an
+unofficial Web protocol and may stop working when the service changes.
+
+## WeRead progress sync
+
+The reader exposes one **Sync Progress** menu action. When the current EPUB path
+exactly matches a standard book in `shelf.bin`, the action uses WeRead; all other
+EPUBs continue to use KOReader. WeRead public-account books (`MP_WXS_`), moved
+files, and renamed files are intentionally treated as ordinary EPUBs. The
+existing long-press KOReader shortcut is unchanged.
+
+Manual WeRead sync starts with the saved Cookie and renews it only after an
+authentication failure. Newly generated WeRead chapters retain invisible
+raw-XHTML UTF-16 source anchors. These map the local page's visible-text offset
+to WeRead's native `chapterUid + chapterOffset` coordinate without clamping the
+offset to the `WRT2` word count; the inverse mapping restores a remote offset
+through the reader's existing pagination LUT. Older generated books without
+anchors retain the visible-offset approximation, and other EPUBs fall back to
+the whole-book percentage derived from `WRT2` word counts. Different canonical
+positions show the direction selector. A local upload uses an enter/report pair
+and includes the whole seconds recorded by the local reading session that ended
+when manual sync was opened. When the remote position is selected, its exact
+chapter and offset are reported before being applied locally, so reporting time
+cannot move cloud progress backwards. Upload is accepted only after a read-back
+verifies the chapter and offset. A timed report is not automatically repeated
+after an ambiguous network failure; the current sync screen retains it for an
+explicit Retry, but no pending time is persisted after leaving the screen. An
+expired session directs the user back to **Apps → WeRead** to sign in; it does
+not open a QR flow from the reader.
+
+For a new standard-book cache, the downloader fetches cloud progress after the
+`WRT2` catalog and before any chapter or image. This request is best effort:
+network, authentication, and protocol failures are logged but do not block the
+book download. After the EPUB is atomically replaced, a successful result is
+stored as the one-shot `WRP1` initial position. The reader consumes it only when
+there is no valid local `progress.bin`; an existing local position always wins.
+Public-account books skip this prefetch. See [file-formats.md](../file-formats.md)
+for the `WRT2` and `WRP1` layouts and migration rules.
 
 ## Regenerating the CJK fonts
+
+The generator finishes by running `share-cn-font-intervals.py`. It validates
+that the 8/10/12pt interval triples (first, last, glyph offset) are identical,
+then writes `notosans_cjk_common_intervals.h` and references its single
+`inline constexpr` table from those fonts. It refuses mismatches before writing.
+To share indices in existing generated headers without rerasterizing fonts or
+refreshing character sets, run:
+
+```bash
+python3 lib/EpdFont/scripts/share-cn-font-intervals.py
+python3 lib/EpdFont/scripts/share-cn-font-intervals.py --check
+```
 
 ```bash
 # 1. (One-time) install build deps into a venv
@@ -97,7 +209,7 @@ cp /path/to/GenSenRounded2TW-R.otf lib/EpdFont/builtinFonts/source/GenSenRounded
 # 3. (Optional) regenerate the character lists. build-cn-builtin-fonts.sh
 #    calls this for you in Step 0 unless SKIP_CHARSET=1 is set.
 #    Writes BOTH cn_common_chars.txt (top-N + require-from) and
-#    cn_i18n_chars.txt (require-from only — drives the 16/18pt subset).
+#    cn_i18n_chars.txt (require-from only — drives the 14/16/18pt subset).
 PYTHON=/tmp/cn_font_venv/bin/python3 \
   python3 lib/EpdFont/scripts/build_cn_charset.py \
     --require-from lib/I18n/translations/chinese.yaml
@@ -228,11 +340,10 @@ To enlarge the renderable character set:
    larger source list into `lib/EpdFont/scripts/` (e.g. a `gb2312_full.txt`
    union of Lv1+Lv2) and point `SOURCE_FILE` in `build_cn_charset.py` at it.
    This is a deliberate Flash-budget decision — every 1000 extra chars adds
-   roughly **200 KB** to the 8/10/12/14pt headers combined.
+   roughly **380 KB** to the 8/10/12pt headers combined.
 
-The hard ceiling is the 6.25 MB A/B-OTA slot. Today's headroom is ~1.4 MB,
-so a ~7000-char SC+TC pool would still fit, but the upcoming OTA delta
-shrinks proportionally.
+The hard ceiling is the 6.25 MiB A/B-OTA slot; the release gate reserves at
+least 512 KiB, so broad pool expansion must be measured in the built image.
 
 ## Incomplete built-in → SD font prompt
 
@@ -290,14 +401,34 @@ charset files:
 ```bash
 python3 -c "
 import re
-for sz, subset in [(8, 'cn_common_chars'),
-                   (14, 'chars_7000_common'),
-                   (16, 'cn_i18n_chars')]:
-    chars = open(f'lib/EpdFont/scripts/{subset}.txt').read()
-    n_cjk = len(set(c for c in chars if '一' <= c <= '鿿'))
-    hdr = open(f'lib/EpdFont/builtinFonts/notosans_cjk_{sz}.h').read()
-    n_glyphs = sum(1 for ln in hdr.splitlines() if re.match(r'\s*\{\s*\d+,', ln))
-    print(f'{sz}pt: charset CJK={n_cjk}, header glyphs={n_glyphs}, latin/punct ≈ {n_glyphs - n_cjk}')
+from pathlib import Path
+root = Path('.')
+cjk = lambda s: {c for c in s if '\u4e00' <= c <= '\u9fff'}
+scripts = root / 'lib/EpdFont/scripts'
+pool = cjk((scripts / 'chars_3500_common.txt').read_text())
+common = cjk((scripts / 'cn_common_chars.txt').read_text())
+i18n = cjk((scripts / 'cn_i18n_chars.txt').read_text())
+required = cjk((root / 'lib/I18n/translations/chinese.yaml').read_text())
+required |= cjk((scripts / 'cn_almanac_chars.txt').read_text())
+assert (len(pool), len(common), len(i18n)) == (3500, 3517, 802)
+assert common == pool | required and i18n == required
+for size, expected in [(8, 4014), (10, 4014), (12, 4014),
+                       (14, 1299), (16, 1299), (18, 1299)]:
+    header = (root / f'lib/EpdFont/builtinFonts/notosans_cjk_{size}.h').read_text()
+    index_header = ((root / 'lib/EpdFont/builtinFonts/notosans_cjk_common_intervals.h').read_text()
+                    if size <= 12 else header)
+    intervals = re.search(r'Intervals\[\] = \{(.*?)\n\};', index_header, re.S).group(1)
+    codepoints = set()
+    for first, last in re.findall(r'\{\s*(0x[0-9A-F]+),\s*(0x[0-9A-F]+),', intervals):
+        codepoints.update(range(int(first, 16), int(last, 16) + 1))
+    expected_cjk = common if size <= 12 else i18n
+    assert {ord(char) for char in expected_cjk} <= codepoints
+    assert 'mode: 2-bit' in header
+    assert '\n    true,\n    nullptr,\n' in header  # EpdFontData::is2Bit
+    assert len(codepoints) == expected, (size, len(codepoints))
+    if size == 14:
+        assert not {ord(char) for char in common - i18n} & codepoints
+print('Chinese font coverage OK')
 "
 ```
 

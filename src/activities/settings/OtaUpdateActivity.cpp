@@ -1,30 +1,76 @@
 #include "OtaUpdateActivity.h"
 
+#include <FreeInkUIGfxRenderer.h>
 #include <GfxRenderer.h>
+#include <HalClock.h>
 #include <I18n.h>
-#include <Logging.h>
+#include <Memory.h>
 #include <WiFi.h>
 
+#include <algorithm>
 #include <cstdio>
-#include <string>
 
+#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "NetworkStartup.h"
+#include "ReadingStatsStore.h"
 #include "SdCardFontSystem.h"
 #include "SilentRestart.h"
 #include "activities/network/WifiSelectionActivity.h"
+#include "components/SubpageLayout.h"
 #include "components/UITheme.h"
+#include "components/UIThemeTokens.h"
 #include "fontIds.h"
 #include "network/OtaUpdater.h"
+#include "util/ButtonNavigator.h"
 
 namespace {
-// Same floor as FontDownloadActivity (see the derivation there) — OTA begin also
-// needs mbedTLS + upgrade buf. Lowered from 28KB now that
-// CONFIG_MBEDTLS_DYNAMIC_BUFFER sizes the record buffer per record instead of
-// pinning 16K in + 4K out, which leaves a 16KB record as the largest single
-// allocation; 20KB covers it with margin. Observed handshakes on this path open
-// with 38-53KB MaxAlloc, so the old floor only ever fired on arenas that were
-// still workable.
-constexpr uint32_t MIN_MAX_ALLOC_FOR_TLS = 20 * 1024;
+namespace fui = freeink::ui;
+
+enum ReadyRow {
+  CHECK_UPDATES_ROW,
+  NIGHTLY_ROW,
+  READY_ROW_COUNT,
+};
+
+constexpr uint8_t RELEASE_NOTE_MAX_LINES = 4;
+constexpr unsigned int PROGRESS_REFRESH_STEP_PERCENT = 10;
+
+fui::TextStyle releaseNoteStyle() {
+  fui::TextStyle style;
+  style.font = fui::GfxRendererTarget::FONT_BODY;
+  style.maxLines = RELEASE_NOTE_MAX_LINES;
+  return style;
+}
+
+Rect releaseNotesBody(const Rect& safeArea, const ThemeMetrics& metrics, const bool firstPage, const int bottomInset) {
+  Rect body = SubpageLayout::contentRect(safeArea, metrics);
+  body.height = std::max(0, body.height - bottomInset);
+  if (firstPage) {
+    const int versionTop = safeArea.y + metrics.topPadding + metrics.headerHeight;
+    const int notesTop = versionTop + metrics.tabBarHeight * 2 + SubpageLayout::sectionGap(metrics);
+    const int bottom = body.y + body.height;
+    body.y = std::min(notesTop, bottom);
+    body.height = std::max(0, bottom - body.y);
+  }
+  return SubpageLayout::insetHorizontal(body, metrics.contentSidePadding);
+}
+
+const char* latestVersionLabel(const OtaUpdater& updater) {
+#ifdef SIMULATOR
+  (void)updater;
+  return "nightly-ota-notes";
+#else
+  return updater.getLatestVersion().c_str();
+#endif
+}
+
+Rect getReadyListRect(const GfxRenderer& renderer) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  const Rect content = SubpageLayout::contentRect(safeArea, metrics, true);
+  return Rect{content.x, content.y, content.width, GUI.getListRowStep(false) * READY_ROW_COUNT};
+}
 }  // namespace
 
 void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
@@ -36,465 +82,624 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
 
   LOG_DBG("OTA", "WiFi connected, checking for update");
 
-  sdFontSystem.unloadAll(renderer);
-  WiFi.scanDelete();
-
-  const uint32_t maxAlloc = ESP.getMaxAllocHeap();
-  LOG_INF("OTA", "Post-WiFi Free=%u MaxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
-          static_cast<unsigned>(maxAlloc));
-  if (!resumedAfterDefrag_ && maxAlloc < MIN_MAX_ALLOC_FOR_TLS) {
-    LOG_INF("OTA", "MaxAlloc below TLS floor — silent-restart to defrag heap");
-    WiFi.disconnect(true);
-    delay(30);
-    WiFi.mode(WIFI_OFF);
-    silentRestartToOtaUpdate();
-    return;
-  }
-
   {
     RenderLock lock(*this);
-    state = CHECKING_FOR_UPDATE;
+    state = State::CheckingForUpdate;
   }
   requestUpdateAndWait();
 
-  const auto res = updater.checkForUpdate();
+#ifdef SIMULATOR
+  updater.loadSimulatorReleaseNotes();
+#else
+  // The checking screen can reload fonts after WiFi startup cleanup, so release them again immediately before TLS.
+  NetworkStartup::prepare(renderer);
+  LOG_INF("OTA", "TLS preflight (manifest): free=%u, maxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
+  const auto res = updater.checkForUpdate(selectedChannel);
   if (res != OtaUpdater::OK) {
     LOG_DBG("OTA", "Update check failed: %d", res);
     {
       RenderLock lock(*this);
-      state = FAILED;
+      failedDetail = res == OtaUpdater::UNSUPPORTED_CHANNEL ? tr(STR_OTA_CHANNEL_UNSUPPORTED) : nullptr;
+      state = State::Failed;
     }
+    requestUpdate();
     return;
   }
-
-  // Built for both outcomes: being up to date is exactly when a user wants to
-  // reinstall or move to another language build.
-  buildSkuRows();
 
   if (!updater.isUpdateNewer()) {
     LOG_DBG("OTA", "No new update available");
     {
       RenderLock lock(*this);
-      state = NO_UPDATE;
+      state = State::NoUpdate;
     }
+    requestUpdate();
     return;
   }
+#endif
 
   {
     RenderLock lock(*this);
-    state = WAITING_CONFIRMATION;
+    releaseNotePage = 0;
+    state = State::UpdateAvailable;
   }
-}
-
-const char* OtaUpdateActivity::skuLabel(const OtaUpdater::Sku sku) {
-  switch (sku) {
-    case OtaUpdater::Sku::TRADITIONAL_CHINESE:
-      return tr(STR_FW_TRADITIONAL_CHINESE);
-    case OtaUpdater::Sku::SIMPLIFIED_CHINESE:
-      return tr(STR_FW_SIMPLIFIED_CHINESE);
-    case OtaUpdater::Sku::JAPANESE:
-      return tr(STR_FW_JAPANESE);
-    case OtaUpdater::Sku::KOREAN:
-      return tr(STR_FW_KOREAN);
-    case OtaUpdater::Sku::INTERNATIONAL:
-      break;
-  }
-  return tr(STR_FW_INTERNATIONAL);
-}
-
-void OtaUpdateActivity::buildSkuRows() {
-  skuRowCount_ = 0;
-  for (size_t i = 0; i < OtaUpdater::SKU_COUNT; i++) {
-    if (updater.getSkuAsset(static_cast<OtaUpdater::Sku>(i)).present()) {
-      skuRows_[skuRowCount_++] = static_cast<uint8_t>(i);
-    }
-  }
-}
-
-void OtaUpdateActivity::enterSkuSelection() {
-  if (skuRowCount_ == 0) return;
-
-  // Open on the running build, so the common case — reinstalling what is already
-  // there — is one press away and a language switch is a deliberate move off it.
-  selectedSkuRow_ = 0;
-  for (uint8_t row = 0; row < skuRowCount_; row++) {
-    if (rowSku(row) == OtaUpdater::runningSku()) selectedSkuRow_ = row;
-  }
-
-  RenderLock lock(*this);
-  skuReturnState_ = state;
-  state = SKU_SELECTION;
-}
-
-void OtaUpdateActivity::confirmSkuSelection() {
-  // Rejects an image too large for this device's app slot here rather than after a
-  // ~6 MB download, which is the failure worth catching early when moving from a
-  // small SKU to a large one.
-  const auto res = updater.selectSkuForInstall(rowSku(selectedSkuRow_));
-  if (res != OtaUpdater::OK) {
-    setFailure(res);
-    return;
-  }
-  RenderLock lock(*this);
-  state = SKU_CONFIRMATION;
-}
-
-void OtaUpdateActivity::setFailure(const OtaUpdater::OtaUpdaterError error) {
-  RenderLock lock(*this);
-  state = FAILED;
-  switch (error) {
-    case OtaUpdater::DIGEST_MISSING:
-    case OtaUpdater::DIGEST_MISMATCH:
-      // The download completed but the bytes are not the published release, so
-      // say so rather than leaving the user to retry into the same wall.
-      errorMessage_ = tr(STR_UPDATE_VERIFY_FAILED);
-      break;
-    case OtaUpdater::STORAGE_ERROR:
-      errorMessage_ = tr(STR_UPDATE_NO_SD_SPACE);
-      break;
-    case OtaUpdater::IMAGE_TOO_LARGE:
-      // Reachable by moving from a small SKU to a large one on a device whose
-      // app slot is smaller than this build assumes.
-      errorMessage_ = tr(STR_FIRMWARE_TOO_LARGE);
-      break;
-    case OtaUpdater::FLASH_ERROR:
-      errorMessage_ = tr(STR_FIRMWARE_WRITE_FAILED);
-      break;
-    default:
-      errorMessage_ = nullptr;
-      break;
-  }
+  requestUpdate();
 }
 
 void OtaUpdateActivity::onEnter() {
   Activity::onEnter();
 
-  // Turn on WiFi immediately
-  LOG_DBG("OTA", "Turning on WiFi...");
-  WiFi.mode(WIFI_STA);
+  resetUi();
+  failedDetail = nullptr;
+  app.on(ACTION_RELEASE_PAGE, &OtaUpdateActivity::onReleasePage, this);
+  app.on(ACTION_INSTALL_UPDATE, &OtaUpdateActivity::onInstallUpdate, this);
+  app.setScreen(&OtaUpdateActivity::updateScreen, this);
+  state = State::Ready;
+  selectedChannel = SETTINGS.otaNightlyEnabled ? OtaUpdater::Channel::Nightly : OtaUpdater::Channel::Stable;
+  selectedReadyRow = CHECK_UPDATES_ROW;
+  waitForConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
+  requestUpdate();
+}
 
-  // Launch WiFi selection subactivity
+void OtaUpdateActivity::activateReadyRow() {
+  switch (static_cast<ReadyRow>(selectedReadyRow)) {
+    case CHECK_UPDATES_ROW:
+      beginWifiSelection();
+      break;
+    case NIGHTLY_ROW:
+      selectedChannel =
+          selectedChannel == OtaUpdater::Channel::Stable ? OtaUpdater::Channel::Nightly : OtaUpdater::Channel::Stable;
+      SETTINGS.otaNightlyEnabled = selectedChannel == OtaUpdater::Channel::Nightly;
+      SETTINGS.saveToFile();
+      requestUpdate();
+      break;
+    case READY_ROW_COUNT:
+      break;
+  }
+}
+
+void OtaUpdateActivity::beginWifiSelection() {
+#ifdef SIMULATOR
+  onWifiSelectionComplete(true);
+  return;
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+  if (!readingStatsReleased) {
+    RenderLock lock(*this);
+    if (!READING_STATS.releaseMemoryForNetwork()) {
+      state = State::Failed;
+      requestUpdate();
+      return;
+    }
+    readingStatsReleased = true;
+  }
+#endif
+  // ActivityManager owns the child across frames, so stack/static lifetime is invalid.
+  auto wifiSelection = makeUniqueNoThrow<WifiSelectionActivity>(renderer, mappedInput);
+  if (!wifiSelection) {
+    LOG_ERR("OTA", "OOM: WifiSelectionActivity (%u bytes)", static_cast<unsigned>(sizeof(WifiSelectionActivity)));
+    state = State::Failed;
+    requestUpdate();
+    return;
+  }
+
+  // halClock.update() runs before ActivityManager::loop(); disable auto-sync before WiFi can start and race TLS.
+  halClock.setAutoSyncEnabled(false);
+
+  {
+    RenderLock lock(*this);
+    state = State::WifiSelection;
+  }
+
   LOG_DBG("OTA", "Launching WifiSelectionActivity...");
-  startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
+  startActivityForResult(std::move(wifiSelection),
                          [this](const ActivityResult& result) { onWifiSelectionComplete(!result.isCancelled); });
 }
 
 void OtaUpdateActivity::onExit() {
   Activity::onExit();
 
-  sdFontSystem.ensureLoaded(renderer);
-
-  // Success path reboots via the SHUTTING_DOWN state's plain ESP.restart()
-  // (loop() above) so the new firmware boots normally. Back-out paths land
-  // here with wifi still active; silent-restart to free the LWIP/mbedTLS
-  // fragmentation, same as the other wifi activities.
-  if (WiFi.getMode() != WIFI_MODE_NULL) {
+  const bool wifiWasEnabled = WiFi.getMode() != WIFI_MODE_NULL;
+  if (wifiWasEnabled) {
     WiFi.disconnect(false);
     delay(30);
+  }
+  // Reload saved statistics even if Wi-Fi allocation/selection never completed.
+  // Successful OTA installation uses the existing plain restart into the new image.
+  if (wifiWasEnabled || readingStatsReleased) {
     silentRestart();
   }
 }
 
-void OtaUpdateActivity::render(RenderLock&&) {
+void OtaUpdateActivity::showUpdateConfirmation() {
+  static constexpr StrId OPTIONS[] = {StrId::STR_CANCEL, StrId::STR_UPDATE};
+  updateConfirmation.show(StrId::STR_NEW_UPDATE, OPTIONS, 2, 0, [this](const int index) {
+    if (index == 0) {
+      {
+        RenderLock lock(*this);
+        state = State::UpdateAvailable;
+      }
+      requestUpdate();
+      return;
+    }
+    runUpdateInstall();
+  });
+  {
+    RenderLock lock(*this);
+    state = State::ConfirmingUpdate;
+  }
+  requestUpdate();
+}
+
+void OtaUpdateActivity::rebuildReleaseNotePages(const Rect& safeArea, const int bottomInset) {
   const auto& metrics = UITheme::getInstance().getMetrics();
-  const auto pageWidth = renderer.getScreenWidth();
-  const auto pageHeight = renderer.getScreenHeight();
+  const auto notes = updater.getReleaseNotes();
+  releaseNotePageCount = 1;
+  releaseNotePageStarts.fill(0);
+  if (notes.empty()) {
+    releaseNotePage = 0;
+    return;
+  }
+
+  fui::GfxRendererTarget target(renderer);
+
+  applyUiTextAlignment(target);
+  target.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+  const fui::TextStyle style = releaseNoteStyle();
+  const int titleHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int relatedGap = SubpageLayout::relatedGap(metrics);
+  const int sectionGap = SubpageLayout::sectionGap(metrics);
+  const int bulletIndent = std::max(8, renderer.getLineHeight(UI_10_FONT_ID) / 2);
+
+  uint8_t pageCount = 0;
+  uint8_t noteIndex = 0;
+  while (noteIndex < notes.size() && pageCount < ReleaseJsonParser::RELEASE_NOTE_COUNT_MAX) {
+    releaseNotePageStarts[pageCount] = noteIndex;
+    const Rect body = releaseNotesBody(safeArea, metrics, pageCount == 0, bottomInset);
+    const int availableHeight = std::max(0, body.height - titleHeight - sectionGap);
+    const int textWidth = std::max(1, body.width - bulletIndent);
+    int usedHeight = 0;
+    const uint8_t pageStart = noteIndex;
+    while (noteIndex < notes.size()) {
+      const int noteHeight = fui::measureWrappedText(target, notes[noteIndex].data(), style, textWidth).height;
+      const int itemHeight = noteHeight + (noteIndex == pageStart ? 0 : relatedGap);
+      if (noteIndex != pageStart && usedHeight + itemHeight > availableHeight) break;
+      usedHeight += itemHeight;
+      ++noteIndex;
+      if (usedHeight >= availableHeight) break;
+    }
+    ++pageCount;
+  }
+  releaseNotePageCount = std::max<uint8_t>(1, pageCount);
+  releaseNotePageStarts[releaseNotePageCount] = static_cast<uint8_t>(notes.size());
+  if (releaseNotePage >= releaseNotePageCount) releaseNotePage = releaseNotePageCount - 1;
+}
+
+void OtaUpdateActivity::renderUpdateAvailable(const Rect& safeArea) {
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const int bottomInset = mappedInput.hasTouch() ? app.theme().footerHeight : 0;
+  rebuildReleaseNotePages(safeArea, bottomInset);
+
+  GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                 tr(STR_UPDATE));
+
+  if (releaseNotePage == 0) {
+    const int versionTop = safeArea.y + metrics.topPadding + metrics.headerHeight;
+    GUI.drawSubHeader(renderer, Rect{safeArea.x, versionTop, safeArea.width, metrics.tabBarHeight},
+                      tr(STR_CURRENT_VERSION), CROSSPOINT_VERSION);
+    GUI.drawSubHeader(renderer,
+                      Rect{safeArea.x, versionTop + metrics.tabBarHeight, safeArea.width, metrics.tabBarHeight},
+                      tr(STR_NEW_VERSION), latestVersionLabel(updater));
+  }
+
+  const Rect body = releaseNotesBody(safeArea, metrics, releaseNotePage == 0, bottomInset);
+  const int titleHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int relatedGap = SubpageLayout::relatedGap(metrics);
+  const int sectionGap = SubpageLayout::sectionGap(metrics);
+  renderer.drawText(UI_12_FONT_ID, body.x, body.y, tr(STR_WHATS_NEW), true, EpdFontFamily::BOLD);
+  char pageLabel[16];
+  snprintf(pageLabel, sizeof(pageLabel), "%u/%u", static_cast<unsigned>(releaseNotePage + 1),
+           static_cast<unsigned>(releaseNotePageCount));
+  const int pageLabelWidth = renderer.getTextAdvanceX(SMALL_FONT_ID, pageLabel, EpdFontFamily::REGULAR);
+  const int pageLabelY = body.y + (titleHeight - renderer.getLineHeight(SMALL_FONT_ID)) / 2;
+  renderer.drawText(SMALL_FONT_ID, body.x + body.width - pageLabelWidth, pageLabelY, pageLabel);
+
+  const auto notes = updater.getReleaseNotes();
+  if (notes.empty()) {
+    UITheme::drawCenteredText(renderer, body, UI_10_FONT_ID, body.y + titleHeight + sectionGap,
+                              tr(STR_NO_RELEASE_NOTES));
+  } else {
+    fui::GfxRendererTarget target(renderer);
+    applyUiTextAlignment(target);
+    target.setFont(fui::GfxRendererTarget::FONT_BODY, UI_10_FONT_ID);
+    const fui::TextStyle style = releaseNoteStyle();
+    const int lineHeight = renderer.getLineHeight(UI_10_FONT_ID);
+    const int bulletSize = std::max(3, lineHeight / 5);
+    const int bulletIndent = std::max(8, lineHeight / 2);
+    const int textWidth = std::max(1, body.width - bulletIndent);
+    int y = body.y + titleHeight + sectionGap;
+    const uint8_t start = releaseNotePageStarts[releaseNotePage];
+    const uint8_t end = releaseNotePageStarts[releaseNotePage + 1];
+    GfxRenderer::ClipScope clip(renderer, body.x, body.y, body.width, body.height);
+    for (uint8_t i = start; i < end; ++i) {
+      const int noteHeight = fui::measureWrappedText(target, notes[i].data(), style, textWidth).height;
+      renderer.fillRect(body.x, y + std::max(0, (lineHeight - bulletSize) / 2), bulletSize, bulletSize, true);
+      fui::layoutText(target,
+                      fui::Rect{static_cast<int16_t>(body.x + bulletIndent), static_cast<int16_t>(y),
+                                static_cast<int16_t>(textWidth), static_cast<int16_t>(noteHeight)},
+                      notes[i].data(), style, [this](const char* line, const fui::Rect lineRect) {
+                        renderer.drawText(UI_10_FONT_ID, lineRect.x, lineRect.y, line);
+                      });
+      y += noteHeight + relatedGap;
+    }
+  }
+
+  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_UPDATE), releaseNotePage > 0 ? tr(STR_DIR_UP) : "",
+                                            releaseNotePage + 1 < releaseNotePageCount ? tr(STR_DIR_DOWN) : "");
+  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+  renderUi();
+}
+
+void OtaUpdateActivity::updateScreen(UiScreen& screen, void* user) {
+  static_cast<OtaUpdateActivity*>(user)->buildUpdateScreen(screen);
+}
+
+void OtaUpdateActivity::buildUpdateScreen(UiScreen& screen) {
+  if (!mappedInput.hasTouch() || (state != State::UpdateAvailable && state != State::ConfirmingUpdate)) return;
+  const fui::FooterAction actions[] = {
+      {tr(STR_PREV_PAGE), ACTION_RELEASE_PAGE, -1, fui::StateNormal, releaseNotePage > 0},
+      {tr(STR_UPDATE), ACTION_INSTALL_UPDATE},
+      {tr(STR_NEXT_PAGE), ACTION_RELEASE_PAGE, 1, fui::StateNormal, releaseNotePage + 1 < releaseNotePageCount},
+  };
+  screen.footer(actions, 3);
+}
+
+void OtaUpdateActivity::onReleasePage(const fui::ActionEvent& event, void* user) {
+  auto* self = static_cast<OtaUpdateActivity*>(user);
+  if (self->state != State::UpdateAvailable) return;
+  const int next = static_cast<int>(self->releaseNotePage) + event.value;
+  if (next < 0 || next >= self->releaseNotePageCount) return;
+  self->releaseNotePage = static_cast<uint8_t>(next);
+  self->requestUpdate();
+}
+
+void OtaUpdateActivity::onInstallUpdate(const fui::ActionEvent&, void* user) {
+  auto* self = static_cast<OtaUpdateActivity*>(user);
+  if (self->state != State::UpdateAvailable) return;
+  self->app.clearTapFlash();
+  self->showUpdateConfirmation();
+}
+
+void OtaUpdateActivity::render(RenderLock&&) {
+  if (!UITheme::getInstance().hasMainTabs() && state != State::Ready && state != State::UpdateAvailable &&
+      state != State::ConfirmingUpdate) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const auto pageWidth = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+
+    renderer.clearScreen();
+
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_UPDATE));
+    const auto height = renderer.getLineHeight(UI_10_FONT_ID);
+    const auto top = (pageHeight - height) / 2;
+
+    if (state == State::CheckingForUpdate) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_CHECKING_UPDATE));
+    } else if (state == State::ConfirmingUpdate) {
+      // Version info sits in the upper part of the screen so the centered
+      // Cancel/Update popup doesn't cover it (same layout as ConfirmationActivity).
+      const int infoTop = pageHeight / 6;
+      renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, infoTop,
+                        (std::string(tr(STR_CURRENT_VERSION)) + CROSSPOINT_VERSION).c_str());
+      renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, infoTop + height + metrics.verticalSpacing,
+                        (std::string(tr(STR_NEW_VERSION)) + updater.getLatestVersion()).c_str());
+
+      if (updateConfirmation.processRender(renderer, mappedInput)) return;
+    } else if (state == State::UpdateInProgress) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATING));
+
+      int y = top + height + metrics.verticalSpacing;
+      GUI.drawProgressBar(
+          renderer,
+          Rect{metrics.contentSidePadding, y, pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
+          std::min(progressBytes, progressTotalBytes), std::max<size_t>(progressTotalBytes, 1));
+
+      y += metrics.progressBarHeight + metrics.verticalSpacing;
+      // Percent label is drawn by BaseTheme::drawProgressBar; this slot is left intentionally empty
+      // so the bytes line below stays at the same Y it was at when the activity drew its own percent.
+      y += height + metrics.verticalSpacing;
+      char progressText[48];
+      snprintf(progressText, sizeof(progressText), "%zu / %zu", progressBytes, progressTotalBytes);
+      renderer.drawCenteredText(UI_10_FONT_ID, y, progressText);
+    } else if (state == State::NoUpdate) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_NO_UPDATE), true, EpdFontFamily::BOLD);
+      const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    } else if (state == State::Failed) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_FAILED), true, EpdFontFamily::BOLD);
+      if (failedDetail != nullptr) {
+        renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, failedDetail);
+      }
+      const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    } else if (state == State::Finished) {
+      renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_COMPLETE), true, EpdFontFamily::BOLD);
+      const int hintY = top + height + metrics.verticalSpacing;
+      const Rect hintBounds{metrics.contentSidePadding, hintY, pageWidth - metrics.contentSidePadding * 2,
+                            pageHeight - hintY};
+      UITheme::drawCenteredWrappedText(renderer, hintBounds, UI_10_FONT_ID, tr(STR_AUTO_RESTART_HINT), 3, true,
+                                       EpdFontFamily::REGULAR, UITheme::TextVerticalAlignment::TOP);
+    }
+
+    renderer.displayBuffer();
+
+    return;
+  }
+
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  const Rect safeArea = UITheme::getInstance().getScreenSafeArea(renderer, true, false);
+  const Rect content = SubpageLayout::contentRect(safeArea, metrics);
+  const Rect textBounds = SubpageLayout::insetHorizontal(content, metrics.contentSidePadding);
+  const int titleHeight = renderer.getLineHeight(UI_12_FONT_ID);
+  const int height = renderer.getLineHeight(UI_10_FONT_ID);
+  const int relatedGap = SubpageLayout::relatedGap(metrics);
+  const int sectionGap = SubpageLayout::sectionGap(metrics);
 
   renderer.clearScreen();
 
-  const bool choosingBuild = state == SKU_SELECTION || state == SKU_CONFIRMATION;
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight},
-                 choosingBuild ? tr(STR_FW_BUILD) : tr(STR_UPDATE));
-  const auto height = renderer.getLineHeight(UI_10_FONT_ID);
-  const auto top = (pageHeight - height) / 2;
+  switch (state) {
+    case State::Ready: {
+      GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                     tr(STR_UPDATE));
+      GUI.drawSubHeader(renderer,
+                        Rect{safeArea.x, safeArea.y + metrics.topPadding + metrics.headerHeight, safeArea.width,
+                             metrics.tabBarHeight},
+                        tr(STR_CURRENT_VERSION), CROSSPOINT_VERSION);
 
-  float updaterProgress = 0;
-  if (state == UPDATE_IN_PROGRESS || state == FLASHING) {
-    LOG_DBG("OTA", "Update progress: %d / %d", updater.getProcessedSize(), updater.getTotalSize());
-    updaterProgress = updater.getTotalSize() > 0
-                          ? static_cast<float>(updater.getProcessedSize()) / static_cast<float>(updater.getTotalSize())
-                          : 0.0f;
-    // Only update every 2% at the most
-    if (static_cast<int>(updaterProgress * 50) == lastUpdaterPercentage / 2) {
-      return;
+      const Rect readyList = getReadyListRect(renderer);
+      GUI.drawList(
+          renderer, readyList, READY_ROW_COUNT, selectedReadyRow,
+          [](const int index) {
+            return std::string(index == CHECK_UPDATES_ROW ? tr(STR_CHECK_UPDATES) : tr(STR_UPDATE_NIGHTLY));
+          },
+          nullptr, nullptr,
+          [this](const int index) {
+            if (index != NIGHTLY_ROW) return std::string();
+            return selectedChannel == OtaUpdater::Channel::Nightly ? std::string(tr(STR_STATE_ON))
+                                                                   : std::string(tr(STR_STATE_OFF));
+          },
+          true);
+      if (selectedChannel == OtaUpdater::Channel::Nightly) {
+        const int warningTop = readyList.y + readyList.height + relatedGap;
+        renderer.drawText(SMALL_FONT_ID, safeArea.x + metrics.contentSidePadding, warningTop, tr(STR_NIGHTLY_WARNING));
+        renderer.drawText(SMALL_FONT_ID, safeArea.x + metrics.contentSidePadding,
+                          warningTop + renderer.getLineHeight(SMALL_FONT_ID) + relatedGap,
+                          tr(STR_NIGHTLY_LOCKED_WARNING));
+      }
+
+      const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+      break;
     }
-    lastUpdaterPercentage = static_cast<int>(updaterProgress * 100);
-  }
-
-  if (state == SKU_SELECTION) {
-    const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-    const int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing;
-    const size_t slotSize = OtaUpdater::getOtaSlotSize();
-    GUI.drawList(
-        renderer, Rect{0, contentTop, pageWidth, contentHeight}, skuRowCount_, selectedSkuRow_,
-        [this](int row) { return std::string(skuLabel(rowSku(row))); }, nullptr, nullptr,
-        [this, slotSize](int row) {
-          const OtaUpdater::Sku sku = rowSku(row);
-          if (sku == OtaUpdater::runningSku()) return std::string(tr(STR_FW_CURRENT));
-          const size_t size = updater.getSkuAsset(sku).size;
-          if (slotSize > 0 && size > slotSize) return std::string(tr(STR_FW_TOO_LARGE_SHORT));
-          char buf[16];
-          snprintf(buf, sizeof(buf), "%.1f MB", static_cast<double>(size) / (1024.0 * 1024.0));
-          return std::string(buf);
-        },
-        true,
-        [this, slotSize](int row) {
-          const size_t size = updater.getSkuAsset(rowSku(row)).size;
-          return slotSize > 0 && size > slotSize;
-        });
-
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_SELECT), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    renderer.displayBuffer();
-    return;
-  }
-
-  if (state == SKU_CONFIRMATION) {
-    const OtaUpdater::Sku sku = rowSku(selectedSkuRow_);
-    const bool switching = sku != OtaUpdater::runningSku();
-    int y = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing * 2;
-
-    renderer.drawCenteredText(UI_10_FONT_ID, y, switching ? tr(STR_FW_SWITCH_PROMPT) : tr(STR_FW_REINSTALL_PROMPT),
-                              true, EpdFontFamily::BOLD);
-    y += height + metrics.verticalSpacing * 2;
-    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, skuLabel(sku));
-    y += height + metrics.verticalSpacing;
-    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y,
-                      (std::string(tr(STR_NEW_VERSION)) + updater.getLatestVersion()).c_str());
-
-    // Only a language switch has consequences worth listing; a same-build
-    // reinstall writes the identical image and changes nothing.
-    if (switching) {
-      y += height + metrics.verticalSpacing * 2;
-      renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, tr(STR_FW_SWITCH_LANGUAGE));
-      y += height + metrics.verticalSpacing;
-      renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, tr(STR_FW_SWITCH_REPAGINATE));
-      y += height + metrics.verticalSpacing;
-      renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, tr(STR_FW_SWITCH_KEEPS));
+    case State::CheckingForUpdate:
+      GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                     tr(STR_UPDATE));
+      UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, SubpageLayout::centeredTop(content, titleHeight),
+                                tr(STR_CHECKING_UPDATE));
+      break;
+    case State::UpdateAvailable:
+    case State::ConfirmingUpdate:
+      renderUpdateAvailable(safeArea);
+      if (state == State::ConfirmingUpdate && updateConfirmation.processRender(renderer, mappedInput)) return;
+      break;
+    case State::UpdateInProgress: {
+      GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                     tr(STR_UPDATE));
+      const int blockHeight = titleHeight + sectionGap +
+                              GUI.measureProgressBarHeight(renderer, metrics.progressBarHeight) + relatedGap + height;
+      int y = SubpageLayout::centeredTop(content, blockHeight);
+      UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, y, tr(STR_UPDATING), true, EpdFontFamily::BOLD);
+      y += titleHeight + sectionGap;
+      y = GUI.drawProgressBar(renderer, Rect{textBounds.x, y, textBounds.width, metrics.progressBarHeight},
+                              std::min(progressBytes, progressTotalBytes), std::max<size_t>(progressTotalBytes, 1)) +
+          relatedGap;
+      char progressText[48];
+      snprintf(progressText, sizeof(progressText), "%zu / %zu", progressBytes, progressTotalBytes);
+      UITheme::drawCenteredText(renderer, textBounds, UI_10_FONT_ID, y, progressText);
+      break;
     }
-
-    const auto labels = mappedInput.mapLabels(tr(STR_CANCEL), tr(STR_FW_INSTALL), "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    renderer.displayBuffer();
-    return;
-  }
-
-  if (state == CHECKING_FOR_UPDATE) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_CHECKING_UPDATE));
-  } else if (state == WAITING_CONFIRMATION) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_NEW_UPDATE), true, EpdFontFamily::BOLD);
-    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, top + height + metrics.verticalSpacing,
-                      (std::string(tr(STR_CURRENT_VERSION)) + CROSSPOINT_VERSION).c_str());
-    renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, top + height * 2 + metrics.verticalSpacing * 2,
-                      (std::string(tr(STR_NEW_VERSION)) + updater.getLatestVersion()).c_str());
-
-    // Confirm installs the running SKU's asset (the plain update); the third
-    // button opens the build list for anyone who wants to switch language at the
-    // same time.
-    const auto labels =
-        mappedInput.mapLabels(tr(STR_CANCEL), tr(STR_UPDATE), skuRowCount_ > 1 ? tr(STR_FW_CHANGE_BUILD) : "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  } else if (state == UPDATE_IN_PROGRESS || state == FLASHING) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, state == FLASHING ? tr(STR_UPDATING) : tr(STR_DOWNLOADING));
-
-    int y = top + height + metrics.verticalSpacing;
-    GUI.drawProgressBar(
-        renderer,
-        Rect{metrics.contentSidePadding, y, pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
-        static_cast<int>(updaterProgress * 100), 100);
-
-    y += metrics.progressBarHeight + metrics.verticalSpacing;
-    // Percent label is drawn by BaseTheme::drawProgressBar; this slot is left intentionally empty
-    // so the bytes line below stays at the same Y it was at when the activity drew its own percent.
-    y += height + metrics.verticalSpacing;
-    // Writing the OTA partition is the only phase where losing power leaves the
-    // device without a bootable app, so the warning is scoped to it.
-    if (state == FLASHING) {
-      renderer.drawCenteredText(UI_10_FONT_ID, y, tr(STR_FIRMWARE_UPDATE_DO_NOT_POWER_OFF));
-    } else {
-      renderer.drawCenteredText(
-          UI_10_FONT_ID, y,
-          (std::to_string(updater.getProcessedSize()) + " / " + std::to_string(updater.getTotalSize())).c_str());
+    case State::NoUpdate: {
+      GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                     tr(STR_UPDATE));
+      UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, SubpageLayout::centeredTop(content, titleHeight),
+                                tr(STR_NO_UPDATE), true, EpdFontFamily::BOLD);
+      const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+      break;
     }
-  } else if (state == VERIFYING) {
-    // Hashing ~6 MB off the SD card takes long enough that a static "Updating…"
-    // would read as a hang.
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_VERIFYING_UPDATE));
-  } else if (state == NO_UPDATE) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_NO_UPDATE), true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing,
-                              (std::string(tr(STR_CURRENT_VERSION)) + CROSSPOINT_VERSION).c_str());
-    // The dead end this screen used to be is where reinstalling and switching
-    // language build now live, since both are same-version installs.
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), skuRowCount_ > 0 ? tr(STR_FW_REINSTALL) : "", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  } else if (state == FAILED) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_FAILED), true, EpdFontFamily::BOLD);
-    if (errorMessage_ != nullptr) {
-      renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, errorMessage_);
+    case State::Failed: {
+      GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                     tr(STR_UPDATE));
+      const int failedHeight = titleHeight + (failedDetail != nullptr ? relatedGap + height : 0);
+      const int failedTop = SubpageLayout::centeredTop(content, failedHeight);
+      UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, failedTop, tr(STR_UPDATE_FAILED), true,
+                                EpdFontFamily::BOLD);
+      if (failedDetail != nullptr) {
+        UITheme::drawCenteredText(renderer, textBounds, UI_10_FONT_ID, failedTop + titleHeight + relatedGap,
+                                  failedDetail);
+      }
+      const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+      break;
     }
-    const auto labels = mappedInput.mapLabels(tr(STR_BACK), "", "", "");
-    GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  } else if (state == FINISHED) {
-    renderer.drawCenteredText(UI_10_FONT_ID, top, tr(STR_UPDATE_COMPLETE), true, EpdFontFamily::BOLD);
-    renderer.drawCenteredText(UI_10_FONT_ID, top + height + metrics.verticalSpacing, tr(STR_POWER_ON_HINT));
+    case State::Finished: {
+      GUI.drawHeader(renderer, Rect{safeArea.x, safeArea.y + metrics.topPadding, safeArea.width, metrics.headerHeight},
+                     tr(STR_UPDATE));
+      const int top = SubpageLayout::centeredTop(content, titleHeight + relatedGap + height);
+      UITheme::drawCenteredText(renderer, textBounds, UI_12_FONT_ID, top, tr(STR_UPDATE_COMPLETE), true,
+                                EpdFontFamily::BOLD);
+      UITheme::drawCenteredText(renderer, textBounds, UI_10_FONT_ID, top + titleHeight + relatedGap,
+                                tr(STR_AUTO_RESTART_HINT));
+      break;
+    }
+    case State::WifiSelection:
+    case State::ShuttingDown:
+      break;
   }
 
   renderer.displayBuffer();
 }
 
-void OtaUpdateActivity::runInstall() {
+void OtaUpdateActivity::runUpdateInstall() {
+  LOG_DBG("OTA", "New update available, starting download...");
   {
     RenderLock lock(*this);
-    state = UPDATE_IN_PROGRESS;
+    progressBytes = 0;
+    progressTotalBytes = updater.getTotalSize();
+    lastProgressRefreshPercent = 0;
+    state = State::UpdateInProgress;
   }
   requestUpdateAndWait();
+  // The progress screen is another font-loading boundary before a separate TLS connection.
+  NetworkStartup::prepare(renderer);
+#ifndef SIMULATOR
+  LOG_INF("OTA", "TLS preflight (firmware): free=%u, maxAlloc=%u", static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()));
+#endif
   const auto res = updater.installUpdate(
       [](void* ctx) {
-        // immediate=true notifies the render task directly. The default deferred path only
-        // sets a flag consumed at the end of ActivityManager::loop(), which never runs while
-        // installUpdate() blocks this task.
-        static_cast<OtaUpdateActivity*>(ctx)->requestUpdate(true);
-      },
-      this,
-      [](void* ctx, OtaUpdater::Stage stage) {
         auto* self = static_cast<OtaUpdateActivity*>(ctx);
+        bool refresh = false;
         {
           RenderLock lock(*self);
-          switch (stage) {
-            case OtaUpdater::Stage::DOWNLOADING:
-              self->state = UPDATE_IN_PROGRESS;
-              break;
-            case OtaUpdater::Stage::VERIFYING:
-              self->state = VERIFYING;
-              break;
-            case OtaUpdater::Stage::FLASHING:
-              self->state = FLASHING;
-              break;
+          self->progressBytes = self->updater.getProcessedSize();
+          self->progressTotalBytes = self->updater.getTotalSize();
+          const unsigned int percent =
+              self->progressTotalBytes > 0
+                  ? static_cast<unsigned int>(
+                        static_cast<uint64_t>(std::min(self->progressBytes, self->progressTotalBytes)) * 100 /
+                        self->progressTotalBytes)
+                  : 0;
+          if (percent >= self->lastProgressRefreshPercent + PROGRESS_REFRESH_STEP_PERCENT ||
+              (percent == 100 && self->lastProgressRefreshPercent != 100)) {
+            self->lastProgressRefreshPercent = percent;
+            refresh = true;
           }
-          // Each phase restarts its progress at 0%, so drop the throttle
-          // baseline or the first frame of the new phase is skipped.
-          self->lastUpdaterPercentage = UNINITIALIZED_PERCENTAGE;
         }
-        self->requestUpdate(true);
-      });
+        // Flash writes suspend Read Pico's display feeder tasks; finish the frame before resuming the writer.
+        if (refresh) self->requestUpdateAndWait();
+      },
+      this);
 
   if (res != OtaUpdater::OK) {
     LOG_DBG("OTA", "Update failed: %d", res);
-    setFailure(res);
+    {
+      RenderLock lock(*this);
+      sdFontSystem.ensureLoaded(renderer, false);
+      failedDetail = res == OtaUpdater::WRONG_DEVICE_ERROR ? tr(STR_FIRMWARE_WRONG_DEVICE) : nullptr;
+      state = State::Failed;
+    }
     requestUpdate();
     return;
   }
 
   {
     RenderLock lock(*this);
-    state = FINISHED;
+    state = State::Finished;
   }
   requestUpdateAndWait();
   // Hold the completion screen briefly so the user sees it, then restart.
   delay(3000);
   {
     RenderLock lock(*this);
-    state = SHUTTING_DOWN;
+    state = State::ShuttingDown;
   }
 }
 
 void OtaUpdateActivity::loop() {
-  if (state == WAITING_CONFIRMATION) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      LOG_DBG("OTA", "New update available, starting download...");
-      runInstall();
-      return;
-    }
-
-    if (skuRowCount_ > 1 && mappedInput.wasPressed(MappedInputManager::Button::NavPrevious)) {
-      enterSkuSelection();
-      requestUpdate();
-      return;
-    }
-
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      finish();
-    }
-
-    return;
-  }
-
-  if (state == SKU_SELECTION) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      // Leaving the list abandons any build picked in it, so the "Update" button
-      // on the screen behind still means the running SKU's asset.
-      updater.resetInstallTarget();
-      {
-        RenderLock lock(*this);
-        state = skuReturnState_;
+  switch (state) {
+    case State::Ready: {
+      if (waitForConfirmRelease) {
+        if (!mappedInput.isPressed(MappedInputManager::Button::Confirm)) waitForConfirmRelease = false;
+        return;
       }
-      requestUpdate();
-      return;
-    }
 
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      confirmSkuSelection();
-      requestUpdate();
-      return;
-    }
-
-    const int pageItems = UITheme::getNumberOfItemsPerPage(renderer, true, false, true, false);
-    buttonNavigator.onNextRelease([this] {
-      selectedSkuRow_ = ButtonNavigator::nextIndex(selectedSkuRow_, skuRowCount_);
-      requestUpdate();
-    });
-    buttonNavigator.onPreviousRelease([this] {
-      selectedSkuRow_ = ButtonNavigator::previousIndex(selectedSkuRow_, skuRowCount_);
-      requestUpdate();
-    });
-    buttonNavigator.onNextContinuous([this, pageItems] {
-      selectedSkuRow_ = ButtonNavigator::nextPageIndex(selectedSkuRow_, skuRowCount_, pageItems);
-      requestUpdate();
-    });
-    buttonNavigator.onPreviousContinuous([this, pageItems] {
-      selectedSkuRow_ = ButtonNavigator::previousPageIndex(selectedSkuRow_, skuRowCount_, pageItems);
-      requestUpdate();
-    });
-    return;
-  }
-
-  if (state == SKU_CONFIRMATION) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      LOG_INF("OTA", "Installing %s by user choice", OtaUpdater::skuAssetName(rowSku(selectedSkuRow_)));
-      runInstall();
-      return;
-    }
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      {
-        RenderLock lock(*this);
-        state = SKU_SELECTION;
+      const Rect readyList = getReadyListRect(renderer);
+      const auto touch = handleListTouch(selectedReadyRow, READY_ROW_COUNT, readyList.y, readyList.height, false);
+      if (touch == ListTouchResult::Activated) {
+        activateReadyRow();
+        return;
       }
-      requestUpdate();
-    }
-    return;
-  }
+      if (touch == ListTouchResult::Consumed) return;
 
-  if (state == FAILED) {
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      finish();
-    }
-    return;
-  }
+      if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+        finish();
+        return;
+      }
+      if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+        activateReadyRow();
+        return;
+      }
 
-  if (state == NO_UPDATE) {
-    if (skuRowCount_ > 0 && mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-      enterSkuSelection();
-      requestUpdate();
+      if (mappedInput.wasPressed(MappedInputManager::Button::NavPrevious)) {
+        selectedReadyRow = ButtonNavigator::previousIndex(selectedReadyRow, READY_ROW_COUNT);
+        requestUpdate();
+        return;
+      }
+      if (mappedInput.wasPressed(MappedInputManager::Button::NavNext)) {
+        selectedReadyRow = ButtonNavigator::nextIndex(selectedReadyRow, READY_ROW_COUNT);
+        requestUpdate();
+      }
       return;
     }
-    if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-      finish();
+    case State::UpdateAvailable: {
+      const auto touch = routeTouch(mappedInput);
+      if (touch.routed && app.invalidated()) requestUpdate();
+      if (touch) return;
+      if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
+        finish();
+        return;
+      }
+      if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
+        showUpdateConfirmation();
+        return;
+      }
+      if (mappedInput.wasPressed(MappedInputManager::Button::NavPrevious) && releaseNotePage > 0) {
+        --releaseNotePage;
+        requestUpdate();
+        return;
+      }
+      if (mappedInput.wasPressed(MappedInputManager::Button::NavNext) && releaseNotePage + 1 < releaseNotePageCount) {
+        ++releaseNotePage;
+        requestUpdate();
+      }
+      return;
     }
-    return;
-  }
-
-  if (state == SHUTTING_DOWN) {
-    ESP.restart();
+    case State::ConfirmingUpdate:
+      if (updateConfirmation.handleInput(mappedInput, [this] { requestUpdate(); })) {
+        if (state == State::ConfirmingUpdate && !updateConfirmation.isActive()) {
+          state = State::UpdateAvailable;
+          requestUpdate();
+        }
+        return;
+      }
+      state = State::UpdateAvailable;
+      requestUpdate();
+      return;
+    case State::Failed:
+    case State::NoUpdate: {
+      int x = 0;
+      int y = 0;
+      if (mappedInput.wasPressed(MappedInputManager::Button::Back) || mappedInput.wasScreenTapped(x, y)) finish();
+      return;
+    }
+    case State::ShuttingDown:
+      ESP.restart();
+      return;
+    case State::WifiSelection:
+    case State::CheckingForUpdate:
+    case State::UpdateInProgress:
+    case State::Finished:
+      return;
   }
 }

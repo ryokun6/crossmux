@@ -3,36 +3,42 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 
-#include <functional>
-
-#include "activities/Activity.h"
-#include "components/UITheme.h"
-#include "util/ButtonNavigator.h"
+#include "activities/UiListActivity.h"
 
 class MappedInputManager;
 
 /**
  * Activity for selecting UI language
  */
-class LanguageSelectActivity final : public Activity {
+class LanguageSelectActivity final : public UiListActivity {
  public:
-  explicit LanguageSelectActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
-      : Activity("LanguageSelect", renderer, mappedInput) {}
+  enum class Mode : uint8_t {
+    Settings,
+    Initial,
+    Upgrade,
+  };
+
+  explicit LanguageSelectActivity(GfxRenderer& renderer, MappedInputManager& mappedInput, Mode mode = Mode::Settings);
 
   void onEnter() override;
-  void onExit() override;
-  void loop() override;
-  void render(RenderLock&&) override;
 
  private:
-  void handleSelection();
+  int listCount() const override { return totalItems; }
+  void buildScreen(UiScreen& screen) override;
+  void activateIndex(int index) override;
+  const char* headerTitle() const override;
+  void onBackButton() override;
+  void drawFooter() override;
+  bool isOnboarding() const { return mode_ != Mode::Settings; }
 
-  void onBack() { finish(); }
-  ButtonNavigator buttonNavigator;
-  int selectedIndex = 0;
-  // Languages this build can actually render, in display-name order. Built in
-  // onEnter(): hides e.g. ZH_TW on the global build (no CJK font). EN is always
-  // present, so totalItems >= 1.
-  uint8_t visibleIndices[getLanguageCount()] = {};
-  uint8_t totalItems = 0;
+  // Only the languages compiled into this build (custom_i18n_builtin_langs), not the whole enum.
+  constexpr static uint8_t totalItems = sizeof(SORTED_LANGUAGE_INDICES) / sizeof(SORTED_LANGUAGE_INDICES[0]);
+
+  // Row storage: totalItems is a compile-time constant, so a fixed-capacity
+  // array avoids any heap allocation for the row list. Built once in
+  // onEnter() — activateIndex() finishes the activity immediately on
+  // selection, so buildScreen() never needs to see a different "Selected"
+  // row within one visit.
+  freeink::ui::ListItem rowItems[totalItems]{};
+  const Mode mode_;
 };

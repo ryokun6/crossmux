@@ -11,7 +11,7 @@
   * lib/hal/: Hardware Abstraction Layer (HalDisplay, HalGPIO, HalStorage)
   * lib/I18n/: Internationalization (translations in `translations/*.yaml`, generated string tables)
 * src/activities/: UI logic using the Activity Lifecycle (onEnter, loop, onExit)
-* open-x4-sdk/: Low-level SDK (EInkDisplay, InputManager, BatteryMonitor, SDCardManager)
+* freeink-sdk/: Low-level SDK (FreeInkDisplay, InputManager, BatteryMonitor, SDCardManager)
 * .crosspoint/: SD-based binary cache for EPUB metadata and pre-rendered layout sections
 
 ## Hardware Abstraction Layer (HAL)
@@ -49,6 +49,24 @@ if (Storage.openFileForRead("MODULE", "/path/to/file.bin", file)) {
 - SdFat's `SdSpiCard` tracks SPI bus state with an unsynchronized `m_spiActive` bool. Two tasks calling SdFat concurrently can confuse that state machine and end with one task calling `SPIClass::endTransaction()` against a paramLock the *other* task is holding. That trips FreeRTOS's `xTaskPriorityDisinherit` assert (`tasks.c:5156, pxTCB == pxCurrentTCBs[0]`) and panics the system. See SdFat issue #518.
 - `HalStorage` serializes everything via `storageMutex`. Downstream code uses `HalFile` (declared in `<HalStorage.h>`); every method call (read, write, seek, close) takes the mutex. `HalFile`'s destructor also takes the mutex before letting the underlying SdFat `FsFile` close.
 - **Never** call into `SdFat` / `SdSpiCard` / `FsBaseFile` / `SDCardManager` / raw `FsFile` directly — that bypasses the mutex.
+
+**CPU frequency changes must go through `HalPowerManager::setPowerSaving()`**:
+- `modeMutex` protects the target-mode decision, the entire `setCpuFrequencyMhz()` call, and the `isLowPower` update. Update state only after a successful transition; repeated requests for the current state do nothing.
+- Arduino's APB callbacks hold SPI locks between the BEFORE and AFTER callbacks. Concurrent frequency changes can deadlock: one task holds a SPI lock while waiting for the APB callback lock, and another holds the APB callback lock while waiting for that SPI lock. Serializing only the state assignment is insufficient.
+- `HalPowerManager::Lock` sets `NormalSpeed` under `modeMutex`, then releases the mutex **before** calling `setPowerSaving(false)`. Keep that ordering: the mutex is not recursive. Obtain the power lock before starting SPI work. The existing helper supports only one active power lock; it is not a nested-lock counter.
+- Preserve the Wi-Fi/C3 BLE host guards and board-specific frequency restrictions. Light sleep and CPU downclocking are separate decisions; fixing clock serialization must not disable either Bluetooth or standby light sleep.
+
+`Storage.getSpace(totalBytes, freeBytes)` queries filesystem data capacity, not
+raw card size, through the SDK's unified capacity query under the same mutex.
+Both outputs are zero on failure; callers must check the boolean result before
+using them. The SDK derives cluster bytes from 512-byte sectors with 64-bit
+arithmetic because SdFat 2.3.1's FAT `bytesPerCluster()` truncates 64 KiB to zero.
+Successful free-space scans are cached for 20 seconds from completion; failures
+invalidate the cache and are retried on the next query. Mount/unmount resets it.
+The cache is a snapshot, not an immediate accounting of subsequent writes.
+The About page paints its loading state before this synchronous query; input
+waits for the scan to finish. Host simulator capacity comes from `statvfs`, so
+use `python3 scripts/tests/test_sd_space.py` for FAT calculation regressions.
 
 ---
 
@@ -91,6 +109,7 @@ void enterNewActivity(Activity* activity) {
 - Any memory allocated in `onEnter()` MUST be freed in `onExit()`
 - FreeRTOS tasks MUST be deleted in `onExit()` before activity destruction
 - Member `FsFile` handles MUST be closed in `onExit()` (local `FsFile` variables auto-close via destructor)
+- `ActivityManager` calls `onExit()` while already holding `RenderLock`; never acquire a second render lock there
 
 **Activity Pattern**:
 ```cpp
@@ -103,6 +122,28 @@ The main loop updates mapped input once per frame before
 `ActivityManager::loop()`. Normal Activities must not update it again.
 
 **Critical**: Free resources in reverse order. Delete tasks BEFORE activity destruction.
+
+### Read Pico idle page cache
+
+The EPUB reader prepares the next text page on the existing render task, once
+400 ms have elapsed after a foreground render without another render notification.
+Other activities return zero from `idleRenderDelayMs()` and add no idle wakeups.
+Input, foreground render requests and activity switches cancel the idle pass;
+its timeout must not acknowledge a `requestUpdateAndWait()` caller.
+
+The cache uses four reusable PSRAM frames (415,872 bytes on Read Pico), released
+in `onExit()`. A scoped restore protects the live framebuffer and render mode.
+Glyphs load on demand, with cancellation between page elements and planes;
+a single SD read or glyph render is not preemptible. Cache hits compare the
+resolved layout, drawing settings, chapter generation and render epoch. Image
+pages, failed loads and cancelled attempts do not retry until another foreground
+render. Allocation failure disables the cache for the reading session.
+
+Run `python3 -m unittest discover -s scripts/tests -p test_reader_page_cache.py -v`
+for cache identity, cancellation, allocation cleanup and render-task scheduling.
+Device acceptance must still check short taps/swipes/menu entry during cache
+construction, reflow to the old cached page number, image-page idle SD activity,
+framebuffer integrity and PSRAM recovery after leaving/reopening the reader.
 
 ### FreeRTOS Task Guidelines
 
@@ -121,16 +162,13 @@ The main loop updates mapped input once per frame before
 
 **Source**: [src/main.cpp:40-115](../../src/main.cpp)
 
-**All fonts are loaded as global static objects** at firmware startup:
-- Noto Serif: 12, 14, 16, 18pt (4 styles each: regular, bold, italic, bold-italic)
-- Noto Sans: 12, 14, 16, 18pt (4 styles each)
-- Ubuntu UI fonts: 10, 12pt (2 styles)
+**Built-in fonts are global static objects** at firmware startup:
+- International UI fonts: 8, 10, 12pt
+- Simplified-Chinese UI fallbacks: 8, 10, 12pt
+- Offline reader fallback: 12pt; other sizes and styles use SD `.cpfont`
 
-OpenDyslexic is no longer a flash builtin — it moved to an SD-card font
-(`lib/EpdFont/scripts/sd-fonts.yaml`). The Chinese build reuses the legacy
-`opendyslexic*` font slots in `src/main.cpp` as aliases to the embedded CJK faces.
-
-**Total**: ~80+ global `EpdFont` and `EpdFontFamily` objects
+OpenDyslexic and the broad Noto reader families live in the SD font catalog
+(`lib/EpdFont/scripts/sd-fonts.yaml`). Legacy IDs resolve to the 12pt fallback.
 
 **Compilation Flag**:
 ```cpp

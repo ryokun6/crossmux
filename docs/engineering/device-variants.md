@@ -1,6 +1,12 @@
-# Device Variants — Xteink X3 vs X4
+# Device Variants — X3/X4 and Build-Only S3 Targets
 
-> Deep reference for [CLAUDE.md](../../CLAUDE.md). How one firmware binary runs
+> Sticky, X4 Pro, X4 Classic, PaperMono, [eego A4](eego-a4.md), [Murphy M4](murphy-m4.md),
+> [Waveshare ePaper 3.97](waveshare-epaper-397.md), [Metalio E-Ink 4](metalio-eink4.md),
+> and [MindReset Read Pico](read-pico.md) are separate ESP32-S3
+> compile-time targets. The one-binary rule in this document applies only to
+> the ESP32-C3 X3/X4 pair.
+
+> Deep reference for [AGENTS.md](../../AGENTS.md). How one firmware binary runs
 > on both the Xteink X3 and X4, how the device is detected at boot, what differs
 > between the two panels, and how to build / flash / verify for X3.
 
@@ -13,10 +19,91 @@ is on at boot and adapts at runtime. To "build for X3", build any normal env and
 flash it — the device identifies itself:
 
 ```bash
-pio run -e gh_release        # international
-pio run -e gh_release_cn     # Simplified-Chinese (see chinese-build.md)
+pio run -e gh_release        # all 33 UI languages and both content profiles
 pio run -t upload            # build + flash to whatever is plugged in
 ```
+
+All nine ESP32-S3 devices use separate builds because their boards,
+displays, input, storage, and power profiles differ from the combined ESP32-C3
+image:
+
+```bash
+pio run -e x4pro
+pio run -e x4c
+pio run -e papermono
+pio run -e sticky
+pio run -e eego_a4
+pio run -e murphy_m4
+pio run -e waveshare_epaper_397
+pio run -e metalio_eink4
+pio run -e readpico
+```
+
+Eight S3 targets are published by the shared Nightly matrix, including MindReset
+Read Pico (`readpico_nightly`). X4 Classic has the
+same `x4c_nightly` build and Hardware CI coverage, but remains build-only and is
+not added to the public Nightly or OTA indexes. Each published target builds
+one unified image, which is published under both legacy flavor pointers.
+Manual flashing must use the matching build; the embedded
+board tag rejects a tagged image for a different board. See
+[firmware-release.md](firmware-release.md) for publishing and rollback details.
+
+## Standby-display light sleep
+
+Standby-display light sleep is enabled for the runtime-selected X3/X3 UC8279 and
+X4 profiles. The HAL arms GPIO3 plus a timer and consumes the released power
+button before returning to the Activity. ESP32-C3 isolates ordinary GPIOs in
+light sleep, so the HAL exempts GPIO13 from that isolation: it keeps the X3 SD
+rail powered or the X4 battery latch asserted. Display state and all other power
+rails remain unchanged.
+
+Repeated timer wake, power-button wake, and button, display, and SD recovery
+after wake passed hardware validation on both X3 and X4. X4 sleep current has
+not yet been quantified, so no measured power reduction is claimed. All S3
+targets remain in the normal downclocked standby loop; a successful build alone
+is not a hardware acceptance test.
+
+Bluetooth Page Turner Beta is compiled into every hardware firmware flavor:
+development, Nightly, release, RC and slim where those profiles exist. The
+runtime setting remains disabled by default; existing saved choices are kept.
+Native simulator builds retain the BLE stub.
+
+X3/X4 profiles share `c3_hardware`: internal RAM, a Flash controller and paged
+coverage indexes for large SD fonts. The HAL protects the entire C3 BLE host
+lifetime from manual 10 MHz idle downclocking. Sticky, X4 Pro, X4 Classic, Paper
+Mono, EEGO A4, Murphy M4, Waveshare 3.97 and Metalio E-Ink 4 inherit `s3_ble_psram` through their
+hardware profiles, including release/RC flavors. Sticky and EEGO keep their
+tuned controller-only cores; USB-capable boards keep the prebuilt TinyUSB graph.
+C3 never inherits the S3 allocator or IPC wrapper.
+
+X4 user tests confirm reading/page-turner operation; quantitative endurance and
+X3/other-board hardware acceptance remain separate. See
+[C3 Bluetooth](c3-bluetooth.md) for configuration, ownership and validation.
+
+The diagnostic PSRAM mode additionally requires 256 KiB free and a 32 KiB
+contiguous PSRAM block. Before starting the Host it allocates and immediately
+frees a 16-byte probe through the linked NimBLE allocator, rejecting allocation
+failure or a non-PSRAM address. It never silently falls back to internal RAM.
+`BLE` logs report internal/PSRAM free, historical minimum and largest block at
+start, stop, link transitions and every ten seconds while running, plus task
+stack high-water marks. Historical minima are since boot, not per-phase peaks.
+These are diagnostic safeguards, not a measured production memory budget.
+
+All BLE start callers hold the render lock and use `BleInput` for the memory
+gate, at most one recovery, and immediate recheck/start. Bluetooth settings and
+key mapping use the same Explicit gate (70 KiB free / 24 KiB largest internal
+block); only a rejected gate unloads the SD reading font and clears font caches.
+An already-running host neither recovers memory nor initializes again. BLE
+synthetic press and release frames both have zero hold duration, independent of
+previous physical-key or touch durations.
+
+Reader BLE startup keeps its 80 KiB free / 32 KiB largest internal-block gate.
+On a low-memory start attempt, it releases rebuildable font caches under the
+render lock and immediately retries without unloading the reading font. If the
+gate still fails, it retries after two seconds. Chapter building, Wi-Fi, USB
+Drive and sleep still stop BLE; eligible readers restart the host afterwards
+and use the SDK's bonded-device reconnection. Hardware reconnection and memory
+headroom must be verified on-device, not inferred from a successful build.
 
 The X3-vs-X4 choice is **not** a compile-time decision. Do not add a `-DX3`
 build flag or a `[env:...x3]` — see the next section for why.
@@ -33,9 +120,8 @@ runtime. A compile-time split would:
 - add `#ifdef` branches where today there is one tested code path.
 
 So the codebase uses **100% runtime dispatch** (`if (gpio.deviceIsX3())`,
-~268 call sites), never `#ifdef`. The only compile-time SKU axis is *language*
-(`ENABLE_CHINESE_VERSION`), which is orthogonal to hardware — see
-[chinese-build.md](chinese-build.md).
+~268 call sites), never `#ifdef`. Language and content region are runtime
+settings; there is no compile-time language SKU — see [chinese-build.md](chinese-build.md).
 
 ## How detection works
 
@@ -92,7 +178,7 @@ To clear a wrong cached detection, **erase NVS** (full chip erase, or wipe the
 |---|---|---|
 | Panel | 800 × 480, **SSD1677** | 792 × 528, **UC81xx** |
 | Framebuffer | 48000 B | 52272 B |
-| Buffer allocation | `MAX_BUFFER_SIZE = 52272` (static, covers both) — [EInkDisplay.h:35](../../open-x4-sdk/libs/display/EInkDisplay/include/EInkDisplay.h) |
+| Buffer allocation | `MAX_BUFFER_SIZE = 52272` (static, covers both) — [FreeInkDisplay](../../freeink-sdk/libs/display/FreeInkDisplay/include/FreeInkDisplay.h) |
 | Geometry switch | default 800×480 | `setDisplayX3()` before `begin()` — [HalDisplay.cpp:39](../../lib/hal/HalDisplay.cpp) |
 | Display SPI clock | **20 MHz** (SSD1677 in-spec maximum) | UC81xx profile default, unchanged |
 | Battery | ADC on GPIO0 | BQ27220 fuel gauge (I²C) — [HalPowerManager.cpp](../../lib/hal/HalPowerManager.cpp) |
@@ -100,18 +186,16 @@ To clear a wrong cached detection, **erase NVS** (full chip erase, or wipe the
 | Clock persistence | ESP system clock; survives deep sleep/reset, not full power loss | ESP system clock plus DS3231 UTC backup — [HalClock.cpp](../../lib/hal/HalClock.cpp) |
 | Tilt page-turn | none | QMI8658 gyro, X3-only — [HalTiltSensor.cpp:55](../../lib/hal/HalTiltSensor.cpp) |
 | Theme button layout | stacked on the right | up-left / down-right — [BaseTheme.cpp:194](../../src/components/themes/BaseTheme.cpp), [LyraTheme.cpp:399](../../src/components/themes/lyra/LyraTheme.cpp) |
-| Grayscale / refresh | SSD1677 fast LUT | UC81xx OEM pipeline + "AA-pre-BW" preconditioning — [EInkDisplay.h:56-94](../../open-x4-sdk/libs/display/EInkDisplay/include/EInkDisplay.h) |
+| INX front-button hints | four bottom segments aligned to the X4 keys | four bottom segments using the wider X3 spacing; labels remain orientation-aware — [InxTheme.cpp](../../src/components/themes/inx/InxTheme.cpp) |
+| Grayscale / refresh | SSD1677 fast LUT | UC81xx OEM pipeline + "AA-pre-BW" preconditioning — [FreeInkDisplay](../../freeink-sdk/libs/display/FreeInkDisplay/include/FreeInkDisplay.h) |
 
-The X4 FAST path is tuned in the application HAL rather than by modifying the
-SDK gitlink: `crossPointX4Ssd1677Config()` selects the SSD1677 driver's
-incremental DU sequence (`0x1C`), and `HalDisplay::begin()` selects a 20 MHz SPI
-clock before the driver starts. The setting stays within the controller limit
-and does not change the single-framebuffer RAM budget. Its tradeoff is panel
-quality: the weaker DU waveform can leave more ghosting than the SDK's stock
-`0xFC` sequence on some panel samples. Verify menus, text pages, high-contrast
-borders, and grayscale images on real X4 hardware; if persistent residue is
-unacceptable, retain 20 MHz but restore the stock waveform override. X3 never
-constructs the SSD1677 driver, so neither tuning applies to it.
+The application HAL does not override the display bus or refresh waveform.
+`HalDisplay::begin()` only selects the X3 panel before the SDK driver starts.
+For X4, the SDK's active board profile selects a 20 MHz SPI clock and the stock
+absolute FAST sequence (`0xFC`) with its temperature and power sequencing. This
+avoids the persistent ghosting observed with the weaker incremental `0x1C`
+path. X3 never constructs the SSD1677 driver, and Sticky retains its own
+board-specific SSD1677 waveform config.
 
 ### Unified system clock and optional RTC
 
@@ -126,11 +210,24 @@ back to an available RTC. A failed RTC write is logged but does not invalidate
 the successfully updated system time. The RTC is not polled periodically while
 the device is running.
 
-`clockUtcOffsetQ` remains a fixed display offset used by the status bar and
-Standby faces; it does not change the process-wide timezone. Every device exposes
-automatic sync, manual date/time, fixed offset, 12/24-hour format, and one-shot
-sync under **Settings → System → Date & Time**. Chinese builds default a missing
-`clockUtcOffsetQ` to UTC+8; an existing saved value is preserved.
+Every device exposes one **Settings → System → Date & Time** page, including
+devices without an external RTC. It contains automatic sync, current date/time,
+timezone, daylight saving time, 12/24-hour format, header clock visibility, and
+one-shot sync. Manual date/time editing is enabled only when automatic sync is
+off; one-shot sync remains available in either mode.
+
+The upstream city/fixed-offset timezone table and Auto/On/Off DST policy apply
+the process-wide timezone. Headers, standby faces, manual date/time conversion,
+and reading analytics use that same timezone. Manual edits reject invalid dates
+and nonexistent local times during a DST jump; repeated fall-back times use the
+system library's automatic choice. Existing historical analytics are not rewritten.
+
+`clockUtcOffsetQ` is retained for settings compatibility and the upstream
+fixed-offset migration when `clockTimezone` is unset. First-start Simplified
+Chinese defaults to UTC+8 and other languages to UTC+0; upgrades retain saved
+settings. Header clocks and the date/time page show valid system time after
+either manual editing or NTP sync, independently of external RTC availability
+and the legacy `clockHasBeenSynced` flag.
 
 The SPI display pins (`EPD_SCLK=8`, `EPD_MOSI=10`, `EPD_CS=21`, `EPD_DC=4`,
 `EPD_RST=5`, `EPD_BUSY=6`) and the ADC button layout are **identical** on both
@@ -144,7 +241,7 @@ this is why X3 "just works" without per-screen code (see
 ## Build & flash for X3
 
 Same envs as X4 (`platformio.ini`): `default`, `gh_release`, `gh_release_rc`,
-`slim`, `gh_release_cn`, `gh_release_cn_rc`. Flash any of them to an X3:
+and `slim`. Flash any of them to an X3:
 
 ```bash
 pio run -e gh_release -t upload
@@ -154,7 +251,8 @@ esptool.py --chip esp32c3 --port /dev/ttyACM0 --baud 921600 \
 ```
 
 **Web flasher device target.** The in-firmware file/flash page
-([src/network/html/FilesPage.html](../../src/network/html/FilesPage.html),
+([English Files page](../../src/network/html/en/FilesPage.html) and
+[Chinese Files page](../../src/network/html/zh-CN/FilesPage.html),
 profile `X3: { width: 528, height: 792 }`) exposes an X3/X4 target selector.
 That selector drives per-silicon image **patching**
 ([FirmwareFlasher.h](../../src/network/FirmwareFlasher.h) /
@@ -162,35 +260,47 @@ That selector drives per-silicon image **patching**
 does **not** select a different firmware. Pick the target that matches the
 physical device.
 
-## Testing X3 without hardware — known limitation
+## Testing X3 without hardware
 
-You currently **cannot** exercise X3 geometry in the desktop / WASM simulator.
-`simulator/shims/EInkDisplay.h` hardcodes 800×480 and makes `setDisplayX3()` a
-no-op ([simulator/shims/EInkDisplay.h:12-18](../../simulator/shims/EInkDisplay.h)),
-so the simulator always renders as X4. X3's 792×528 panel and its I²C
-peripherals are not modeled. **Real X3 verification needs X3 hardware.** (Adding
-X3 to the simulator is possible but out of scope here.)
+The pinned desktop simulator fork provides an X3 environment with the 792×528
+framebuffer, X3 board profile, and simulated tilt input:
+
+```bash
+pio run -e simulator_x3 -t run_simulator
+```
+
+Use real X3 hardware for final electrical, sensor, power, and display-waveform
+verification.
 
 ## Verifying which device you're on
 
 - **Serial** — boot log line `Hardware detect: X3`
   ([src/main.cpp:453](../../src/main.cpp)). The line above it prints the probe
   scores.
-- **Web API** — `device` field is `"X3"` / `"X4"`
+- **Web API** — `device` field uses `BoardConfig::ACTIVE.name`
+  (`"xteink_x3"` / `"xteink_x4"`)
   ([CrossPointWebServer.cpp:382](../../src/network/CrossPointWebServer.cpp)).
 - **UI** — the X3-only Tilt Page Turn item appears only when the QMI8658 is
   detected. Clock and Date & Time settings are available on every device.
 
 ## Adding a future device variant
 
-The pattern generalizes. To add an "Xn":
+Use the [port-device-bsp skill](../../.agents/skills/port-device-bsp/SKILL.md)
+to establish the hardware contract, select an integration path, and record build
+and physical acceptance evidence.
 
-1. extend `DeviceType` and add `deviceIsXn()` ([HalGPIO.h](../../lib/hal/HalGPIO.h)),
-2. add an I²C (or other) fingerprint pass in `detectDeviceTypeWithFingerprint()`,
-3. add `setDisplayXn()` + the panel's controller path in the SDK `EInkDisplay`,
-4. keep optional peripherals (battery, RTC, IMU) behind their HAL classes and
-   branch layout only where physical geometry requires it,
-5. keep everything runtime-dispatched — do **not** introduce a build env.
+X3/X4 retain their shared image. A future runtime variant may share an image only
+when silicon, partitions, initialization and reliable device identification are
+compatible. Extend detection and panel selection only for that verified case;
+do not add every new board to the X3/X4 `DeviceType` enum.
+
+Otherwise add a separate hardware profile and build environment, following the
+existing S3 targets in [platformio.ini](../../platformio.ini). Reuse the SDK's
+board profiles and controller drivers where supported; keep application access
+to peripherals behind the HAL and adapt layout through renderer geometry.
+Unsupported chip architectures require a platform/toolchain assessment before
+BSP implementation. A successful build is not physical acceptance, and a new
+build target does not automatically enter public Nightly or OTA indexes.
 
 See also: [build-system.md](build-system.md) (envs & flags),
 [hardware-constraints.md](hardware-constraints.md) (RAM/flash budget),

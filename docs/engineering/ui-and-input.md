@@ -7,6 +7,10 @@
 ## Orientation-Aware Logic
 * No Hardcoding: Never assume 800 or 480. Use renderer.getScreenWidth() and renderer.getScreenHeight().
 * Viewable Area: Use renderer.getOrientedViewableTRBL() to stay within physical bezel margins.
+* Safe Content: Start from `UITheme::getScreenSafeArea()`, then reserve the active theme's header, spacing, and
+  footer metrics before fitting custom boards or grids.
+* Coordinate Bounds: `drawLine()` endpoints are inclusive, while rectangle width and height are extents. A
+  full-width line therefore ends at `renderer.getScreenWidth() - 1`, never at the screen width itself.
 
 ## Logical Button Mapping
 
@@ -59,6 +63,11 @@ Use one physical gesture for one semantic action:
 - After a long-press action fires, keep a handled flag until release and
   consume that release instead of also running the short action.
 
+In the main Settings menu, short presses move one item while a held
+`NavNext`/`NavPrevious` gesture moves by a full visible page at the shared
+continuous-navigation interval. Settings subpages retain their own input
+semantics.
+
 ## Activity and Popup Transitions
 
 An Activity, popup, and resumed parent are separate input owners. If ownership
@@ -98,6 +107,48 @@ may run after the edge's frame. Do not simulate consumption with another
 Touch input remains independent; only arm a physical-button barrier when that
 button is actually held.
 
+Home's Back-to-Standby shortcut is owned by `ActivityManager`, before the home
+Activity's input loop. It applies to all `HomeActivity` themes, including Cover
+Grid, and to INX Recent while focus is on the tabs. All use
+`standbyShortcutEnabled`; selecting Standby directly in Apps remains independent.
+The shortcut defaults to off on first boot, after restoring system settings, or
+when the saved settings omit this key. Existing saved On/Off values are preserved;
+users can enable it in Display settings.
+The manager requires a local logical Back press followed by release, or a
+completed touch Back gesture that publishes both edges in the same frame.
+Push/Pop/Replace cancel the old pair; activation and parent restoration seed a
+release barrier from the held state. Tab/focus actions and consumed long-press
+releases also cancel the pair. An inherited hold never blocks independent touch
+navigation, and its release cannot activate Standby. INX content Back returns to
+the tabs, and other tabs return to Recent; entering Standby requires a new gesture.
+This ownership guard does not change the SDK's button debounce interval.
+
+Run `python3 scripts/tests/test_reading_ui_regressions.py` for the production
+dispatch/transition regression cases. Enable the shortcut before testing its
+activation. On ReadPico, hold the middle strip key to
+exit the crash report, then release after Home appears: it must stay on Home.
+A fresh middle-key press/release must enter Standby exactly once. Repeat on INX,
+Classic, carousel, and Cover Grid, including returning from the control center
+and disabling the shortcut. In INX content focus, the first Back returns to the
+tabs; only a subsequent gesture enters Standby.
+
+Settings enums normally cycle in place when they have two choices and open an
+`OptionPopup` when they have more. A dynamic enum marked with
+`withManagedEnumPicker()` always opens the popup and receives callbacks only
+when the selected index changes. Its setter owns the complete change lifecycle,
+including persistence, error feedback, and any required restart; the generic
+settings flow must not save or rebuild after it returns.
+
+## Touch Coordinate and Gesture Layers
+
+Touch controllers keep their sampling, power, and panel-mount transforms in
+the FreeInk SDK. `HalGPIO` exposes the normalized contact, and
+`MappedInputManager` maps it through the renderer's live orientation before
+classifying direction and edge geometry with FreeInkUI. Activities assign the
+meaning: left-edge right swipe is Back, top-edge down swipe is Menu, and
+bottom-edge up swipe is Home on every touch device. A hardware Home key remains
+an additional input path and does not change those screen gestures.
+
 ## Long-Press Pattern
 
 Start timing on `wasPressed()`. While `isPressed()` remains true, fire the
@@ -125,7 +176,147 @@ action**.
 * Paginated custom grids should call `GUI.drawSideScrollBar()` with their item
   count, page start, and page capacity so the active theme controls the bar
   dimensions and placement.
+* INX top-level tabs are owned by `ActivityManager`; only Activities with a
+  non-`None` `MainTab` participate. Left/Right and tab touches are consumed
+  before the page sees them, while reader and feature subpages remain outside
+  the top-level loop. `SETTINGS.inxTabPosition` places this shared bar at the
+  top or bottom; touch devices default to the bottom. In bottom mode, touch
+  devices share a 28 px top status bar across all five main tabs, with the clock
+  on the left and battery on the right. It uses the configured clock format,
+  time zone and battery percentage visibility, and updates only when the page
+  renders. Tapping the status bar opens the control center. Its drawing and hit
+  region share the main-tab layout, which also reserves viewable margins and
+  at least 6 px between the status bar, content and navigation. With top tabs,
+  the touch INX Recent page displays only its bottom-right battery inside the
+  existing 40 px footer reservation; it neither formats nor draws a footer clock
+  and has no new touch action. Both placements use a 12 px logical-screen-edge
+  inset, clamped to the board's oriented viewable margins rather than added to
+  them. Clock and battery percentage share the numeric font and text baseline;
+  positioning compensates for the battery icon's internal 6 px vertical offset. The clock
+  uses a 9-byte stack buffer. Non-touch devices retain their existing home battery.
+  `Activity::mainTabLayout()` resolves complete status, content and navigation
+  rectangles in one pass; `pageContentRect()` also owns the normal-header
+  fallback, so pages do not repeat the main-tab eligibility/layout calculation.
+  Bottom navigation is 56 px high, with 38 px icons, 6 px bottom padding and
+  a 38 × 5 px top selection marker. Only top navigation draws a full-width
+  separator; device viewable margins and button-hint reservations remain additional.
+* `GUI.drawProgressBar()` returns the first free Y coordinate after the bar and
+  optional percentage line. Callers place following text from that value rather
+  than reproducing the theme's font or spacing calculations.
+* Functional subpages derive their body from `SubpageLayout::contentRect()` so
+  headers, optional subheaders, button hints, and footers have one authoritative
+  boundary. Related text keeps at least 4 px of separation, independent blocks
+  keep at least 12 px, and custom drawing is clipped to that body.
+* `ConfirmationActivity` uses one standard presentation: a 12 pt bold heading
+  and a page body wrapped to at most two 10 pt lines. It computes those lines in
+  `onEnter()`, never in `render()`, so button-driven redraws stay allocation-free.
+* Center a progress state with `GUI.measureProgressBarHeight()`, then use the Y
+  returned by `GUI.drawProgressBar()` for everything that follows. This keeps
+  percentage text and subsequent details correct when a theme changes fonts.
+* Cover views that must fill a fixed frame call
+  `GfxRenderer::drawBitmapCropToFill()`. It scales and center-crops through two
+  bounded row buffers and returns `false` on invalid input, read failure, or OOM
+  so the caller can draw its fallback cover.
+* INX front-button hints use black text above a 50% gray bottom line. Empty
+  actions draw neither label nor line; directional actions use `<` and `>`.
+* INX header subtitles share one rectangle for drawing and clipping, including
+  their vertical centering offset. Clipping at the title's original top cuts off
+  the smaller subtitle's lower glyph rows.
+* On touch hardware, INX list and app-grid navigation focus follows the last
+  input modality: touch hides it, while a physical button restores it. The
+  logical selection and viewport remain intact, and FreeInkUI's active touch
+  feedback plus semantic values such as checks and switches remain visible.
+
+The calculator registers a dedicated built-in Noto Sans 18pt regular/bold family
+for its expression and result, then unregisters it on exit. Legacy reader font
+IDs (including `NOTOSANS_18_FONT_ID`) resolve to the 12pt offline fallback and
+must not be used to select a larger display font. The two display rows reserve
+their actual line heights plus at least 12 px spacing; overflowing text is
+right-aligned and clipped to the display area. Error messages use the UI font
+and its language fallback. Key labels retain their existing font.
+The font tables stay in Flash. Drawing reuses the renderer's decompression
+cache: the calculator's digits/operators require at most a 14,675-byte group
+and 232-byte glyph scratch buffer, too large for the activity task stack.
+Only one font-map entry is added on entry and removed on exit; no additional
+framebuffer or SD font is needed.
+
+The default sleep screen is Light. Existing saved sleep-screen selections are
+preserved; the default applies when no selection has been saved.
+
+### WiFi connection status
+
+Touch and button devices share the upstream connection layout: the connection
+status is centered above the SSID, which retains the translated "to" prefix.
+On touch devices the text uses the body below the header/MAC band and above
+the Cancel/Show Networks buttons, rather than placing the SSID in a top-aligned
+text area. Scanning displays only the centered status. Physical button hints
+remain exclusive to button devices. The SSID label uses a bounded stack buffer;
+long names keep the existing ellipsis style at a complete UTF-8 boundary and
+are clipped to the content width.
+
+## Retained Framebuffer Updates
+
+The firmware has one framebuffer, and its contents remain available after
+`displayBuffer()`. A hot UI path may redraw only the changed items, but only
+when it can identify the exact frame already in that buffer:
+
+- Snapshot cross-task UI state once at the start of `render()`; never read a
+  mutable selection again inside an item loop.
+- Track the framebuffer's selection/page in render-task-owned state. Invalidate
+  that state before shelf/list content changes, an asset finishes loading, or
+  the layout changes.
+- Clear and redraw the full screen when the retained frame is invalid or the
+  target is on another page. Otherwise restore the old item and draw the new
+  item; do not allocate a second buffer.
+- After drawing, record what the framebuffer now contains, then re-read the
+  cross-task state. If it changed, request an immediate render and return before
+  `displayBuffer()` so the stale frame never reaches the panel. Keep the recorded
+  framebuffer state even for that skipped panel update, because the next render
+  builds from it.
+
+Incremental drawing does not imply a different panel waveform or windowed
+refresh. Those are display-driver decisions and require separate hardware
+measurement.
+
+### File browser images
+
+The file browser lists BMP, JPEG (`.jpg` / `.jpeg`), and PNG files, with
+case-insensitive extensions, in every directory including `/AirPage`. All three
+formats open in the image viewer and participate in its sorted sibling navigation.
+Firmware and PNG-only pickers retain their own filters.
+
+BMPs render directly. JPEG and PNG previews reuse
+`/.crosspoint/image_preview.bmp`; JPEG conversion fits the current oriented screen
+without cropping. Conversion borrows the existing framebuffer and streams through
+the existing converters instead of adding another full-screen buffer. A failed
+conversion cannot display an old preview or save it as a sleep cover. JPEG sleep
+covers use the converted BMP; PNG retains its normal and transparent cover choices.
+The temporary preview is removed on exit, and source images are never replaced.
+
+### Lyra Carousel home
+
+Lyra Carousel displays one centered recent-book cover in a `380x540` frame.
+The complete image is scaled proportionally to fit and centered with white
+letterboxing when its aspect ratio differs; it is never cropped or stretched.
+The frame is drawn only while the cover row has focus. Its Apps menu icon uses
+a theme-local `28x28` four-cell drawing inside the standard `32x32` icon slot;
+shared icon assets and other themes remain unchanged.
 
 > User-facing text must use the `tr()` macro — see
 > [hardware-constraints.md](hardware-constraints.md) → Resource Protocol rule 5,
 > and the i18n workflow in [generated-files.md](generated-files.md).
+
+INX SDK layout compatibility and regression coverage: [INX theme compatibility](inx-theme-compatibility.md).
+
+### Missing glyphs
+
+After the existing font selection/fallback and SD on-demand lookup, unsupported
+visible characters render as hollow squares. `missingGlyph::metrics` is shared
+by text bounds, advances, SD advance prewarm and rendering: the side is three
+quarters of the font ascender (clamped to 4–255 px), with one pixel of spacing
+on each side and the bottom aligned to the baseline. The outline is procedural;
+it allocates no bitmap or heap storage. SUP/SUB halves the metrics, and rotated
+text uses the same orientation mapping as real glyphs. Missing glyphs do not
+participate in kerning. Missing whitespace, controls, zero-width formatters and
+combining marks produce no square. Real U+FFFD text is still rendered when the
+font contains it; missing characters no longer borrow its glyph or width.

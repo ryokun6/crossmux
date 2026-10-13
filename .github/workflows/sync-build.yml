@@ -14,7 +14,7 @@ on:
     types: [opened, synchronize, reopened]
     branches: [main]
   push:
-    branches: [chore/sync-upstream]
+    branches: ['codex/sync-upstream-*']
   workflow_dispatch:
 
 permissions:
@@ -25,13 +25,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  select_runner:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/chore/sync-upstream') ||
-      (github.event_name == 'pull_request' && github.head_ref == 'chore/sync-upstream')
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/sync-upstream-')) ||
+      (github.event_name == 'pull_request' && startsWith(github.head_ref, 'codex/sync-upstream-'))
+    uses: ./.github/workflows/select-build-runner.yml
+    secrets:
+      runner_status_token: ${{ secrets.H2O_RUNNER_TOKEN }}
+
+  build:
+    needs: select_runner
+    runs-on: ${{ fromJSON(needs.select_runner.outputs['runs-on']) }}
     steps:
+      - name: Isolate PlatformIO toolchains
+        run: echo "PLATFORMIO_CORE_DIR=$RUNNER_TEMP/.platformio-$GITHUB_RUN_ID-$GITHUB_JOB" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@v6
         with:
           submodules: recursive
@@ -47,18 +56,22 @@ jobs:
           enable-cache: false
 
       - name: Install PlatformIO Core
-        run: uv pip install --system -U https://github.com/pioarduino/platformio-core/archive/refs/tags/v6.1.19.zip
+        run: uv pip install --system -U pioarduino==6.2.0
+
+      - name: Prepare platform tools
+        run: python scripts/patch_pioarduino_cache.py --prepare-platform
 
       # OpenCC tw2sp synthesizes ZH_CN UI strings for gh_release_sc (gen_i18n.py).
       - name: Install OpenCC
         run: uv pip install --system OpenCC
 
       - name: Cache PlatformIO packages
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@v4
         with:
-          path: ~/.platformio
-          key: pio-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ runner.os }}-
+          path: ${{ env.PLATFORMIO_CORE_DIR }}/.cache
+          key: pio-cache-${{ runner.os }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-cache-${{ runner.os }}-
 
       - name: Build gh_release + TC/SC/JA/KO
         run: |

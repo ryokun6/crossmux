@@ -4,6 +4,7 @@
 #include <GfxRenderer.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <MemoryManager.h>
 #include <Serialization.h>
 #include <Utf8.h>
 
@@ -101,14 +102,18 @@ void TextBlock::bindArenaPointers() {
 TextBlock::TextBlock(const std::vector<std::string>& words, const std::vector<int16_t>& wordXpos,
                      const std::vector<EpdFontFamily::Style>& wordStyles, const std::vector<uint8_t>& focusBoundary,
                      const std::vector<uint16_t>& focusSuffixX, const BlockStyle& blockStyle,
-                     std::vector<std::string> rubyTexts)
-    : blockStyle(blockStyle), rubyTexts(std::move(rubyTexts)) {
+                     std::vector<std::string> rubyTexts, std::vector<LinkSpan> linkSpans)
+    : blockStyle(blockStyle), rubyTexts(std::move(rubyTexts)), linkSpans(std::move(linkSpans)) {
   // Same invariant as deserialize(): a block never holds an all-empty rubyTexts, so a
-  // ruby-less line costs nothing beyond its arena.
+  // ruby-less line costs nothing beyond its arena. The layout engine hands one over for
+  // every line it extracts, ruby or not; release it here rather than carrying it for the
+  // block's lifetime. Move-assigning an empty vector frees the buffer (clear() would not).
   if (!hasRuby()) {
     this->rubyTexts = std::vector<std::string>{};
   }
 
+  // Focus annotations are optional: empty vectors mean no word in this block has a split.
+  // When present, they must be sized in lockstep with words[].
   const bool hasFocus = !focusBoundary.empty();
   if (words.size() != wordXpos.size() || words.size() != wordStyles.size() || words.size() > 10000 ||
       (hasFocus && (words.size() != focusBoundary.size() || words.size() != focusSuffixX.size()))) {
@@ -139,6 +144,12 @@ TextBlock::TextBlock(const std::vector<std::string>& words, const std::vector<in
 
   const size_t size = arenaSize(numWords, focusPresent, textBytes);
   arena = makeUniqueNoThrow<uint8_t[]>(size);
+  if (!arena) {
+    // Evict rebuildable caches (SD-font mini data, render glyph cache) and
+    // retry once before declaring the line lost.
+    freeink::MemoryManager::instance().ensureFree(size + 4 * 1024);
+    arena = makeUniqueNoThrow<uint8_t[]>(size);
+  }
   if (!arena) {
     LOG_ERR("TXB", "OOM: arena %u bytes", static_cast<uint32_t>(size));
     numWords = 0;
@@ -184,6 +195,7 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
     LOG_ERR("TXB", "Render skipped: invalid block");
     return;
   }
+  const int8_t tracking = blockStyle.characterSpacing;
 
   const bool scanning = renderer.isFontCacheScanning();
   const int ascender = renderer.getFontAscenderSize(fontId);
@@ -311,8 +323,8 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
 
     if (EpdFontFamily::hasTextDecoration(currentStyle)) {
       int lineStartX = drawX;
-      int lineWidth = renderer.getTextWidth(fontId, word, currentStyle, baseDir);
-
+      int lineWidth = renderer.getTextAdvanceX(fontId, word, currentStyle, tracking, baseDir,
+                                               GfxRenderer::TextMeasureMode::Rendered);
       // SUP/SUB glyphs are rendered at 50% scale; halve the underline to match (#2255).
       if ((currentStyle & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0) {
         lineWidth = (lineWidth + 1) / 2;
@@ -322,11 +334,10 @@ void TextBlock::render(const GfxRenderer& renderer, const int fontId, const int 
       if (wordTextLen(i) >= 3 && static_cast<uint8_t>(word[0]) == 0xE2 && static_cast<uint8_t>(word[1]) == 0x80 &&
           static_cast<uint8_t>(word[2]) == 0x83) {
         const char* visibleText = word + 3;
-        lineStartX += renderer.getTextAdvanceX(fontId, "\xe2\x80\x83", currentStyle);
-        lineWidth = renderer.getTextWidth(fontId, visibleText, currentStyle, baseDir);
-        if ((currentStyle & (EpdFontFamily::SUP | EpdFontFamily::SUB)) != 0) {
-          lineWidth = (lineWidth + 1) / 2;
-        }
+        lineStartX += renderer.getTextAdvanceX(fontId, "\xe2\x80\x83", currentStyle, tracking, baseDir,
+                                               GfxRenderer::TextMeasureMode::Rendered);
+        lineWidth = renderer.getTextAdvanceX(fontId, visibleText, currentStyle, tracking, baseDir,
+                                             GfxRenderer::TextMeasureMode::Rendered);
       }
 
       for (auto& line : decorationLines) {
@@ -400,12 +411,14 @@ bool TextBlock::serialize(HalFile& file) const {
 }
 
 std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
-  uint16_t wc;
-  uint8_t hasFocus;
-  uint16_t textBytes;
-  serialization::readPod(file, wc);
-  serialization::readPod(file, hasFocus);
-  serialization::readPod(file, textBytes);
+  uint16_t wc = 0;
+  uint8_t hasFocus = 0;
+  uint16_t textBytes = 0;
+  if (!serialization::readPod(file, wc) || !serialization::readPod(file, hasFocus) ||
+      !serialization::readPod(file, textBytes)) {
+    LOG_ERR("TXB", "Deserialization failed: truncated header");
+    return nullptr;
+  }
 
   // Sanity checks: cap the arena allocation and reject impossible geometry
   // (every word carries at least its NUL terminator).
@@ -418,8 +431,8 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
     return nullptr;
   }
 
-  // C API ownership: unique_ptr takes over the nothrow allocation immediately.
-  std::unique_ptr<TextBlock> block(new (std::nothrow) TextBlock());
+  // Construct here because the deserialization-only constructor is private.
+  auto block = std::unique_ptr<TextBlock>(new (std::nothrow) TextBlock());
   if (!block) {
     LOG_ERR("TXB", "OOM: TextBlock");
     return nullptr;
@@ -457,10 +470,22 @@ std::unique_ptr<TextBlock> TextBlock::deserialize(HalFile& file) {
     }
   }
 
-  // Ruby text data. Allocate lazily and only once a non-empty annotation shows up.
+  // Ruby text data. Ruby is a CJK feature, so for nearly every book every entry here
+  // is the empty string. Materializing the vector regardless costs wordCount * 24 bytes
+  // (sizeof(std::string)) plus a heap block per line, held for as long as the page is
+  // resident -- several KB of DRAM on a full page, none of it ever read. An empty
+  // rubyTexts is already the "no ruby" representation: hasRuby() reports false and every
+  // other reader is guarded by `i < rubyTexts.size()`, so allocate lazily and only once a
+  // non-empty annotation actually shows up.
+  //
+  // `scratch` is reused across words: readString() resizes it to the incoming length and
+  // overwrites every byte, so a moved-from value carries nothing into the next iteration.
   std::string scratch;
   for (uint16_t i = 0; i < wc; i++) {
-    serialization::readString(file, scratch);
+    if (!serialization::readString(file, scratch, serialization::MAX_TEXT_BYTES)) {
+      LOG_ERR("TXB", "Deserialization failed: truncated or oversized ruby text");
+      return nullptr;
+    }
     if (scratch.empty()) continue;
     if (block->rubyTexts.empty()) {
       block->rubyTexts.resize(wc);

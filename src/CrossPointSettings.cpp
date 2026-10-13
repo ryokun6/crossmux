@@ -1,5 +1,6 @@
 #include "CrossPointSettings.h"
 
+#include <BoardConfig.h>
 #include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
@@ -7,14 +8,17 @@
 #include <Serialization.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <iterator>
+#include <limits>
 #include <string>
 
 #include "I18nKeys.h"
 #include "ReaderFontSizes.h"
 #include "SettingsList.h"
 #include "fontIds.h"
+#include "util/ParagraphIndentMigration.h"
 
 // Resolved here (not in the header) so I18nKeys.h — auto-generated and
 // changed on every translation edit — doesn't pull a recompile of every
@@ -22,7 +26,7 @@
 uint8_t CrossPointSettings::defaultLanguageIndex() {
 #ifdef ENABLE_CHINESE_VERSION
 #ifdef CHINESE_UI_SIMPLIFIED
-  return static_cast<uint8_t>(Language::ZH_CN);
+  return static_cast<uint8_t>(I18n::languageFromCode("ZH_CN"));
 #else
   return static_cast<uint8_t>(Language::ZH_TW);
 #endif
@@ -33,6 +37,11 @@ uint8_t CrossPointSettings::defaultLanguageIndex() {
 #else
   return static_cast<uint8_t>(Language::EN);
 #endif
+}
+
+CrossPointSettings::ContentProfile contentProfileForLanguage(const Language language) {
+  return I18n::isSimplifiedChinese(language) ? CrossPointSettings::ContentProfile::China
+                                             : CrossPointSettings::ContentProfile::Global;
 }
 
 void readAndValidate(HalFile& file, uint8_t& member, const uint8_t maxValue) {
@@ -50,6 +59,15 @@ constexpr char SETTINGS_FILE_BIN[] = "/.crosspoint/settings.bin";
 constexpr char SETTINGS_FILE_BAK[] = "/.crosspoint/settings.bin.bak";
 constexpr char LANG_FILE_BIN[] = "/.crosspoint/language.bin";
 constexpr char LANG_FILE_BAK[] = "/.crosspoint/language.bin.bak";
+constexpr uint8_t FAKE_BOLD_VERSION = 1;
+constexpr std::array<uint8_t, 3> LEGACY_FAKE_BOLD_MIGRATION = {
+    CrossPointSettings::SYNTHETIC_BOLD_OFF,
+    CrossPointSettings::SYNTHETIC_BOLD_STANDARD,
+    CrossPointSettings::SYNTHETIC_BOLD_HEAVY,
+};
+static_assert(LEGACY_FAKE_BOLD_MIGRATION[0] == CrossPointSettings::SYNTHETIC_BOLD_OFF);
+static_assert(LEGACY_FAKE_BOLD_MIGRATION[1] == CrossPointSettings::SYNTHETIC_BOLD_STANDARD);
+static_assert(LEGACY_FAKE_BOLD_MIGRATION[2] == CrossPointSettings::SYNTHETIC_BOLD_HEAVY);
 
 // Firmware language SKU marker, persisted in settings.json. Lets the next boot
 // detect a cross-SKU reflash (zh-tw / zh-cn / ja / ko / global) and reset the UI
@@ -158,7 +176,29 @@ void applyLegacyFrontButtonLayout(CrossPointSettings& settings) {
   }
 }
 
+bool isSettingAvailableForPersistence(const SettingInfo& setting) {
+#if !defined(SIMULATOR)
+  // Settings load before Frontlight.begin(), so persistence must use the board profile, not the runtime probe.
+  if (setting.valuePtr == &CrossPointSettings::frontlightBrightness ||
+      setting.valuePtr == &CrossPointSettings::frontlightOn ||
+      setting.valuePtr == &CrossPointSettings::frontlightRestoreOnWake) {
+    return BoardConfig::hasPwmFrontlight() || BoardConfig::hasI2cFrontlight();
+  }
+#if FREEINK_CAP_WARMLIGHT
+  if (setting.valuePtr == &CrossPointSettings::frontlightWarmth) {
+    return BoardConfig::hasColorTemperatureFrontlight();
+  }
+#endif
+#endif
+  return isSettingAvailableOnBoard(setting);
+}
+
 }  // namespace
+
+void CrossPointSettings::applyLanguageSelection(const uint8_t languageIndex) {
+  language = languageIndex;
+  contentProfile = contentProfileForLanguage(static_cast<Language>(languageIndex));
+}
 
 void CrossPointSettings::validateFrontButtonMapping(CrossPointSettings& settings) {
   const uint8_t mapping[] = {settings.frontButtonBack, settings.frontButtonConfirm, settings.frontButtonLeft,
@@ -195,10 +235,11 @@ uint8_t CrossPointSettings::sleepTimeoutEnumToMinutes(const uint8_t legacyValue)
 void CrossPointSettings::toJson(JsonDocument& doc) const {
   const CrossPointSettings& s = *this;
 
-  for (const auto& info : getSettingsList()) {
+  for (const auto& info : getBaseSettingsList()) {
+    if (!isSettingAvailableForPersistence(info)) continue;
     if (!info.key) continue;
     // Dynamic entries (KOReader etc.) are stored in their own files — skip.
-    if (!info.valuePtr && !info.stringOffset) continue;
+    if (!info.valuePtr && !info.signedValuePtr && !info.stringOffset) continue;
 
     if (info.stringOffset) {
       const char* strPtr = (const char*)&s + info.stringOffset;
@@ -209,18 +250,32 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
       } else {
         doc[info.key] = strPtr;
       }
+    } else if (info.signedValuePtr) {
+      doc[info.key] = s.*(info.signedValuePtr);
     } else {
       doc[info.key] = s.*(info.valuePtr);
     }
   }
 
+  doc["fakeBoldVersion"] = FAKE_BOLD_VERSION;
   // Front button remap — managed by RemapFrontButtons sub-activity, not in SettingsList.
   doc["frontButtonBack"] = frontButtonBack;
   doc["frontButtonConfirm"] = frontButtonConfirm;
   doc["frontButtonLeft"] = frontButtonLeft;
   doc["frontButtonRight"] = frontButtonRight;
+  doc["bluetoothEnabled"] = bluetoothEnabled;
+  JsonArray storedBleMap = doc["bleKeyMap"].to<JsonArray>();
+  for (const auto& entry : bleKeyMap) {
+    if (bleinput::isEmpty(entry)) continue;
+    JsonObject object = storedBleMap.add<JsonObject>();
+    object["k"] = entry.keyKind;
+    object["v"] = entry.keyValue;
+    object["b"] = entry.button;
+  }
   // Apps use stable IDs beyond the uint8_t-only SettingsList, so persist the mask manually.
   doc["hiddenAppsMask"] = hiddenAppsMask;
+  doc["appsCatalogVersion"] = appsCatalogVersion;
+  doc["buddyClaimed"] = buddyClaimed;
   // Font family and size — both use dynamic getter/setters in SettingsList (the
   // option lists depend on the SD font registry), so the generic loop skips them.
   doc["fontFamily"] = fontFamily;
@@ -234,12 +289,29 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
   if (dictionaryName[0] != '\0') {
     doc["dictionaryName"] = dictionaryName;
   }
+  doc["otaNightlyEnabled"] = otaNightlyEnabled;
+  // Home-button gestures are added dynamically to getSettingsList() (not the
+  // base list), so they must be persisted manually here.
+  if (BoardConfig::hasHomeKey()) {
+    doc["homeButtonTapAction"] = homeButtonTapAction;
+    doc["homeButtonDoubleTapAction"] = homeButtonDoubleTapAction;
+    doc["homeButtonLongPressAction"] = homeButtonLongPressAction;
+  }
 
   // Language -- managed by LanguageSelectActivity, not in SettingsList.
   // Stored as ISO code string ("EN", "DE", ...) for stability across enum reorders.
   doc["language"] = (language < getLanguageCount()) ? LANGUAGE_CODES[language] : "EN";
-  // Detect CN/global reflashes while settings.json survives firmware replacement.
-  doc["langSku"] = BUILD_LANG_SKU;
+  doc["contentProfile"] = static_cast<uint8_t>(contentProfile);
+  doc["onboardingVersion"] = onboardingVersion;
+  // Keep the legacy marker current so rollback to a split-SKU firmware retains
+  // the selected service region.
+  doc["langSku"] = contentProfile == ContentProfile::China ? "cn" : "global";
+
+  // A uint16_t mask, so it does not fit the uint8_t generic loop. Omitted while
+  // unconfigured, so the default keeps following the UI language.
+  if (keyboardLayouts != 0) {
+    doc["keyboardLayouts"] = keyboardLayouts;
+  }
 }
 
 bool CrossPointSettings::fromJson(JsonVariantConst doc) {
@@ -248,6 +320,13 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
 
   auto clamp = [](uint8_t val, uint8_t maxVal, uint8_t def) -> uint8_t { return val < maxVal ? val : def; };
 
+#if CROSSPOINT_CAP_SOUND_FEEDBACK
+  if (doc["soundFeedbackLevel"].isNull() && !doc["soundFeedbackEnabled"].isNull()) {
+    soundFeedbackLevel = migrateLegacySoundFeedback(doc["soundFeedbackEnabled"].as<uint8_t>() != 0);
+    needsResave = true;
+  }
+#endif
+
   // Legacy migration: the aggregate statusBar field predates the split fields.
   if (doc["statusBarChapterPageCount"].isNull()) {
     statusBar = clamp(doc["statusBar"] | static_cast<uint8_t>(FULL), STATUS_BAR_MODE_COUNT, FULL);
@@ -255,10 +334,11 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
     needsResave = true;
   }
 
-  for (const auto& info : getSettingsList()) {
+  for (const auto& info : getBaseSettingsList()) {
+    if (!isSettingAvailableForPersistence(info)) continue;
     if (!info.key) continue;
     // Dynamic entries (KOReader etc.) are stored in their own files — skip.
-    if (!info.valuePtr && !info.stringOffset) continue;
+    if (!info.valuePtr && !info.signedValuePtr && !info.stringOffset) continue;
 
     if (info.stringOffset) {
       // destPtr starts out holding the struct-initializer default; it stays that
@@ -276,7 +356,13 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
         char obfKey[OBF_KEY_BUF];
         snprintf(obfKey, sizeof(obfKey), "%s_obf", info.key);
         bool ok = false;
-        const std::string decoded = obfuscation::deobfuscateFromBase64(doc[obfKey] | "", &ok);
+        bool tooLong = false;
+        const std::string decoded =
+            obfuscation::deobfuscateFromBase64(doc[obfKey] | "", info.stringMaxLen - 1, &ok, &tooLong);
+        if (tooLong) {
+          LOG_ERR("CPS", "Oversized obfuscated value for key '%s'", info.key);
+          needsResave = true;
+        }
         if (ok && !decoded.empty()) {
           copyToField(destPtr, decoded.c_str(), info.stringMaxLen);
           loaded = true;
@@ -293,11 +379,19 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
           copyToField(destPtr, raw, info.stringMaxLen);
         }
       }
+    } else if (info.signedValuePtr) {
+      const int8_t fieldDefault = s.*(info.signedValuePtr);
+      int value = doc[info.key] | static_cast<int>(fieldDefault);
+      if (value < info.valueRange.min || value > info.valueRange.max) value = fieldDefault;
+      s.*(info.signedValuePtr) = static_cast<int8_t>(value);
     } else {
       const uint8_t fieldDefault = s.*(info.valuePtr);  // struct-initializer default, read before we overwrite it
       uint8_t v = doc[info.key] | fieldDefault;
       if (info.type == SettingType::ENUM) {
-        v = clamp(v, (uint8_t)info.enumValues.size(), fieldDefault);
+        const uint8_t count = info.valuePtr == &CrossPointSettings::uiTheme
+                                  ? static_cast<uint8_t>(COVER_GRID + 1)
+                                  : static_cast<uint8_t>(info.enumLabels().size());
+        v = clamp(v, count, fieldDefault);
       } else if (info.type == SettingType::TOGGLE) {
         v = clamp(v, (uint8_t)2, fieldDefault);
       } else if (info.type == SettingType::VALUE) {
@@ -307,6 +401,36 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
           v = info.valueRange.max;
       }
       s.*(info.valuePtr) = v;
+    }
+  }
+
+  if ((doc["fakeBoldVersion"] | static_cast<uint8_t>(0)) < FAKE_BOLD_VERSION) {
+    if (doc["fakeBold"].is<uint8_t>()) {
+      const uint8_t legacyFakeBold = doc["fakeBold"].as<uint8_t>();
+      if (legacyFakeBold < LEGACY_FAKE_BOLD_MIGRATION.size()) {
+        fakeBold = LEGACY_FAKE_BOLD_MIGRATION[legacyFakeBold];
+      }
+    }
+    needsResave = true;
+  }
+  const auto indentSpaces = doc["paragraphIndentSpaces"];
+  const bool hasSavedWidth = indentSpaces.is<int>();
+  const int savedWidth = hasSavedWidth ? indentSpaces.as<int>() : 0;
+  paragraphIndentSpaces = migrateParagraphIndentSpaces(hasSavedWidth, savedWidth);
+  if (!hasSavedWidth || savedWidth < 0 || savedWidth > 5) needsResave = true;
+
+  // Older files stored one combined touch mode under "touchReaderControls":
+  // 0=off, 1=tap, 2=swipe, 3=inverted tap. Split it into the master toggle
+  // plus the per-direction gesture pair (the generic loop above already folded
+  // out-of-range toggle values back to the On default).
+  if (doc["pageTurnGesture"].isNull() && doc["previousPageGesture"].isNull() &&
+      doc["touchReaderControls"].is<uint8_t>()) {
+    const uint8_t mode = doc["touchReaderControls"].as<uint8_t>();
+    if (mode >= 1 && mode <= 3) {
+      touchReaderControls = TOUCH_READER_ON;
+      pageTurnGesture = mode == 1 ? TAP_ONLY : mode == 2 ? SWIPE_ONLY : INVERTED_TAP;
+      previousPageGesture = pageTurnGesture;
+      needsResave = true;
     }
   }
 
@@ -324,7 +448,26 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   frontButtonRight =
       clamp(doc["frontButtonRight"] | (uint8_t)FRONT_HW_RIGHT, FRONT_BUTTON_HARDWARE_COUNT, FRONT_HW_RIGHT);
   validateFrontButtonMapping(s);
-  hiddenAppsMask = doc["hiddenAppsMask"] | DEFAULT_HIDDEN_APPS_MASK;
+  bluetoothEnabled = clamp(doc["bluetoothEnabled"] | static_cast<uint8_t>(0), static_cast<uint8_t>(2), 0);
+  bleKeyMap = {};
+  const JsonArrayConst storedBleMap = doc["bleKeyMap"];
+  if (!storedBleMap.isNull()) {
+    for (const JsonObjectConst object : storedBleMap) {
+      bleinput::appendValidated(bleKeyMap, object["k"] | static_cast<uint8_t>(0xFF),
+                                object["v"] | static_cast<uint8_t>(0), object["b"] | static_cast<uint8_t>(0xFF));
+    }
+  }
+  hiddenAppsMask =
+      doc["hiddenAppsMask"].isNull() ? appVisibility::DEFAULT_HIDDEN_APPS_MASK : doc["hiddenAppsMask"].as<uint32_t>();
+  const uint8_t storedAppsCatalogVersion = doc["appsCatalogVersion"] | static_cast<uint8_t>(0);
+  // Buddy was added at catalog version 1. Hide it exactly once during the
+  // upgrade, then preserve the user's visibility choice on later boots.
+  if (storedAppsCatalogVersion < APPS_CATALOG_VERSION) {
+    hiddenAppsMask |= appVisibility::appBit(appVisibility::AppId::Buddy);
+    needsResave = true;
+  }
+  appsCatalogVersion = APPS_CATALOG_VERSION;
+  buddyClaimed = clamp(doc["buddyClaimed"] | static_cast<uint8_t>(0), static_cast<uint8_t>(2), static_cast<uint8_t>(0));
 
   // Reader font size — an actual point size since 1.5. Files written by 1.4 and
   // earlier hold the old SMALL/MEDIUM/LARGE/EXTRA_LARGE slot in 0..3; no font is
@@ -340,6 +483,29 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   // Font family — uses dynamic getter/setter in SettingsList so the generic loop skips it.
   const uint8_t storedFontFamily = doc["fontFamily"] | (uint8_t)0;
   fontFamily = clamp(storedFontFamily, BUILTIN_FONT_COUNT, 0);
+  // Home-button gestures are persisted manually (see toJson), not via the
+  // base settings list loop.
+  if (BoardConfig::hasHomeKey()) {
+    homeButtonTapAction = clamp(static_cast<uint8_t>(doc["homeButtonTapAction"] | homeButtonTapAction),
+                                static_cast<uint8_t>(HomeButtonAction::Count), homeButtonTapAction);
+    homeButtonDoubleTapAction =
+        clamp(static_cast<uint8_t>(doc["homeButtonDoubleTapAction"] | homeButtonDoubleTapAction),
+              static_cast<uint8_t>(HomeButtonAction::Count), homeButtonDoubleTapAction);
+    homeButtonLongPressAction =
+        clamp(static_cast<uint8_t>(doc["homeButtonLongPressAction"] | homeButtonLongPressAction),
+              static_cast<uint8_t>(HomeButtonAction::Count), homeButtonLongPressAction);
+  }
+  if (BoardConfig::hasHomeKey() && doc["homeButtonLongPressAction"].isNull() &&
+      !doc["longPressMenuFunction"].isNull()) {
+    static constexpr HomeButtonAction LEGACY[] = {HomeButtonAction::Sync, HomeButtonAction::Ignore,
+                                                  HomeButtonAction::Bookmark, HomeButtonAction::Dictionary,
+                                                  HomeButtonAction::ReaderMenu};
+    if (s.longPressMenuFunction < sizeof(LEGACY) / sizeof(LEGACY[0])) {
+      s.homeButtonLongPressAction = static_cast<uint8_t>(LEGACY[s.longPressMenuFunction]);
+      needsResave = true;
+    }
+  }
+
   // SD card font family name — not in SettingsList, load manually
   const char* sfn = doc["sdFontFamilyName"] | "";
   strncpy(sdFontFamilyName, sfn, sizeof(sdFontFamilyName) - 1);
@@ -354,8 +520,14 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   } else if (storedFontFamily >= BUILTIN_FONT_COUNT) {
     needsResave = true;
   }
+  if (sdFontFamilyName[0] == '\0' && fontFamily != NOTOSANS) {
+    fontFamily = NOTOSANS;
+    needsResave = true;
+  }
   // Dictionary folder name — uses dynamic getter/setter in SettingsList, load manually
   copyToField(dictionaryName, doc["dictionaryName"] | "", sizeof(dictionaryName));
+  otaNightlyEnabled =
+      clamp(static_cast<uint8_t>(doc["otaNightlyEnabled"] | 0), static_cast<uint8_t>(2), static_cast<uint8_t>(0));
 
   // Language -- stored as code string for stability across enum reorders.
   if (doc["language"].is<const char*>()) {
@@ -376,7 +548,6 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   if ((langSku[0] != '\0' && !skuMatches) || !I18n::isLanguageAvailable(static_cast<Language>(language))) {
     language = defaultLanguageIndex();
   }
-  if (!skuMatches) needsResave = true;
 
   if (needsResave) {
     LOG_DBG("CPS", "Resaving settings to update format");
@@ -415,17 +586,17 @@ bool CrossPointSettings::migrateLanguageBinaryFile() {
   if (!Storage.exists(LANG_FILE_BIN)) return false;
 
   HalFile file;
-  if (Storage.openFileForRead("CPS", LANG_FILE_BIN, file)) {
-    uint8_t version = 0;
-    serialization::readPod(file, version);
-    if (version == 1) {
-      uint8_t oldIndex = 0;
-      serialization::readPod(file, oldIndex);
-      if (oldIndex < V1_LANGUAGE_COUNT) {
-        language = static_cast<uint8_t>(V1_LANGUAGES[oldIndex]);
-      }
-    }
+  if (!Storage.openFileForRead("CPS", LANG_FILE_BIN, file)) return false;
+
+  uint8_t version = 0;
+  uint8_t oldIndex = 0;
+  if (!serialization::readPod(file, version) || version != 1 || !serialization::readPod(file, oldIndex) ||
+      oldIndex >= V1_LANGUAGE_COUNT) {
+    LOG_ERR("CPS", "Invalid or truncated language.bin");
+    return false;
   }
+
+  applyLanguageSelection(static_cast<uint8_t>(V1_LANGUAGES[oldIndex]));
   Storage.rename(LANG_FILE_BIN, LANG_FILE_BAK);
   saveToFile();
   LOG_DBG("CPS", "Migrated language.bin into settings.json");
@@ -440,110 +611,76 @@ bool CrossPointSettings::loadFromBinaryFile() {
   std::lock_guard<std::mutex> lock(storeMutex);
 
   uint8_t version = 0;
-  serialization::readPod(inputFile, version);
-  if (version != SETTINGS_FILE_VERSION) {
+  if (!serialization::readPod(inputFile, version) || version != SETTINGS_FILE_VERSION) {
     LOG_ERR("CPS", "Deserialization failed: Unknown version %u", version);
     return false;
   }
 
   uint8_t fileSettingsCount = 0;
-  serialization::readPod(inputFile, fileSettingsCount);
-
-  uint8_t settingsRead = 0;
-  bool frontButtonMappingRead = false;
-  do {
-    readAndValidate(inputFile, sleepScreen, SLEEP_SCREEN_MODE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, extraParagraphSpacing);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, shortPwrBtn, SHORT_PWRBTN_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, statusBar, STATUS_BAR_MODE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, orientation, ORIENTATION_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, frontButtonLayout, FRONT_BUTTON_LAYOUT_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, sideButtonLayout, SIDE_BUTTON_LAYOUT_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    {
-      uint8_t legacyFontFamily = NOTOSERIF;
-      serialization::readPod(inputFile, legacyFontFamily);
-      if (legacyFontFamily < BUILTIN_FONT_COUNT) {
-        fontFamily = legacyFontFamily;
-      } else if (legacyFontFamily == LEGACY_OPENDYSLEXIC) {
-        fontFamily = NOTOSERIF;
-        copyToField(sdFontFamilyName, "OpenDyslexic", sizeof(sdFontFamilyName));
-      }
+  constexpr size_t LEGACY_SETTING_COUNT = 28;
+  std::array<uint8_t, LEGACY_SETTING_COUNT> values{};
+  if (!serialization::readPod(inputFile, fileSettingsCount) || fileSettingsCount > values.size()) {
+    LOG_ERR("CPS", "Deserialization failed: Invalid settings count %u", fileSettingsCount);
+    return false;
+  }
+  for (uint8_t i = 0; i < fileSettingsCount; i++) {
+    if (!serialization::readPod(inputFile, values[i])) {
+      LOG_ERR("CPS", "Deserialization failed: Truncated setting %u", i);
+      return false;
     }
-    if (++settingsRead >= fileSettingsCount) break;
-    uint8_t legacyFontSize = 1;  // MEDIUM
-    readAndValidate(inputFile, legacyFontSize, LEGACY_FONT_SIZE_MAX + 1);
+  }
+
+  auto value = [&](const size_t index, const uint8_t current) {
+    return index < fileSettingsCount ? values[index] : current;
+  };
+  auto validated = [&](const size_t index, const uint8_t current, const uint8_t maxValue) {
+    const uint8_t next = value(index, current);
+    return next < maxValue ? next : current;
+  };
+
+  sleepScreen = validated(0, sleepScreen, SLEEP_SCREEN_MODE_COUNT);
+  extraParagraphSpacing = value(1, extraParagraphSpacing);
+  shortPwrBtn = validated(2, shortPwrBtn, SHORT_PWRBTN_COUNT);
+  statusBar = validated(3, statusBar, STATUS_BAR_MODE_COUNT);
+  orientation = validated(4, orientation, ORIENTATION_COUNT);
+  frontButtonLayout = validated(5, frontButtonLayout, FRONT_BUTTON_LAYOUT_COUNT);
+  sideButtonLayout = validated(6, sideButtonLayout, SIDE_BUTTON_LAYOUT_COUNT);
+  if (fileSettingsCount > 7) {
+    const uint8_t legacyFontFamily = values[7];
+    if (legacyFontFamily < BUILTIN_FONT_COUNT) {
+      fontFamily = legacyFontFamily;
+    } else if (legacyFontFamily == LEGACY_OPENDYSLEXIC) {
+      fontFamily = NOTOSERIF;
+      copyToField(sdFontFamilyName, "OpenDyslexic", sizeof(sdFontFamilyName));
+    }
+  }
+  if (fileSettingsCount > 8) {
+    const uint8_t legacyFontSize = validated(8, 1, LEGACY_FONT_SIZE_MAX + 1);
     fontPointSize = 12 + legacyFontSize * 2;
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, lineSpacing, LINE_COMPRESSION_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, paragraphAlignment, PARAGRAPH_ALIGNMENT_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    uint8_t legacySleepTimeout = SLEEP_10_MIN;
-    readAndValidate(inputFile, legacySleepTimeout, SLEEP_TIMEOUT_COUNT);
-    sleepTimeoutMinutes = sleepTimeoutEnumToMinutes(legacySleepTimeout);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, refreshFrequency, REFRESH_FREQUENCY_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, screenMargin);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, sleepScreenCoverMode, SLEEP_SCREEN_COVER_MODE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    {
-      // Legacy single-server OPDS URL (fork settings.bin layout).
-      std::string urlStr;
-      serialization::readString(inputFile, urlStr);
-      copyToField(opdsServerUrl, urlStr.c_str(), sizeof(opdsServerUrl));
-    }
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, textAntiAliasing);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, hideBatteryPercentage, HIDE_BATTERY_PERCENTAGE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, longPressButtonBehavior, LONG_PRESS_BUTTON_BEHAVIOR_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, hyphenationEnabled);
-    if (++settingsRead >= fileSettingsCount) break;
-    {
-      std::string usernameStr;
-      serialization::readString(inputFile, usernameStr);
-      copyToField(opdsUsername, usernameStr.c_str(), sizeof(opdsUsername));
-    }
-    if (++settingsRead >= fileSettingsCount) break;
-    {
-      std::string passwordStr;
-      serialization::readString(inputFile, passwordStr);
-      copyToField(opdsPassword, passwordStr.c_str(), sizeof(opdsPassword));
-    }
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, sleepScreenCoverFilter, SLEEP_SCREEN_COVER_FILTER_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, uiTheme);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, frontButtonBack, FRONT_BUTTON_HARDWARE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, frontButtonConfirm, FRONT_BUTTON_HARDWARE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, frontButtonLeft, FRONT_BUTTON_HARDWARE_COUNT);
-    if (++settingsRead >= fileSettingsCount) break;
-    readAndValidate(inputFile, frontButtonRight, FRONT_BUTTON_HARDWARE_COUNT);
-    frontButtonMappingRead = true;
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, fadingFix);
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, embeddedStyle);
-    if (++settingsRead >= fileSettingsCount) break;
-    serialization::readPod(inputFile, frontButtonFollowOrientation);
-    if (++settingsRead >= fileSettingsCount) break;
-  } while (false);
+  }
+  lineSpacing = validated(9, lineSpacing, LINE_COMPRESSION_COUNT);
+  paragraphAlignment = validated(10, paragraphAlignment, PARAGRAPH_ALIGNMENT_COUNT);
+  if (fileSettingsCount > 11) {
+    sleepTimeoutMinutes = sleepTimeoutEnumToMinutes(validated(11, SLEEP_10_MIN, SLEEP_TIMEOUT_COUNT));
+  }
+  refreshFrequency = validated(12, refreshFrequency, REFRESH_FREQUENCY_COUNT);
+  screenMargin = value(13, screenMargin);
+  sleepScreenCoverMode = validated(14, sleepScreenCoverMode, SLEEP_SCREEN_COVER_MODE_COUNT);
+  textAntiAliasing = value(15, textAntiAliasing);
+  hideBatteryPercentage = validated(16, hideBatteryPercentage, HIDE_BATTERY_PERCENTAGE_COUNT);
+  longPressButtonBehavior = validated(17, longPressButtonBehavior, LONG_PRESS_BUTTON_BEHAVIOR_COUNT);
+  hyphenationEnabled = value(18, hyphenationEnabled);
+  sleepScreenCoverFilter = validated(19, sleepScreenCoverFilter, SLEEP_SCREEN_COVER_FILTER_COUNT);
+  uiTheme = value(20, uiTheme);
+  frontButtonBack = validated(21, frontButtonBack, FRONT_BUTTON_HARDWARE_COUNT);
+  frontButtonConfirm = validated(22, frontButtonConfirm, FRONT_BUTTON_HARDWARE_COUNT);
+  frontButtonLeft = validated(23, frontButtonLeft, FRONT_BUTTON_HARDWARE_COUNT);
+  frontButtonRight = validated(24, frontButtonRight, FRONT_BUTTON_HARDWARE_COUNT);
+  fadingFix = value(25, fadingFix);
+  embeddedStyle = value(26, embeddedStyle);
+  frontButtonFollowOrientation = value(27, frontButtonFollowOrientation);
 
-  if (frontButtonMappingRead) {
+  if (fileSettingsCount >= 25) {
     validateFrontButtonMapping(*this);
   } else {
     applyLegacyFrontButtonLayout(*this);
@@ -563,7 +700,6 @@ CrossPointSettings::StatusBarSpec CrossPointSettings::statusBarSpec() const {
   spec.showBatteryPercent = hideBatteryPercentage == HIDE_NEVER;
   spec.clockMode = statusBarClock;
   spec.clock12h = clockFormat == 1;
-  spec.clockUtcOffsetQ = clockUtcOffsetQ;
   spec.progressBarMode = statusBarProgressBar;
   spec.progressBarHeightPx =
       statusBarProgressBar != HIDE_PROGRESS ? static_cast<uint8_t>((statusBarProgressBarThickness + 1) * 2) : 0;
@@ -576,7 +712,11 @@ ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWid
   ReaderRenderSpec spec;
   spec.fontId = getReaderFontId();
   spec.lineCompression = getReaderLineCompression();
-  spec.extraParagraphSpacing = extraParagraphSpacing != 0;
+  spec.extraParagraphSpacing = extraParagraphSpacing;
+  spec.firstLineIndent = firstLineIndent;
+  spec.paragraphIndentSpaces = paragraphIndentSpaces;
+  spec.characterSpacing = getCharacterSpacing();
+  spec.wordSpacingPercent = wordSpacing;
   spec.paragraphAlignment = paragraphAlignment;
   spec.viewportWidth = viewportWidth;
   spec.viewportHeight = viewportHeight;
@@ -590,7 +730,11 @@ ReaderRenderSpec CrossPointSettings::readerRenderSpec(const uint16_t viewportWid
 }
 
 float CrossPointSettings::getReaderLineCompression() const {
-  // SD card fonts use same compression as Bookerly (the most neutral values)
+  // SD card and vector fonts get a wider scale than the built-ins: their
+  // faces carry their own (often generous) natural line height, so the old
+  // Bookerly-tuned 1.1/1.2 steps were visually near-indistinguishable. At
+  // 12pt in portrait (~760px viewport) this scale spans ~26/24/19/15 lines
+  // per page — each step reads as a clearly different density.
   if (sdFontFamilyName[0] != '\0') {
     switch (lineSpacing) {
       case TIGHT:
@@ -599,7 +743,9 @@ float CrossPointSettings::getReaderLineCompression() const {
       default:
         return 1.0f;
       case WIDE:
-        return 1.1f;
+        return 1.3f;
+      case EXTRA_WIDE:
+        return 1.6f;
     }
   }
 
@@ -614,6 +760,8 @@ float CrossPointSettings::getReaderLineCompression() const {
           return 1.0f;
         case WIDE:
           return 1.1f;
+        case EXTRA_WIDE:
+          return 1.2f;
       }
 #ifndef ENABLE_CJK_VERSION
     case NOTOSANS:
@@ -625,6 +773,8 @@ float CrossPointSettings::getReaderLineCompression() const {
           return 0.95f;
         case WIDE:
           return 1.0f;
+        case EXTRA_WIDE:
+          return 1.05f;
       }
 #endif
   }
@@ -664,14 +814,21 @@ int CrossPointSettings::getRefreshFrequency() const {
       return 15;
     case REFRESH_30:
       return 30;
+    case REFRESH_NEVER:
+      // Effectively disables the periodic full refresh; the page counter
+      // counts down from here and never reaches the threshold in practice.
+      return std::numeric_limits<int>::max();
   }
 }
 
 void CrossPointSettings::clearSdFontFamily() {
   sdFontFamilyName[0] = '\0';
   sdFontFlashPreload = 0;
+  fontFamily = NOTOSANS;
+#ifndef CROSSMUX_UI_PROFILE_HIGH_DPI
   fontPointSize =
       snapToNearestPointSize(BUILTIN_READER_POINT_SIZES, std::size(BUILTIN_READER_POINT_SIZES), fontPointSize);
+#endif
   saveToFile();
 }
 

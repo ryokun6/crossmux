@@ -10,16 +10,17 @@ class EpdFont {
   ~EpdFont() = default;
   void getTextDimensions(const char* string, int* w, int* h) const;
 
-  /// Like getGlyph, but returns nullptr instead of substituting U+FFFD.
-  /// Used by EpdFontFamily to fall back to the regular face for codepoints
-  /// only present there (e.g. CJK in regular-only SD fonts).
-  const EpdGlyph* getGlyphNoReplacement(uint32_t cp) const;
-
+  // Missing glyphs return nullptr. Callers use missingGlyph::metrics for the outline fallback.
   const EpdGlyph* getGlyph(uint32_t cp) const;
+  // usedReplacement reports an absent source glyph; no font-owned replacement is substituted.
   const EpdGlyph* getGlyph(uint32_t cp, bool* usedReplacement) const;
 
-  /// True if this font covers `cp` via interval table or SD coverageHandler.
-  /// Never falls back to U+FFFD and never does glyph-miss I/O beyond coverage.
+  /// Returns true if this font covers `cp`: either via its in-RAM interval
+  /// table or, for SD card fonts, via the coverageHandler that consults the
+  /// coverage index (large C3 BLE indexes may read a page from storage).
+  /// It never falls back to the replacement glyph — it reports
+  /// only what this font can render. Used by the CJK UI font fallback to
+  /// decide whether a string needs to be routed to another font.
   bool hasCodepoint(uint32_t cp) const;
 
   /// Returns the kerning adjustment (4.4 fixed-point in pixels) between two codepoints.

@@ -16,7 +16,7 @@ int g_unloadDepth = 0;
 
 ScopedSdFontUnload::ScopedSdFontUnload(GfxRenderer& renderer) : renderer_(renderer) {
   if (g_unloadDepth++ > 0) return;
-  sdFontSystem.unloadAll(renderer_);
+  sdFontSystem.releaseLoadedFont(renderer_);
   LOG_DBG("SDFU", "SD reader font dropped for network session (Free=%u MaxAlloc=%u)",
           static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned>(ESP.getMaxAllocHeap()));
 }

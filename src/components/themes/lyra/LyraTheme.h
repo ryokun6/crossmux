@@ -8,8 +8,10 @@ class GfxRenderer;
 namespace LyraMetrics {
 constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .batteryHeight = 12,
-                                 .topPadding = 5,
-                                 .batteryBarHeight = 40,
+                                 // Shared anchor for every header band, including the cover-grid
+                                 // home's status band; roomy enough that the strip clears the edge.
+                                 .topPadding = 10,
+                                 .batteryBarHeight = 20,
                                  .headerHeight = 84,
                                  .verticalSpacing = 16,
                                  .previewPadding = 12,
@@ -17,18 +19,34 @@ constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .contentSidePadding = 20,
                                  .listRowHeight = 40,
                                  .listWithSubtitleRowHeight = 60,
+                                 .listRowGap = 0,
+                                 .listRowRadius = 6,
+                                 .listInset = 20,
+                                 .listSidePadding = 8,
+                                 .listSelectionStyle = 1,  // light pill
+                                 .listScrollWidth = 4,
+                                 .listScrollSide = 0,
+                                 .listTitleBold = false,
+                                 .listSeparatorStyle = 0,
+                                 .listValueMaxWidth = 0,
+                                 .listSelectionCoversScrollReservation = false,
+                                 .headerSidePadding = 18,
+                                 .headerUnderlineSize = 3,
+                                 .headerTitleAlign = 0,  // left
+                                 .headerBatterySide = 0,
+                                 .headerClockCentered = false,
                                  .menuRowHeight = 64,
                                  .menuSpacing = 8,
                                  .tabSpacing = 8,
-                                 .tabBarHeight = 40,
+                                 .tabBarHeight = 48,
                                  .scrollBarWidth = 4,
                                  .scrollBarRightOffset = 5,
                                  .homeTopPadding = 56,
                                  .homeCoverHeight = 226,
                                  .homeCoverTileHeight = 242,
                                  .homeRecentBooksCount = 1,
-                                 .homeContinueReadingInMenu = false,
                                  .homeShowRecentBookTitle = false,
+                                 .homeContinueReadingInMenu = false,
                                  .homeMenuTopOffset = 16,
                                  .buttonHintsHeight = 40,
                                  .sideButtonHintsWidth = 30,
@@ -36,7 +54,7 @@ constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .progressBarMarginTop = 1,
                                  .statusBarHorizontalMargin = 5,
                                  .statusBarVerticalMargin = 19,
-                                 .keyboardKeyHeight = 48,
+                                 .keyboardKeyHeight = 56,
                                  .keyboardKeySpacing = 0,
                                  .keyboardCenteredText = false,
                                  .keyboardVerticalOffset = -7,
@@ -57,27 +75,21 @@ constexpr ThemeMetrics values = {.batteryWidth = 16,
                                  .popupProgressOutlineInverted = false,
                                  .optionPopupItemSpacing = 8,
                                  .optionPopupInnerPadding = 20,
-                                 .optionPopupSelectionHPadding = 16,
                                  .optionPopupSelectionVPadding = 12,
-                                 .optionPopupTitleGap = 16,
-                                 .optionPopupUseSmallFont = true,
-                                 .optionPopupOptionFontBold = false,
-                                 .optionPopupSelectionRadius = 6,
-                                 .optionPopupSelectionLight = true,
-                                 .optionPopupDrawAllRows = false,
                                  .optionPopupDialogSideMargin = 20,
-                                 .optionPopupTitleSeparator = true,
                                  .textFieldHorizontalPadding = 6,
                                  .textFieldNormalThickness = 1,
                                  .textFieldCursorThickness = 3,
-                                 .textFieldLineEndOffset = 0};
-}
+                                 .textFieldLineEndOffset = 0,
+                                 .controlRadius = 6,
+                                 .sheetRadius = 6,
+                                 .capsuleRadius = 6};
+}  // namespace LyraMetrics
 
 class LyraTheme : public BaseTheme {
  public:
   // Component drawing methods
   void fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const override;
-  void drawHeader(const GfxRenderer& renderer, Rect rect, const char* title, const char* subtitle) const override;
   void drawSubHeader(const GfxRenderer& renderer, Rect rect, const char* label,
                      const char* rightLabel = nullptr) const override;
   void drawTabBar(const GfxRenderer& renderer, Rect rect, const std::vector<TabInfo>& tabs,
@@ -90,16 +102,29 @@ class LyraTheme : public BaseTheme {
                 const std::function<std::string(int index)>& rowTitle,
                 const std::function<std::string(int index)>& rowSubtitle,
                 const std::function<UIIcon(int index)>& rowIcon, const std::function<std::string(int index)>& rowValue,
-                bool highlightValue, const std::function<bool(int index)>& rowDimmed = nullptr) const override;
+                bool highlightValue, const std::function<bool(int index)>& rowDimmed = nullptr,
+                bool showSelection = true, const std::function<bool(int index)>& rowHeading = nullptr) const override;
   void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                        const char* btn4) const override;
   void drawSideButtonHints(const GfxRenderer& renderer, const char* topBtn, const char* bottomBtn) const override;
   void drawButtonMenu(GfxRenderer& renderer, Rect rect, int buttonCount, int selectedIndex,
                       const std::function<std::string(int index)>& buttonLabel,
                       const std::function<UIIcon(int index)>& rowIcon, int rowSpacing = -1) const override;
+  MenuRowGeometry getMenuRowGeometry(const GfxRenderer& renderer, const Rect& rect, int selectedIndex,
+                                     int rowCount) const override;
   void drawRecentBookCover(GfxRenderer& renderer, Rect rect, const std::vector<RecentBook>& recentBooks,
                            const int selectorIndex, bool& coverRendered, bool& coverBufferStored, bool& bufferRestored,
                            std::function<bool()> storeCoverBuffer) const override;
   void drawEmptyRecents(const GfxRenderer& renderer, const Rect rect) const;
   bool showsFileIcons() const override { return true; }
+
+ protected:
+  static const uint8_t* iconForName(UIIcon icon, int size);
+  void drawListWithMetrics(const GfxRenderer& renderer, Rect rect, int itemCount, int selectedIndex,
+                           const std::function<std::string(int index)>& rowTitle,
+                           const std::function<std::string(int index)>& rowSubtitle,
+                           const std::function<UIIcon(int index)>& rowIcon,
+                           const std::function<std::string(int index)>& rowValue, bool highlightValue,
+                           const std::function<bool(int index)>& rowDimmed, const ThemeMetrics& metrics,
+                           bool invertSelectedRows, bool showSelection) const;
 };

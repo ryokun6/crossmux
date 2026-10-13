@@ -1,11 +1,13 @@
 #include "CalibreConnectActivity.h"
 
 #include <ESPmDNS.h>
+#include <FontCacheManager.h>
 #include <GfxRenderer.h>
 #include <I18n.h>
-#include <Logging.h>
 #include <Memory.h>
 #include <WiFi.h>
+
+#include <algorithm>
 
 #include "MappedInputManager.h"
 #include "SilentRestart.h"
@@ -16,6 +18,7 @@
 
 namespace {
 constexpr const char* HOSTNAME = "crosspoint";
+constexpr int CONTENT_GAP = 6;
 }  // namespace
 
 void CalibreConnectActivity::onEnter() {
@@ -39,15 +42,14 @@ void CalibreConnectActivity::onEnter() {
   exitRequested = false;
 
   if (WiFi.status() != WL_CONNECTED) {
-    startActivityForResult(std::make_unique<WifiSelectionActivity>(renderer, mappedInput),
-                           [this](const ActivityResult& result) {
-                             if (!result.isCancelled) {
-                               const auto& wifi = std::get<WifiResult>(result.data);
-                               connectedIP = wifi.ip;
-                               connectedSSID = wifi.ssid;
-                             }
-                             onWifiSelectionComplete(!result.isCancelled);
-                           });
+    startActivityForResultWith<WifiSelectionActivity>([this](const ActivityResult& result) {
+      if (!result.isCancelled) {
+        const auto& wifi = std::get<WifiResult>(result.data);
+        connectedIP = wifi.ip;
+        connectedSSID = wifi.ssid;
+      }
+      onWifiSelectionComplete(!result.isCancelled);
+    });
   } else {
     connectedIP = WiFi.localIP().toString().c_str();
     connectedSSID = WiFi.SSID().c_str();
@@ -90,30 +92,30 @@ void CalibreConnectActivity::startWebServer() {
     LOG_DBG("CAL", "mDNS started: http://%s.local/", HOSTNAME);
   }
 
-  // makeUniqueNoThrow: bare new aborts on OOM under -fno-exceptions
-  // (CrossPointWebServerActivity.cpp:312).
+  // Heap-critical allocation: SD-font caches retained for the CJK UI fallback
+  // are rebuildable — release them (again: the WiFi selection screen may have
+  // repopulated them rendering a CJK SSID) so the server object doesn't abort
+  // on OOM. See CrossPointWebServerActivity::startWebServer().
+  if (auto* fcm = renderer.getFontCacheManager()) {
+    LOG_DBG("CAL", "Free heap before SD font cache release: %d bytes", ESP.getFreeHeap());
+    fcm->releaseSdFontCaches();
+    LOG_DBG("CAL", "Free heap before server alloc: %d bytes", ESP.getFreeHeap());
+  }
+
   webServer = makeUniqueNoThrow<CrossPointWebServer>();
   if (!webServer) {
-    LOG_ERR("CAL", "OOM allocating web server");
+    LOG_ERR("CAL", "OOM: CrossPointWebServer (%u bytes)", static_cast<unsigned>(sizeof(CrossPointWebServer)));
     state = CalibreConnectState::ERROR;
     requestUpdate();
     return;
   }
-  webServer->begin();
-
-  if (webServer->isRunning()) {
+  if (webServer->begin()) {
     state = CalibreConnectState::SERVER_RUNNING;
     requestUpdate();
   } else {
+    webServer.reset();
     state = CalibreConnectState::ERROR;
     requestUpdate();
-  }
-}
-
-void CalibreConnectActivity::stopWebServer() {
-  if (webServer) {
-    webServer->stop();
-    webServer.reset();
   }
 }
 
@@ -187,6 +189,70 @@ void CalibreConnectActivity::loop() {
 }
 
 void CalibreConnectActivity::render(RenderLock&&) {
+  if (!UITheme::getInstance().hasMainTabs()) {
+    const auto& metrics = UITheme::getInstance().getMetrics();
+    const auto pageWidth = renderer.getScreenWidth();
+    const auto pageHeight = renderer.getScreenHeight();
+
+    renderer.clearScreen();
+
+    GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_CALIBRE_WIRELESS));
+    const auto height = renderer.getLineHeight(UI_10_FONT_ID);
+    const auto top = (pageHeight - height) / 2;
+
+    if (state == CalibreConnectState::SERVER_STARTING) {
+      renderer.drawCenteredText(UI_12_FONT_ID, top, tr(STR_CALIBRE_STARTING));
+    } else if (state == CalibreConnectState::ERROR) {
+      renderer.drawCenteredText(UI_12_FONT_ID, top, tr(STR_CONNECTION_FAILED), true, EpdFontFamily::BOLD);
+    } else if (state == CalibreConnectState::SERVER_RUNNING) {
+      GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
+                        connectedSSID.c_str(), (std::string(tr(STR_IP_ADDRESS_PREFIX)) + connectedIP).c_str());
+
+      int y = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing * 4;
+      const auto heightText12 = renderer.getTextHeight(UI_12_FONT_ID);
+      renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_SETUP), true, EpdFontFamily::BOLD);
+      y += heightText12 + metrics.verticalSpacing * 2;
+
+      renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_INSTRUCTION_1));
+      renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y + height, tr(STR_CALIBRE_INSTRUCTION_2));
+      renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y + height * 2, tr(STR_CALIBRE_INSTRUCTION_3));
+      renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y + height * 3, tr(STR_CALIBRE_INSTRUCTION_4));
+
+      y += height * 3 + metrics.verticalSpacing * 4;
+      renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_STATUS), true,
+                        EpdFontFamily::BOLD);
+      y += heightText12 + metrics.verticalSpacing * 2;
+
+      if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
+        std::string label = tr(STR_CALIBRE_RECEIVING);
+        if (!currentUploadName.empty()) {
+          label += ": " + currentUploadName;
+          label = renderer.truncatedText(SMALL_FONT_ID, label.c_str(), pageWidth - metrics.contentSidePadding * 2,
+                                         EpdFontFamily::REGULAR);
+        }
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, label.c_str());
+        GUI.drawProgressBar(renderer,
+                            Rect{metrics.contentSidePadding, y + height + metrics.verticalSpacing,
+                                 pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
+                            lastProgressReceived, lastProgressTotal);
+        y += height + metrics.verticalSpacing * 2 + metrics.progressBarHeight;
+      }
+
+      if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
+        std::string msg = std::string(tr(STR_CALIBRE_RECEIVED)) + lastCompleteName;
+        msg = renderer.truncatedText(SMALL_FONT_ID, msg.c_str(), pageWidth - metrics.contentSidePadding * 2,
+                                     EpdFontFamily::REGULAR);
+        renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, msg.c_str());
+      }
+
+      const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");
+      GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
+    }
+    renderer.displayBuffer();
+
+    return;
+  }
+
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
@@ -202,43 +268,51 @@ void CalibreConnectActivity::render(RenderLock&&) {
   } else if (state == CalibreConnectState::ERROR) {
     renderer.drawCenteredText(UI_12_FONT_ID, top, tr(STR_CONNECTION_FAILED), true, EpdFontFamily::BOLD);
   } else if (state == CalibreConnectState::SERVER_RUNNING) {
-    GUI.drawSubHeader(renderer, Rect{0, metrics.topPadding + metrics.headerHeight, pageWidth, metrics.tabBarHeight},
-                      connectedSSID.c_str(), (std::string(tr(STR_IP_ADDRESS_PREFIX)) + connectedIP).c_str());
+    const int subHeaderY = metrics.topPadding + metrics.headerHeight;
+    const int subHeaderBottom = subHeaderY + metrics.tabBarHeight;
+    const int contentBottom = pageHeight - metrics.buttonHintsHeight - CONTENT_GAP;
+    GUI.drawSubHeader(renderer, Rect{0, subHeaderY, pageWidth, metrics.tabBarHeight}, connectedSSID.c_str(),
+                      (std::string(tr(STR_IP_ADDRESS_PREFIX)) + connectedIP).c_str());
 
-    int y = metrics.topPadding + metrics.headerHeight + metrics.tabBarHeight + metrics.verticalSpacing * 4;
-    const auto heightText12 = renderer.getTextHeight(UI_12_FONT_ID);
-    renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_SETUP), true, EpdFontFamily::BOLD);
-    y += heightText12 + metrics.verticalSpacing * 2;
+    {
+      const GfxRenderer::ClipScope clip(renderer, 0, subHeaderBottom, pageWidth,
+                                        std::max(0, contentBottom - subHeaderBottom));
+      const int lineHeight10 = renderer.getLineHeight(UI_10_FONT_ID);
+      const int lineHeight12 = renderer.getLineHeight(UI_12_FONT_ID);
+      const int textWidth = pageWidth - metrics.contentSidePadding * 2;
+      int y = subHeaderBottom + CONTENT_GAP;
 
-    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_INSTRUCTION_1));
-    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y + height, tr(STR_CALIBRE_INSTRUCTION_2));
-    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y + height * 2, tr(STR_CALIBRE_INSTRUCTION_3));
-    renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y + height * 3, tr(STR_CALIBRE_INSTRUCTION_4));
+      renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_SETUP), true, EpdFontFamily::BOLD);
+      y += lineHeight12 + CONTENT_GAP;
 
-    y += height * 3 + metrics.verticalSpacing * 4;
-    renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_STATUS), true, EpdFontFamily::BOLD);
-    y += heightText12 + metrics.verticalSpacing * 2;
-
-    if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
-      std::string label = tr(STR_CALIBRE_RECEIVING);
-      if (!currentUploadName.empty()) {
-        label += ": " + currentUploadName;
-        label = renderer.truncatedText(SMALL_FONT_ID, label.c_str(), pageWidth - metrics.contentSidePadding * 2,
-                                       EpdFontFamily::REGULAR);
+      const char* instructions[] = {tr(STR_CALIBRE_INSTRUCTION_1), tr(STR_CALIBRE_INSTRUCTION_2),
+                                    tr(STR_CALIBRE_INSTRUCTION_3), tr(STR_CALIBRE_INSTRUCTION_4)};
+      for (const char* instruction : instructions) {
+        renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, instruction);
+        y += lineHeight10 + CONTENT_GAP;
       }
-      renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, label.c_str());
-      GUI.drawProgressBar(renderer,
-                          Rect{metrics.contentSidePadding, y + height + metrics.verticalSpacing,
-                               pageWidth - metrics.contentSidePadding * 2, metrics.progressBarHeight},
-                          lastProgressReceived, lastProgressTotal);
-      y += height + metrics.verticalSpacing * 2 + metrics.progressBarHeight;
-    }
 
-    if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
-      std::string msg = std::string(tr(STR_CALIBRE_RECEIVED)) + lastCompleteName;
-      msg = renderer.truncatedText(SMALL_FONT_ID, msg.c_str(), pageWidth - metrics.contentSidePadding * 2,
-                                   EpdFontFamily::REGULAR);
-      renderer.drawText(SMALL_FONT_ID, metrics.contentSidePadding, y, msg.c_str());
+      y += CONTENT_GAP;
+      renderer.drawText(UI_12_FONT_ID, metrics.contentSidePadding, y, tr(STR_CALIBRE_STATUS), true,
+                        EpdFontFamily::BOLD);
+      y += lineHeight12 + CONTENT_GAP;
+
+      if (lastProgressTotal > 0 && lastProgressReceived <= lastProgressTotal) {
+        std::string label = tr(STR_CALIBRE_RECEIVING);
+        if (!currentUploadName.empty()) {
+          label += ": " + currentUploadName;
+          label = renderer.truncatedText(UI_10_FONT_ID, label.c_str(), textWidth, EpdFontFamily::REGULAR);
+        }
+        renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, label.c_str());
+        GUI.drawProgressBar(
+            renderer,
+            Rect{metrics.contentSidePadding, y + lineHeight10 + CONTENT_GAP, textWidth, metrics.progressBarHeight},
+            lastProgressReceived, lastProgressTotal);
+      } else if (lastCompleteAt > 0 && (millis() - lastCompleteAt) < 6000) {
+        std::string msg = std::string(tr(STR_CALIBRE_RECEIVED)) + lastCompleteName;
+        msg = renderer.truncatedText(UI_10_FONT_ID, msg.c_str(), textWidth, EpdFontFamily::REGULAR);
+        renderer.drawText(UI_10_FONT_ID, metrics.contentSidePadding, y, msg.c_str());
+      }
     }
 
     const auto labels = mappedInput.mapLabels(tr(STR_EXIT), "", "", "");

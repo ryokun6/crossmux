@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-#include "../../Activity.h"
+#include "activities/Activity.h"
 #include "util/ButtonNavigator.h"
 
 struct ReadingStatsDetailContext {

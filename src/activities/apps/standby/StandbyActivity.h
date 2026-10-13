@@ -7,6 +7,7 @@
 #include "../../Activity.h"
 #include "ScopedSdFontUnload.h"
 #include "StandbyFace.h"
+#include "activities/Activity.h"
 
 struct ActivityResult;
 
@@ -20,26 +21,24 @@ class StandbyActivity final : public Activity {
   void render(RenderLock&&) override;
   void onExit() override;
 
-  // Standby is a clock — keep the framework's deep-sleep timer (main.cpp:422,
-  // default 10 min) paused for the entire lifetime of this activity. Exiting
-  // back to Apps restores the default sleep behaviour. Tight-loop polling is
-  // still only used during WiFi/clock sync.
+  // Standby manages its own timer/GPIO light-sleep cycles, so the framework's
+  // generic deep-sleep timer stays paused for the activity's lifetime.
   bool preventAutoSleep() override { return true; }
-  bool skipLoopDelay() override { return syncState_ != SyncState::Idle; }
+  bool skipLoopDelay() override {
+    return syncState_ == SyncState::WifiConnecting || syncState_ == SyncState::ClockSyncing;
+  }
 
  private:
   enum class SyncState : uint8_t {
     Idle,
+    Delayed,
     WifiConnecting,
     ClockSyncing,
   };
 
   enum class DisplayMode : uint8_t {
     Normal,     // Header + battery + face dots + face content
-    Immersive,  // Face content only (after 5s idle). On battery the framework
-                // engages CPU low-freq after 3s idle and full deep sleep after
-                // SETTINGS.getSleepTimeoutMs() — Standby just needs to stay out
-                // of the way.
+    Immersive,  // Face content only; supported boards light-sleep after 35s idle.
   };
 
   std::unique_ptr<StandbyFace> currentFace_;
@@ -65,12 +64,15 @@ class StandbyActivity final : public Activity {
   void onWifiResult(const ActivityResult& result);
   void beginClockSync();
   void pumpTimeSync();
-  void finishTimeSync();
+  void stopTimeSyncWifi();
+  void completeTimeSync();
+  void processFaceTick(bool waitForUpdate);
+  bool tryLightSleep(uint32_t idleMs);
 
   // Layer a 4-level grayscale refresh on top of the BW image just committed by
   // displayBuffer(): re-render the LSB then MSB planes and composite via the
   // gray LUT waveform. Used by passive faces in Immersive mode (gated on
   // wantsGrayscale, e.g. the 老黄历 calendar). The face's render() must be
   // idempotent across the three passes.
-  void applyGrayscalePass(int sw, int sh);
+  void applyGrayscalePass(const Rect& viewport);
 };

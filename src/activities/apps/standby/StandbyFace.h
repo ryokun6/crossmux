@@ -17,6 +17,8 @@ class GfxRenderer;
 // StandbyActivity.
 class StandbyFace {
  public:
+  enum class TickResult : uint8_t { None, Redraw, RedrawWithGhostCleanup };
+
   virtual ~StandbyFace() = default;
 
   // Allocate per-face state. Called once when this face becomes active.
@@ -38,10 +40,9 @@ class StandbyFace {
   virtual void onPagePrev() {}
   virtual void onPageNext() {}
 
-  // Called once per StandbyActivity::loop() tick. Returns true if the screen
-  // needs to be redrawn (e.g. the minute boundary moved). Face owns the
-  // "did anything change since last render" decision.
-  virtual bool tick() = 0;
+  // Called once per StandbyActivity::loop() tick. Face owns both the redraw
+  // decision and whether that frame needs the stronger ghost-cleanup waveform.
+  virtual TickResult tick() = 0;
 
   // Render the face content within the provided viewport. The activity has
   // already drawn the header / button hints (or cleared the screen in Immersive
@@ -68,41 +69,6 @@ class StandbyFace {
   // applyGrayscalePass. Normal-mode renders skip it to keep face/page
   // navigation responsive.
   virtual bool wantsGrayscale() const { return false; }
-
-  // ---- Interactive faces (e.g. airpage) -----------------------------------
-  // A face that owns its own button semantics and renders full-screen. When
-  // true, StandbyActivity:
-  //   - routes Confirm to handleConfirm() instead of toggling inverseMode_,
-  //   - never enters the 5s-idle Immersive state machine, so Up/Down reach the
-  //     face on the first press (no "wake from immersive" swallow), and
-  //   - suppresses the header / battery / pager-dot chrome *only* on frames the
-  //     face flags via rendersFullScreen() (AirPage's image view), drawing them
-  //     edge-to-edge. Interactive views that don't (QR, loading, mode menu) still
-  //     get the Normal-mode chrome overlay — see StandbyActivity::render.
-  // Default false — passive faces (SloppyClock, ChineseCalendar) are unaffected.
-  virtual bool isInteractive() const { return false; }
-
-  // Confirm button pressed. Return true if the face consumed it (StandbyActivity
-  // then skips its legacy inverse-toggle). Only called for interactive faces.
-  // AirPage uses it to open its mode menu (or commit the highlighted row when
-  // the menu is already open).
-  virtual bool handleConfirm() { return false; }
-
-  // While true, the face has a modal overlay open (e.g. AirPage's mode menu) and
-  // wants all navigation kept inside it: StandbyActivity routes Back to
-  // handleBack() instead of leaving Standby, and suppresses Left/Right face
-  // switching. Up/Down/Confirm already reach the face via the interactive path.
-  virtual bool wantsExclusiveInput() const { return false; }
-
-  // Back button while wantsExclusiveInput() is true. Return true if consumed
-  // (e.g. menu closed); false lets StandbyActivity fall back to goHome().
-  virtual bool handleBack() { return false; }
-
-  // For interactive faces: when true, StandbyActivity draws this frame edge-to-edge
-  // (no header / battery / pager dots) in a single BW pass and returns early —
-  // bypassing the Normal-mode chrome overlay. AirPage uses it for its image view.
-  // Default false.
-  virtual bool rendersFullScreen() const { return false; }
 
   // Note on per-orientation availability: StandbyActivity decides whether to
   // include a face in the active rotation via the `FaceEntry::isAvailable

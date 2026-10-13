@@ -5,6 +5,8 @@ Welcome to the **ryOS CrossMux** firmware. This guide outlines the hardware cont
 - [ryOS CrossMux User Guide](#ryos-crossmux-user-guide)
   - [1. Hardware Overview](#1-hardware-overview)
     - [Button Layout](#button-layout)
+    - [Taking a Screenshot](#taking-a-screenshot)
+    - [Frontlight (X4 Pro only)](#frontlight-x4-pro-only)
   - [2. Power \& Startup](#2-power--startup)
     - [Power On / Off](#power-on--off)
     - [First Launch](#first-launch)
@@ -26,13 +28,14 @@ Welcome to the **ryOS CrossMux** firmware. This guide outlines the hardware cont
     - [3.7 Sleep Screen](#37-sleep-screen)
     - [3.8 Custom Fonts (SD Card)](#38-custom-fonts-sd-card)
   - [4. Reading Mode](#4-reading-mode)
-      - [Page Turning](#page-turning)
-      - [Chapter Navigation](#chapter-navigation)
-      - [Auto Page Turn](#auto-page-turn)
-      - [Tilt Page Turn (X3 only)](#tilt-page-turn-x3-only)
-      - [Footnote Navigation](#footnote-navigation)
-      - [System Navigation](#system-navigation)
-      - [Supported Languages](#supported-languages)
+    - [Page Turning](#page-turning)
+    - [Chapter Navigation](#chapter-navigation)
+    - [Auto Page Turn](#auto-page-turn)
+    - [Tilt Page Turn (X3 only)](#tilt-page-turn-x3-only)
+    - [Links and footnotes](#links-and-footnotes)
+    - [Dictionary Lookup](#dictionary-lookup)
+    - [System Navigation](#system-navigation)
+    - [Supported Languages](#supported-languages)
   - [5. Reader Menu](#5-reader-menu)
       - [5.1 Chapter Selection](#51-chapter-selection)
       - [5.2 Bookmarks](#52-bookmarks)
@@ -48,15 +51,27 @@ The device utilises the standard buttons on the Xteink X4 (in the same layout as
 | Location        | Buttons                                              |
 | --------------- | ---------------------------------------------------- |
 | **Bottom Edge** | **Back**, **Confirm**, **Left**, **Right**           |
-| **Right Side**  | **Power**, **Volume Up**, **Volume Down**, **Reset** |
+| **Right Side**  | **Power**, **Side Up**, **Side Down**, **Reset** |
 
 Button layout can be customized in the **[Controls Settings](#363-controls)**.
 
 ### Taking a Screenshot
 
-When the Power Button and Volume Down button are pressed at the same time, it will take a screenshot and save it in the folder `screenshots/`.
+When the Power button and the lower side button (Side Down) are pressed at the same time, it will take a screenshot and save it in the folder `screenshots/`.
 
 Alternatively, while reading a book, press the **Confirm** button to open the reader menu and select **Take screenshot**.
+
+### Frontlight (X4 Pro only)
+
+The X4 Pro has a built-in frontlight with adjustable brightness and warmth. It is controlled from a swipe panel rather than the Settings menu:
+
+* **Open the frontlight panel:** Swipe down from the top edge of the screen, from almost any screen (Home, Browse Files, Reading Mode, etc.). Drag the brightness and warmth sliders to adjust the light live, or tap the sun icon to turn it on or off.
+* **Quick toggle:** Double-click the **Power** button to turn the frontlight on or off instantly, without opening the panel.
+
+> [!NOTE]
+> Frontlight brightness and warmth are intentionally not listed in **[Display Settings](#361-display)** — the swipe panel is the only place to adjust them. The on/off state can also be toggled with the Power-button double-click above.
+
+If the frontlight doesn't come back on after the device wakes from sleep, check **Restore Light on Wake** in **[Display Settings](#361-display)** (on by default). Turning it off is intentional if you'd rather have the light stay off on wake and switch it on yourself each time — but it's easy to forget you changed it.
 
 ---
 
@@ -84,6 +99,8 @@ Upon turning the device on for the first time, you will be placed on the **[Home
 
 The Home screen is the main entry point to the firmware. From here you can navigate to **[Reading Mode](#4-reading-mode)** with the most recently read book, the **[Browse Files](#33-browse-files-screen)** screen, the **[Recent Books](#34-recent-books-screen)** screen, the **[File Transfer](#35-file-transfer-screen)** screen, or **[Settings](#36-settings)**.
 
+With the optional **Inx** theme, Recent becomes the home screen and the top bar switches between **Recent**, **Library**, **Apps**, **Settings**, and **Statistics**. Apps contains the existing File Transfer and OPDS Browser entries; Inx does not add a Sync screen or new transfer protocols. The Recent screen supports Flow, Grid, List, Icons, and Cover layouts, while Library and Apps can independently use Icons or List layouts. Inx Settings shows the existing four settings categories as expandable sections on one page.
+
 ### 3.2 Reading Mode
 
 See [Reading Mode](#4-reading-mode) below for more information.
@@ -92,7 +109,7 @@ See [Reading Mode](#4-reading-mode) below for more information.
 
 The Browse Files screen acts as a file and folder browser. The full path to the current directory is shown at the top of the screen. File extensions are displayed alongside each filename, and directories are shown with brackets (e.g. `[folder-name]`). Hidden directories (those beginning with `.`) are also visible.
 
-* **Navigate List:** Use **Left** (or **Volume Up**), or **Right** (or **Volume Down**) to move the selection cursor up and down through folders and books. You can also long-press these buttons to scroll a full page up or down.
+* **Navigate List:** Use **Left** (or **Side Up**), or **Right** (or **Side Down**) to move the selection cursor up and down through folders and books. You can also long-press these buttons to scroll a full page up or down.
 * **Open Selection:** Press **Confirm** to open a folder or start reading a selected book. Selecting a `.bmp` file will open the image viewer.
 * **Delete Files or Folders:** Hold and release **Confirm** to delete the selected file or folder. You will be given an option to either confirm or cancel. Multiple files can be selected for deletion in a single operation.
 * **Rename or Move:** Files can be renamed or moved to a different folder from within the browse screen.
@@ -174,7 +191,8 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Cover" - The book cover image (Note: this is experimental and may not work as expected)
   - "None" - A blank screen
   - "Cover + Custom" - The book cover image while actively reading, falls back to "Custom" behavior otherwise
-
+  - "Quick resume" - The text of the last page read will be displayed on the sleep screen and a moon icon is shown on the edge of the screen. Waking up the device will return to the same page of the opened book. This is useful for quickly resuming reading without waiting for the device to fully wake up and load the book.
+  - "Transparent" - A transparent overlay image drawn over the current screen; see [Sleep Screen](#37-sleep-screen) below for more information
 - **Sleep Screen Cover Mode**: How to display the book cover when "Cover" sleep screen is selected:
   
   - "Fit" (default) - Scale the image down to fit centered on the screen, padding with white borders as necessary
@@ -209,6 +227,16 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Lyra" - The new theme for Crosspoint featuring rounded elements and menu icons
   - "Lyra Extended" - Lyra, but displays 3 books instead of 1 on the **[Home Screen](#31-home-screen)**
   - "RoundedRaff" - A rounded theme with additional visual styling
+  - "Lyra Carousel" - A carousel cover home with Lyra settings and menus
+  - "Inx" - The Recent/Library/Apps/Settings/Statistics layout described above
+  - "Cover Grid" - A grid of library covers on devices with PSRAM; other pages use Lyra
+
+  Non-Inx themes retain upstream page styling, with an additional Apps entry and shared CrossMux settings. Boolean settings use checkboxes; multi-value settings retain their selectors. All themes share the same keyboard keys.
+  - "Inx" - A five-tab e-ink interface with a Recent home screen, icon/list Library and Apps layouts, and expandable Settings categories
+
+- **Inx Home Layout**: Choose Flow, Grid, List, Icons, or Cover for the Inx home screen. The default is Flow.
+- **Inx Library Layout**: Choose Icons or List for the Inx Library. The default is Icons.
+- **Inx Apps Layout**: Choose Icons or List for the Inx Apps hub. The default is Icons.
 
 - **Sunlight Fading Fix**: Configure whether to enable a software-fix for the issue where white X4 models may fade when used in direct sunlight:
   
@@ -257,9 +285,17 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 #### 3.6.3 Controls
 
+- **Bluetooth** *(ESP32-S3 development and Nightly builds only, Beta)*: Enable a
+  BLE HID page turner, scan for eight seconds, connect or disconnect a paired
+  remote, and configure its buttons. Choose an action first, then press the
+  remote key to map Page Forward, Page Back, Confirm, Back, or a direction.
+  Hold Confirm on a paired device to forget it. Bluetooth stops while Wi-Fi,
+  USB Drive, deep sleep, or uncached EPUB pagination needs the memory, then
+  reconnects automatically when reading resumes. The feature is off by default.
+
 - **Remap Front Buttons**: A menu for customising the function of each bottom edge button.
 
-- **Side Button Layout (reader)**: Swap the order of the up and down volume buttons from "Prev/Next" (default) to "Next/Prev". You can also disable them entirely. This change is only in effect when reading.
+- **Side Button Layout (reader)**: Swap the order of the up and down side buttons from "Prev/Next" (default) to "Next/Prev". You can also disable them entirely. This change is only in effect when reading.
 
 - **Long-press Chapter Skip**: Set whether long-pressing page turn buttons skips to the next/previous chapter:
   
@@ -275,9 +311,9 @@ The Settings screen allows you to configure the device's behavior. There are a f
   - "Ignore" (default) - Require a long press to turn off the device
   - "Sleep" - A short press puts the device into sleep mode
   - "Page Turn" - A short press in reading mode turns to the next page; a long press turns the device off
-  - "Footnotes" - A short press in reading mode opens the footnotes submenu; if only one footnote is present on the page, the referenced page is opened directly. The short press on the power button can be used to select the footnote in the submenu, and to go back to the original page after finish reading the footnote (like the back button).
+  - "Links and footnotes" - A short press in reading mode opens link selection. If the page has only one link, it opens directly. After following a link, a short press returns to the previous location.
   - "Refresh" - A short press triggers a manual full-screen refresh, useful for clearing ghosting
-- **Quick-return from footnotes**: Toggles on and off the quick return functionality from the footnotes. When the functionality is active, a short press of the power button will act as the back button from the footnotes page.
+- **Quick return from links**: Controls whether a short press of the power button acts as Back after following a link or footnote.
 
 #### 3.6.4 System
 
@@ -293,7 +329,11 @@ The Settings screen allows you to configure the device's behavior. There are a f
 
 - **Clear Reading Cache**: Clear the internal SD card cache.
 
-- **Check for updates**: Check the latest `ryokun6/crossmux` GitHub release and install the firmware asset matching the current international or Chinese build.
+- **Restore System Settings**: After two confirmations, reset device preferences and clear saved Wi-Fi networks, OPDS
+  servers, and KOReader Sync configuration. The device restarts into the initial language and content-region guide.
+  Books, reading progress, bookmarks, reading statistics, and reading caches are not deleted.
+
+- **Check for updates**: Check for Crosspoint firmware updates over Wi-Fi. Firmware can also be updated without a USB connection by placing a `firmware.bin` file on the SD card.
 
 - **SD Card Firmware Update**: Install a selected `.bin` firmware image from the SD card.
 
@@ -462,6 +502,7 @@ The **Sleep Screen** setting controls what is displayed when the device goes to 
 | **Custom**         | A custom image from the SD card (see below). Falls back to **Dark** if no custom image is found.                             |
 | **Cover**          | The cover of the currently open book. Falls back to **Dark** if no book is open.                                             |
 | **Cover + Custom** | The cover of the currently open book, shown only while actively reading. Falls back to **Custom** behavior when not reading. |
+| **Transparent**    | A BMP or PNG overlay drawn over the current screen. Supports PNG and 32-bit BGRA alpha transparency, and treats white as transparent in regular BMPs. Falls back to **Dark** if no valid overlay image is found. |
 | **None**           | A blank screen.                                                                                                              |
 
 #### Cover settings
@@ -476,12 +517,21 @@ When using **Cover** or **Cover + Custom**, two additional settings apply:
 To use custom sleep images, set the sleep screen mode to **Custom** or **Cover + Custom**, then place images on the SD card:
 
 - **Multiple Images (recommended):** Create a `.sleep` directory in the root of the SD card and place any number of `.bmp` images inside. One will be randomly selected each time the device sleeps. (A directory named `sleep` is also accepted as a fallback.)
-- **Single Image:** Place a file named `sleep.bmp` in the root directory. This is used as a fallback if no valid images are found in the `.sleep`/`sleep` directory.
+- **Single Image:** Place a file named `sleep.bmp` in the root directory. This takes priority over the `.sleep`/`sleep` directories.
+
+#### Transparent overlay images
+
+To use transparent sleep overlays, set the sleep screen mode to **Transparent**, then place BMP or PNG files on the SD card:
+
+- **Multiple Images (recommended):** Create a `.sleep-overlay` directory in the root of the SD card and place any number of valid overlay `.bmp` or `.png` images inside. One will be randomly selected each time the device sleeps. A directory named `sleep-overlay` is also accepted as a fallback.
+- **Single Image:** Place `sleep-overlay.bmp` or `sleep-overlay.png` in the root directory. A root BMP takes priority over a root PNG, and both take priority over the `.sleep-overlay`/`sleep-overlay` directories.
+
+Transparent overlay files are intentionally separate from normal sleep images. Regular BMP formats supported by CrossPoint are accepted; white pixels leave the existing screen unchanged. For per-pixel alpha transparency, use a PNG with an alpha channel or a 32-bit BGRA BMP with both visible and non-opaque pixels. Opaque white pixels in alpha images erase the content behind them.
 
 > [!TIP]
 > For best results:
-> 
-> - Use uncompressed BMP files with 24-bit color depth
+> - For non-transparent **Custom** mode, use uncompressed BMP files with 24-bit color depth.
+> - For **Transparent** mode, use a PNG or uncompressed 32-bit BGRA BMP for per-pixel alpha, or a regular BMP for white-as-transparent artwork.
 > - X4: Use a resolution of 480x800 pixels to match the device's screen resolution.
 > - X3: Use a resolution of 528x792 pixels to match the device's screen resolution.
 
@@ -514,17 +564,17 @@ Once you have opened a book, the button layout changes to facilitate reading.
 
 | Action            | Buttons                              |
 | ----------------- | ------------------------------------ |
-| **Previous Page** | Press **Left** _or_ **Volume Up**    |
-| **Next Page**     | Press **Right** _or_ **Volume Down** |
+| **Previous Page** | Press **Left** _or_ **Side Up**    |
+| **Next Page**     | Press **Right** _or_ **Side Down** |
 
-The role of the volume (side) buttons can be swapped in the **[Controls Settings](#363-controls)**.
+The role of the side buttons can be swapped in the **[Controls Settings](#363-controls)**.
 
 If the **Short Power Button Click** setting is set to "Page Turn", you can also turn to the next page by briefly pressing the Power button.
 
 ### Chapter Navigation
 
-* **Next Chapter:** Press and **hold** the **Right** (or **Volume Down**) button briefly, then release.
-* **Previous Chapter:** Press and **hold** the **Left** (or **Volume Up**) button briefly, then release.
+* **Next Chapter:** Press and **hold** the **Right** (or **Side Down**) button briefly, then release.
+* **Previous Chapter:** Press and **hold** the **Left** (or **Side Up**) button briefly, then release.
 
 This feature can be disabled in the **[Controls Settings](#363-controls)** to help avoid changing chapters by mistake.
 
@@ -536,11 +586,17 @@ Auto Page Turn automatically advances pages at a set interval, useful for hands-
 
 On the **Xteink X3**, the gyroscope can be used to turn pages by tilting the device. This feature is available in the Controls settings.
 
-### Footnote Navigation
+### Links and footnotes
 
-When reading an EPUB that contains footnotes, you can navigate to the footnote text by selecting the footnote reference in the book. From the footnote, you can return to your original reading position.
+Internal EPUB links include chapter links, cross-references, and footnotes. Tap a link on a touchscreen device, or choose "Links and footnotes" from the Reader Menu to select a link. Press Back to return to the previous location.
 
-If the device goes to sleep or you close the book while viewing a footnote, the book reopens to your original reading position, not the footnote.
+If the device sleeps or you close the book after following a link, the book reopens on the page you were viewing. Back still returns you to where you followed the link. The reader keeps the three most recent return positions.
+
+### Dictionary Lookup
+
+Words on the current page can be looked up in an offline StarDict dictionary stored on the SD card. Copy a dictionary to the `/dictionaries/` folder, select it in **Settings → Reader → Dictionary**, then start a lookup by choosing **Look Up** in the **[Reader Menu](#5-reader-menu)** (or by holding **Confirm**, if the **Long-press Menu** setting in **[Controls Settings](#363-controls)** is set to "Dictionary"). Use **Left/Right** to highlight a word and press **Confirm** to show its definition.
+
+See [docs/dictionary.md](docs/dictionary.md) for supported formats, setup, and where to find dictionaries.
 
 ### System Navigation
 
@@ -568,9 +624,11 @@ Press **Confirm** while reading to open the Reader Menu. From here you can acces
 Available options include:
 
 - **Select Chapter** – Open the table of contents to jump to a specific chapter (see [Chapter Selection](#51-chapter-selection) below).
-- **Footnotes** – Navigate to the footnotes for the current section *(only shown in books that contain footnotes)*.
+- **Links and footnotes** – Select an internal link on the current page. This option appears when the page contains links.
+- **Look Up** – Select a word on the current page and show its dictionary definition (see [docs/dictionary.md](docs/dictionary.md)). Requires a dictionary to be selected in **Settings → Reader → Dictionary**.
 - **Reading Orientation** – Cycle through screen orientations without leaving the reader.
-- **Auto Turn (Pages Per Minute)** – Cycle through automatic page turn speed options for hands-free reading.
+- **Auto Turn (Pages Per Minute)** – Choose Off, a preset speed (3, 6, or 12), or a custom speed from 1–30
+  pages per minute for hands-free reading. The custom speed is remembered only while the current book remains open.
 - **Go to %** – Jump to a specific position in the book by percentage.
 - **Take screenshot** – Save a screenshot of the current page to the `screenshots/` folder.
 - **Show page as QR** – Display a QR code encoding the current reading position.
@@ -584,7 +642,7 @@ Press **Back** at any time to close the menu and return to your current page.
 
 Accessible by selecting **Chapters** from the Reader Menu.
 
-1. Use **Left** (or **Volume Up**), or **Right** (or **Volume Down**) to highlight the desired chapter.
+1. Use **Left** (or **Side Up**), or **Right** (or **Side Down**) to highlight the desired chapter.
 2. Press **Confirm** to jump to that chapter.
 3. *Alternatively, press **Back** to cancel and return to your current page.*
 
@@ -606,8 +664,6 @@ Please note that this firmware is currently in active development. The following
 
 * **Cover Images:** Large cover images embedded into EPUB require several seconds (~10s for ~2000 pixel tall image) to convert for sleep screen and home screen thumbnail. Consider optimizing the EPUB with e.g. https://github.com/bigbag/epub-to-xtc-converter to speed this up.
 * **Unsupported Image Formats:** Most JPG and PNG images in EPUBs render correctly. GIFs and progressive JPEGs are not supported and will fall back to an `[Image]` placeholder.
-* 
-* **Dictionary Lookup:** Inline word lookup is not yet implemented.
 
 ---
 
@@ -661,3 +717,5 @@ Press **Ctrl-C** or close the graph window to exit.
 If the device is stuck in a bootloop, press and release the Reset button. Then, press and hold on to the configured Back button and the Power Button to boot to the Home Screen.
 
 There can be issues with broken cache or config. In this case, delete the `.crosspoint` directory on your SD card (or consider deleting only `settings.json`, `state.json`, or `epub_*` cache directories in the `.crosspoint/` folder).
+
+Inx retains its menu layout while boolean settings use checkboxes and slider adjustments use the common controls.

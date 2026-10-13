@@ -14,6 +14,13 @@ class ChapterHtmlSlimParser;
 class CssParser;
 
 class Section {
+ public:
+  enum class BuildError { None, OutOfMemory, InvalidData, Io };
+  BuildError buildError() const { return buildError_; }
+
+ private:
+  BuildError buildError_ = BuildError::None;
+  bool collectTouchLinks_ = false;
   std::shared_ptr<Epub> epub;
   const int spineIndex;
   GfxRenderer& renderer;
@@ -29,6 +36,7 @@ class Section {
     uint32_t fileOffset;
     uint16_t paragraphIndex;
     uint16_t listItemIndex;
+    uint32_t visibleTextOffset;
   };
   // Held only while an incremental build is in progress (see startBuild). Carries the
   // live parser plus the strings it references (the parser stores them by reference)
@@ -65,6 +73,7 @@ class Section {
   uint32_t partialBytesConsumed_ = 0;
   uint32_t partialTotalBytes_ = 0;
   bool finalizeBuild();
+  void releaseBuildResources();
   // Write the LUTs/anchor map (and, for a partial, the watermark trailer), patch the
   // header, stamp the version byte, and swap the tmp .bin over filePath.
   bool commitBuildFile(uint8_t version, uint32_t bytesConsumed, uint32_t totalBytes);
@@ -116,9 +125,6 @@ class Section {
   // Unified page read: from the active build if it has reached the page, otherwise from
   // the on-disk file (finalized section, or a partial the rebuild hasn't caught up to).
   std::unique_ptr<Page> loadPage(int page);
-  // Out-of-line: Page is only forward-declared here and unique_ptr destruction needs a
-  // complete type (inlining this wrapper broke ProgressMapper / ReaderActivity TUs).
-  std::unique_ptr<Page> loadPageFromSectionFile();
 
   std::string getTextFromSectionFile();
 
@@ -149,4 +155,23 @@ class Section {
 
   // Look up the synthetic paragraph index for the given rendered page.
   std::optional<uint16_t> getParagraphIndexForPage(uint16_t page) const;
+
+  // Exact zero-based visible Unicode-codepoint offset where a rendered page
+  // starts. Available from both an active build and finalized/partial caches.
+  std::optional<uint32_t> getVisibleTextOffsetForPage(uint16_t page) const;
+
+  // Derive the local page containing an exact visible-text offset. When
+  // preferFirstAtOffset is true, ties caused by zero-width content such as an
+  // image-only page select the first page at that offset.
+  std::optional<uint16_t> getPageForVisibleTextOffset(uint32_t offset, bool preferFirstAtOffset = false) const;
+
+  // True once the active build has laid out a page starting at or past `offset`, i.e.
+  // getPageForVisibleTextOffset() can resolve it from the build without laying out more.
+  // Lets a caller build to a content target instead of a page number, which is what a
+  // re-pagination needs: the old page index no longer names the same content.
+  // False with no build running -- there is nothing left to wait for, so the on-disk
+  // cache answers directly.
+  bool buildReachedVisibleTextOffset(uint32_t offset) const {
+    return build_ && !build_->lut.empty() && offset <= build_->lut.back().visibleTextOffset;
+  }
 };

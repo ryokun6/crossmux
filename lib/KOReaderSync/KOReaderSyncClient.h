@@ -2,6 +2,8 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 /**
  * Optional document metadata sent alongside progress sync requests.
@@ -12,16 +14,22 @@ struct KOReaderMetadata {
   std::string filename;  // e.g. "my_book.epub"
   std::string title;     // Document title from EPUB metadata
   std::string authors;   // Author(s) from EPUB metadata
+  // Raw JSON of the book's plugin sidecar ("<book>.meta.json"): e.g. a
+  // service book id a plugin recorded at download time, so a custom sync
+  // server can route progress to that service. Its flat fields are sent
+  // verbatim (JSON types kept) inside the metadata object; the firmware
+  // assigns no meaning to the keys.
+  std::string extraJson;
 };
 
 /**
  * Rich CrossPoint position sent alongside progress uploads. Maps 1:1 onto the
  * crosspoint-sync extended `position` object (see crosspoint-sync docs/API.md).
- * The official KOSync server ignores unknown fields; crosspoint-sync stores it
- * so CrossPoint<->CrossPoint sync is lossless instead of xpath-approximated.
+ * It is only transmitted to sync.crosspointreader.com. These fields remain
+ * layout-dependent compatibility hints; the standard XPath is the content anchor.
  */
 struct KOReaderRichPosition {
-  uint32_t pctQ = 0;                       // Percentage quantized 0..1,000,000 (authoritative)
+  uint32_t pctQ = 0;                       // Percentage quantized 0..1,000,000 (metadata/fallback)
   uint16_t spineIndex = 0;                 // Spine (chapter) index
   uint16_t pageNumber = 0;                 // Page within spine (layout-dependent hint)
   uint16_t totalPages = 1;                 // Spine page count (layout-dependent hint)

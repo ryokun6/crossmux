@@ -4,19 +4,18 @@
 #include <HalClock.h>
 #include <I18n.h>
 #include <Logging.h>
-#include <Memory.h>
 
 #include <algorithm>
 #include <cstdio>
 #include <string>
 
-#include "ClockOffsetActivity.h"
-#include "ClockSyncActivity.h"
-#include "CrossPointSettings.h"
 #include "MappedInputManager.h"
 #include "components/UITheme.h"
+#include "components/UiAppHelpers.h"
 #include "fontIds.h"
 #include "util/TimeUtils.h"
+
+namespace fui = freeink::ui;
 
 namespace {
 
@@ -41,105 +40,13 @@ std::string twoDigits(const unsigned value) {
 
 void DateTimeSettingsActivity::onEnter() {
   Activity::onEnter();
-  if (SETTINGS.clockUtcOffsetQ > 104) SETTINGS.clockUtcOffsetQ = 48;
-  if (SETTINGS.clockFormat > 1) SETTINGS.clockFormat = 0;
-  if (SETTINGS.clockAutoSync > 1) SETTINGS.clockAutoSync = 1;
-  halClock.setAutoSyncEnabled(SETTINGS.clockAutoSync != 0);
-  mode = Mode::Menu;
-  selectedMenuItem = 0;
-  requestUpdate();
-}
-
-void DateTimeSettingsActivity::onExit() {
-  SETTINGS.saveToFile();
-  Activity::onExit();
-}
-
-void DateTimeSettingsActivity::loop() {
-  switch (mode) {
-    case Mode::Menu:
-      loopMenu();
-      break;
-    case Mode::ManualEdit:
-      loopManualEdit();
-      break;
-  }
-}
-
-void DateTimeSettingsActivity::loopMenu() {
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight =
-      renderer.getScreenHeight() - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
-  switch (handleListTouch(selectedMenuItem, MENU_ITEM_COUNT, contentTop, contentHeight, false)) {
-    case ListTouchResult::Activated:
-      activateMenuItem();
-      return;
-    case ListTouchResult::Consumed:
-      return;
-    case ListTouchResult::None:
-      break;
-  }
-
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    finish();
-    return;
-  }
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    activateMenuItem();
-    return;
-  }
-
-  buttonNavigator.onNextRelease([this] {
-    selectedMenuItem = ButtonNavigator::nextIndex(selectedMenuItem, MENU_ITEM_COUNT);
-    requestUpdate();
-  });
-  buttonNavigator.onPreviousRelease([this] {
-    selectedMenuItem = ButtonNavigator::previousIndex(selectedMenuItem, MENU_ITEM_COUNT);
-    requestUpdate();
-  });
-}
-
-void DateTimeSettingsActivity::activateMenuItem() {
-  const auto item = static_cast<MenuItem>(selectedMenuItem);
-  switch (item) {
-    case MenuItem::AutoTime:
-      SETTINGS.clockAutoSync = SETTINGS.clockAutoSync ? 0 : 1;
-      halClock.setAutoSyncEnabled(SETTINGS.clockAutoSync != 0);
-      SETTINGS.saveToFile();
-      requestUpdate();
-      break;
-    case MenuItem::DateTime:
-      if (!SETTINGS.clockAutoSync) beginManualEdit();
-      break;
-    case MenuItem::TimeZone: {
-      // ActivityManager owns the picker across frames; stack lifetime is insufficient.
-      auto activity = makeUniqueNoThrow<ClockOffsetActivity>(renderer, mappedInput);
-      if (!activity) {
-        LOG_ERR("CLK", "OOM: ClockOffsetActivity (%u bytes)", static_cast<unsigned>(sizeof(ClockOffsetActivity)));
-        return;
-      }
-      startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
-      break;
-    }
-    case MenuItem::Hour24:
-      SETTINGS.clockFormat = SETTINGS.clockFormat == 0 ? 1 : 0;
-      SETTINGS.saveToFile();
-      requestUpdate();
-      break;
-    case MenuItem::SyncNow: {
-      // ActivityManager owns the sync screen across frames; stack lifetime is insufficient.
-      auto activity = makeUniqueNoThrow<ClockSyncActivity>(renderer, mappedInput);
-      if (!activity) {
-        LOG_ERR("CLK", "OOM: ClockSyncActivity (%u bytes)", static_cast<unsigned>(sizeof(ClockSyncActivity)));
-        return;
-      }
-      startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
-      break;
-    }
-    case MenuItem::Count:
-      break;
-  }
+  resetUi();
+  app.on(ACTION_STEP, &DateTimeSettingsActivity::onStep, this);
+  app.on(ACTION_CANCEL, &DateTimeSettingsActivity::onCancel, this);
+  app.on(ACTION_OK, &DateTimeSettingsActivity::onOk, this);
+  app.setScreen(&DateTimeSettingsActivity::manualScreen, this);
+  waitForConfirmRelease_ = mappedInput.isPressed(MappedInputManager::Button::Confirm);
+  beginManualEdit();
 }
 
 void DateTimeSettingsActivity::beginManualEdit() {
@@ -159,21 +66,25 @@ void DateTimeSettingsActivity::beginManualEdit() {
     minute = 0;
   }
   selectedEditField = 0;
-  mode = Mode::ManualEdit;
+  closeRouting();
   requestUpdate();
 }
 
-void DateTimeSettingsActivity::loopManualEdit() {
-  if (mappedInput.wasPressed(MappedInputManager::Button::Back)) {
-    mode = Mode::Menu;
-    requestUpdate();
+void DateTimeSettingsActivity::loop() {
+  if (waitForConfirmRelease_) {
+    waitForConfirmRelease_ = mappedInput.isPressed(MappedInputManager::Button::Confirm);
     return;
   }
-  if (mappedInput.wasPressed(MappedInputManager::Button::Confirm)) {
-    if (applyManualTime()) {
-      mode = Mode::Menu;
-      requestUpdate();
-    }
+  const auto touch = routeTouch(mappedInput);
+  if (touch.routed && app.invalidated()) requestUpdate();
+  if (touch) return;
+
+  if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+    cancelManualEdit();
+    return;
+  }
+  if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+    confirmManualEdit();
     return;
   }
 
@@ -225,76 +136,75 @@ bool DateTimeSettingsActivity::applyManualTime() {
   return true;
 }
 
-void DateTimeSettingsActivity::render(RenderLock&&) {
-  switch (mode) {
-    case Mode::Menu:
-      renderMenu();
-      break;
-    case Mode::ManualEdit:
-      renderManualEdit();
-      break;
+void DateTimeSettingsActivity::cancelManualEdit() {
+  closeRouting();
+  finish();
+}
+
+void DateTimeSettingsActivity::confirmManualEdit() {
+  if (!applyManualTime()) return;
+  closeRouting();
+  finish();
+}
+
+void DateTimeSettingsActivity::manualScreen(UiScreen& screen, void* user) {
+  auto& self = *static_cast<DateTimeSettingsActivity*>(user);
+  self.buildManualScreen(screen);
+}
+
+void DateTimeSettingsActivity::buildManualScreen(UiScreen& screen) {
+  if (!mappedInput.hasTouch()) return;
+  const auto& metrics = UITheme::getInstance().getMetrics();
+  screen.setContentMargin(fui::Insets{
+      static_cast<int16_t>(metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
+      static_cast<int16_t>(metrics.contentSidePadding), 0, static_cast<int16_t>(metrics.contentSidePadding)});
+  addDialogCancelOk(screen, ACTION_CANCEL, ACTION_OK);
+
+  static constexpr StrId names[] = {StrId::STR_YEAR, StrId::STR_MONTH, StrId::STR_DAY, StrId::STR_HOUR,
+                                    StrId::STR_MINUTE};
+  char values[EDIT_FIELD_COUNT][5];
+  snprintf(values[0], sizeof(values[0]), "%d", year);
+  snprintf(values[1], sizeof(values[1]), "%02u", month);
+  snprintf(values[2], sizeof(values[2]), "%02u", day);
+  snprintf(values[3], sizeof(values[3]), "%02u", hour);
+  snprintf(values[4], sizeof(values[4]), "%02u", minute);
+  for (int index = 0; index < EDIT_FIELD_COUNT; ++index) {
+    fui::StepperRowProps props;
+    props.row.label = I18N.get(names[index]);
+    props.row.labelText = screen.theme().bodyText;
+    props.row.valueText = screen.theme().bodyText;
+    props.row.minTouchSize = screen.theme().minTouchSize;
+    props.row.state = index == selectedEditField ? fui::StateFocused : fui::StateNormal;
+    props.value = values[index];
+    props.widestValue = index == 0 ? "2099" : "00";
+    props.decrement = ACTION_STEP;
+    props.increment = ACTION_STEP;
+    props.decrementValue = static_cast<int16_t>(-(index + 1));
+    props.incrementValue = static_cast<int16_t>(index + 1);
+    screen.stepperRow(props);
   }
 }
 
-void DateTimeSettingsActivity::renderMenu() {
-  renderer.clearScreen();
-  const auto& metrics = UITheme::getInstance().getMetrics();
-  const int pageWidth = renderer.getScreenWidth();
-  const int pageHeight = renderer.getScreenHeight();
-  const int contentTop = metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing;
-  const int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
-
-  GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_DATE_AND_TIME));
-  GUI.drawList(
-      renderer, Rect{0, contentTop, pageWidth, contentHeight}, MENU_ITEM_COUNT, selectedMenuItem,
-      [](int index) {
-        static constexpr StrId NAMES[] = {StrId::STR_AUTO_TIME, StrId::STR_DATE_AND_TIME, StrId::STR_TIME_ZONE,
-                                          StrId::STR_24_HOUR_TIME, StrId::STR_CLOCK_SYNC_NOW};
-        return std::string(I18N.get(NAMES[index]));
-      },
-      nullptr, nullptr,
-      [](int index) {
-        const auto item = static_cast<MenuItem>(index);
-        switch (item) {
-          case MenuItem::AutoTime:
-            return std::string(SETTINGS.clockAutoSync ? tr(STR_STATE_ON) : tr(STR_STATE_OFF));
-          case MenuItem::DateTime: {
-            char buffer[24];
-            return TimeUtils::formatCurrentDateTime(buffer, sizeof(buffer), SETTINGS.clockFormat == 1)
-                       ? std::string(buffer)
-                       : std::string(tr(STR_NOT_SET));
-          }
-          case MenuItem::TimeZone: {
-            char buffer[16];
-            TimeUtils::formatUtcOffset(SETTINGS.clockUtcOffsetQ, buffer, sizeof(buffer));
-            return std::string(buffer);
-          }
-          case MenuItem::Hour24:
-            return std::string(SETTINGS.clockFormat == 0 ? tr(STR_STATE_ON) : tr(STR_STATE_OFF));
-          case MenuItem::SyncNow:
-            switch (halClock.syncState()) {
-              case ClockSyncState::Idle:
-                return std::string();
-              case ClockSyncState::Syncing:
-                return std::string(tr(STR_CLOCK_SYNCING));
-              case ClockSyncState::Succeeded:
-                return std::string(tr(STR_CLOCK_SYNC_OK));
-              case ClockSyncState::Failed:
-                return std::string(tr(STR_CLOCK_SYNC_FAIL));
-            }
-          case MenuItem::Count:
-            return std::string();
-        }
-        return std::string();
-      },
-      true, [](int index) { return index == static_cast<int>(MenuItem::DateTime) && SETTINGS.clockAutoSync; });
-
-  const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_TOGGLE), tr(STR_DIR_UP), tr(STR_DIR_DOWN));
-  GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-  renderer.displayBuffer();
+void DateTimeSettingsActivity::onStep(const fui::ActionEvent& event, void* user) {
+  auto* self = static_cast<DateTimeSettingsActivity*>(user);
+  if (event.value == 0 || event.value < -EDIT_FIELD_COUNT || event.value > EDIT_FIELD_COUNT) return;
+  self->selectedEditField = event.value > 0 ? event.value - 1 : -event.value - 1;
+  self->adjustEditField(event.value > 0 ? 1 : -1);
 }
 
-void DateTimeSettingsActivity::renderManualEdit() {
+void DateTimeSettingsActivity::onCancel(const fui::ActionEvent&, void* user) {
+  auto* self = static_cast<DateTimeSettingsActivity*>(user);
+  self->app.clearTapFlash();
+  self->cancelManualEdit();
+}
+
+void DateTimeSettingsActivity::onOk(const fui::ActionEvent&, void* user) {
+  auto* self = static_cast<DateTimeSettingsActivity*>(user);
+  self->app.clearTapFlash();
+  self->confirmManualEdit();
+}
+
+void DateTimeSettingsActivity::render(RenderLock&&) {
   renderer.clearScreen();
   const auto& metrics = UITheme::getInstance().getMetrics();
   const int pageWidth = renderer.getScreenWidth();
@@ -303,32 +213,36 @@ void DateTimeSettingsActivity::renderManualEdit() {
   const int contentHeight = pageHeight - contentTop - metrics.buttonHintsHeight - metrics.verticalSpacing * 2;
 
   GUI.drawHeader(renderer, Rect{0, metrics.topPadding, pageWidth, metrics.headerHeight}, tr(STR_SET_DATE_AND_TIME));
-  GUI.drawList(
-      renderer, Rect{0, contentTop, pageWidth, contentHeight}, EDIT_FIELD_COUNT, selectedEditField,
-      [](int index) {
-        static constexpr StrId NAMES[] = {StrId::STR_YEAR, StrId::STR_MONTH, StrId::STR_DAY, StrId::STR_HOUR,
-                                          StrId::STR_MINUTE};
-        return std::string(I18N.get(NAMES[index]));
-      },
-      nullptr, nullptr,
-      [this](int index) {
-        switch (static_cast<EditField>(index)) {
-          case EditField::Year:
-            return std::to_string(year);
-          case EditField::Month:
-            return twoDigits(month);
-          case EditField::Day:
-            return twoDigits(day);
-          case EditField::Hour:
-            return twoDigits(hour);
-          case EditField::Minute:
-            return twoDigits(minute);
-          case EditField::Count:
-            return std::string();
-        }
-        return std::string();
-      },
-      true);
+  if (mappedInput.hasTouch()) {
+    renderUi();
+  } else {
+    GUI.drawList(
+        renderer, Rect{0, contentTop, pageWidth, contentHeight}, EDIT_FIELD_COUNT, selectedEditField,
+        [](int index) {
+          static constexpr StrId NAMES[] = {StrId::STR_YEAR, StrId::STR_MONTH, StrId::STR_DAY, StrId::STR_HOUR,
+                                            StrId::STR_MINUTE};
+          return std::string(I18N.get(NAMES[index]));
+        },
+        nullptr, nullptr,
+        [this](int index) {
+          switch (static_cast<EditField>(index)) {
+            case EditField::Year:
+              return std::to_string(year);
+            case EditField::Month:
+              return twoDigits(month);
+            case EditField::Day:
+              return twoDigits(day);
+            case EditField::Hour:
+              return twoDigits(hour);
+            case EditField::Minute:
+              return twoDigits(minute);
+            case EditField::Count:
+              return std::string();
+          }
+          return std::string();
+        },
+        true);
+  }
 
   const auto labels = mappedInput.mapLabels(tr(STR_BACK), tr(STR_CONFIRM), tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
   GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);

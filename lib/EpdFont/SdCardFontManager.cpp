@@ -3,6 +3,7 @@
 #include <EpdFontFamily.h>
 #include <GfxRenderer.h>
 #include <Logging.h>
+#include <Memory.h>
 #include <SdCardFont.h>
 #include <SdCardFontRegistry.h>
 
@@ -28,59 +29,86 @@ int SdCardFontManager::computeFontId(uint32_t contentHash, const char* familyNam
   return id != 0 ? id : 1;  // 0 is reserved as "not found" sentinel
 }
 
-bool SdCardFontManager::loadFamily(const SdCardFontFamilyInfo& family, GfxRenderer& renderer, uint8_t fontSizeEnum,
+int SdCardFontManager::loadFile(const SdCardFontFileInfo& file, const char* familyName, GfxRenderer& renderer,
+                                bool preferFlash, bool enablePsramGlyphCache) {
+  auto font = makeUniqueNoThrow<SdCardFont>();
+  if (!font) {
+    LOG_ERR("SDMGR", "Failed to allocate SdCardFont for %s", file.path.c_str());
+    return 0;
+  }
+
+  if (!font->load(file.path.c_str(), preferFlash, enablePsramGlyphCache)) {
+    LOG_ERR("SDMGR", "Failed to load %s", file.path.c_str());
+    return 0;
+  }
+
+  int fontId = computeFontId(font->contentHash(), familyName, file.pointSize);
+  // Guard against collision with built-in font IDs (astronomically unlikely
+  // with FNV-1a hashes, but provides a safety net)
+  if (renderer.getFontMap().count(fontId) != 0) {
+    LOG_ERR("SDMGR", "Font ID %d collides with existing font, skipping %s", fontId, file.path.c_str());
+    return 0;
+  }
+  renderer.registerSdCardFont(fontId, font.get());
+  loaded_.push_back({font.get(), fontId, file.pointSize});
+
+  LOG_DBG("SDMGR", "Loaded %s size=%u id=%d styles=%u source=%s", file.path.c_str(), file.pointSize, fontId,
+          font->styleCount(), font->usingFlash() ? "flash" : "sd");
+
+  EpdFontFamily fontFamily(font->getEpdFont(0), font->getEpdFont(1), font->getEpdFont(2), font->getEpdFont(3));
+  renderer.insertFont(fontId, fontFamily);
+  font.release();
+  return fontId;
+}
+
+bool SdCardFontManager::loadFamily(const SdCardFontFamilyInfo& family, GfxRenderer& renderer, uint8_t pointSize,
                                    bool preferFlash) {
   // Unload any previously loaded family first
   if (!loadedFamilyName_.empty()) {
     unloadAll(renderer);
   }
 
-  // Select the physical point size closest to the built-in reader sizes. Some
-  // CJK font packs only ship larger sizes, so ordinal selection can make
-  // MEDIUM load 18pt+ and produce oversized pages on small devices.
-  const SdCardFontFileInfo* selected = family.findClosestReaderSize(fontSizeEnum);
+  const SdCardFontFileInfo* selected = family.findNearestSize(pointSize);
   if (!selected) {
     LOG_ERR("SDMGR", "Family %s has no files to load", family.name.c_str());
     return false;
   }
 
-  auto* font = new (std::nothrow) SdCardFont();
-  if (!font) {
-    LOG_ERR("SDMGR", "Failed to allocate SdCardFont for %s", selected->path.c_str());
+  // Reuse capacity on reload; ReadPico also keeps the original footer sizes.
+#if FREEINK_DEVICE_READPICO
+  loaded_.reserve(5);
+#else
+  loaded_.reserve(4);
+#endif
+  if (loadFile(*selected, family.name.c_str(), renderer, preferFlash, true) == 0) {
     return false;
   }
-
-  if (!font->load(selected->path.c_str(), preferFlash)) {
-    LOG_ERR("SDMGR", "Failed to load %s", selected->path.c_str());
-    delete font;
-    return false;
-  }
-
-  int fontId = computeFontId(font->contentHash(), family.name.c_str(), selected->pointSize);
-  // Guard against collision with built-in font IDs (astronomically unlikely
-  // with FNV-1a hashes, but provides a safety net)
-  if (renderer.getFontMap().count(fontId) != 0) {
-    LOG_ERR("SDMGR", "Font ID %d collides with existing font, skipping %s", fontId, selected->path.c_str());
-    delete font;
-    return false;
-  }
-  renderer.registerSdCardFont(fontId, font);
-  loaded_.push_back({font, fontId, selected->pointSize});
-
-  LOG_DBG("SDMGR", "Loaded %s size=%u id=%d styles=%u source=%s (sizeEnum=%u)", selected->path.c_str(),
-          selected->pointSize, fontId, font->styleCount(), font->usingFlash() ? "flash" : "sd", fontSizeEnum);
-
-  EpdFontFamily fontFamily(font->getEpdFont(0), font->getEpdFont(1), font->getEpdFont(2), font->getEpdFont(3));
-  renderer.insertFont(fontId, fontFamily);
 
   loadedFamilyName_ = family.name;
   loadedPointSize_ = selected->pointSize;
   return true;
 }
 
+int SdCardFontManager::loadFamilyExtraSize(const SdCardFontFamilyInfo& family, GfxRenderer& renderer,
+                                           uint8_t pointSize) {
+  const SdCardFontFileInfo* file = family.findFile(pointSize);
+  if (!file) return 0;  // family has no .cpfont at this exact size
+
+  // Reuse an already-loaded font of the same size (e.g. when a reader size
+  // happens to match a UI size) instead of double-loading the file.
+  for (const auto& lf : loaded_) {
+    if (lf.size == pointSize) return lf.fontId;
+  }
+
+  return loadFile(*file, family.name.c_str(), renderer, false, false);
+}
+
 void SdCardFontManager::unloadAll(GfxRenderer& renderer) {
+  renderer.clearPreferredFonts();
   renderer.clearSdCardFonts();
   for (auto& lf : loaded_) {
+    // removeFont drops only mappings that reference this SD font, preserving
+    // unrelated built-in CJK UI fallbacks.
     renderer.removeFont(lf.fontId);
     delete lf.font;
   }

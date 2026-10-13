@@ -2,7 +2,9 @@
 
 #include <HalStorage.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 
 #include "BitmapHelpers.h"
 
@@ -58,16 +60,37 @@ enum class BmpReaderError : uint8_t {
   BufferTooSmall,
   OomRowBuffer,
   ShortReadRow,
+  OomDitherer,
 };
 
 class Bitmap {
+  friend class GfxRenderer;
+
  public:
+  static constexpr uint16_t TRANSPARENT_OVERLAY_MARKER = 0x5843;
+  static constexpr uint16_t TRANSPARENT_OVERLAY_VERSION = 1;
+  static constexpr uint8_t TRANSPARENT_PALETTE_INDEX = 4;
+
   static const char* errorToString(BmpReaderError err);
 
-  explicit Bitmap(HalFile& file, bool dithering = false) : file(file), dithering(dithering) {}
+  explicit Bitmap(HalFile& file, bool dithering = false, bool originalThresholds = false)
+      : file(&file), dithering(dithering), originalThresholds(originalThresholds) {}
+#if defined(BOARD_HAS_PSRAM) || defined(CROSSPOINT_EMULATED)
+  // Non-owning memory source. The caller must keep `data` alive for the
+  // Bitmap's lifetime; sequential rows are copied into the existing internal
+  // draw scratch before pixel processing.
+  Bitmap(const uint8_t* data, size_t size, bool dithering = false)
+      : memoryData(data), memorySize(size), dithering(dithering) {}
+#endif
   ~Bitmap();
+  Bitmap(const Bitmap&) = delete;
+  Bitmap& operator=(const Bitmap&) = delete;
+  Bitmap(Bitmap&&) = delete;
+  Bitmap& operator=(Bitmap&&) = delete;
   BmpReaderError parseHeaders();
-  BmpReaderError readNextRow(uint8_t* data, uint8_t* rowBuffer) const;
+  enum class RowOutput { PackedGray2, Gray8 };
+  BmpReaderError readNextRow(uint8_t* data, uint8_t* rowBuffer, uint8_t* opacityRow = nullptr,
+                             RowOutput output = RowOutput::PackedGray2) const;
   BmpReaderError rewindToData() const;
   int getWidth() const { return width; }
   int getHeight() const { return height; }
@@ -76,19 +99,32 @@ class Bitmap {
   int getRowBytes() const { return rowBytes; }
   bool is1Bit() const { return bpp == 1; }
   uint16_t getBpp() const { return bpp; }
+  bool hasTransparency() const { return transparentOverlay; }
 
  private:
-  static uint16_t readLE16(HalFile& f);
-  static uint32_t readLE32(HalFile& f);
+  uint16_t readLE16() const;
+  uint32_t readLE32() const;
+  bool sourceValid() const;
+  int sourceRead(void* data, size_t size) const;
+  int sourceReadByte() const;
+  bool sourceSeek(size_t position) const;
+  bool sourceSeekCur(int64_t offset) const;
 
-  HalFile& file;
+  HalFile* file = nullptr;
+#if defined(BOARD_HAS_PSRAM) || defined(CROSSPOINT_EMULATED)
+  const uint8_t* memoryData = nullptr;
+  size_t memorySize = 0;
+  mutable size_t memoryPosition = 0;
+#endif
   bool dithering = false;
+  bool originalThresholds = false;
   int width = 0;
   int height = 0;
   bool topDown = false;
   uint32_t bfOffBits = 0;
   uint16_t bpp = 0;
   uint32_t colorsUsed = 0;
+  bool transparentOverlay = false;
   bool nativePalette = false;  // true if all palette entries map to native gray levels
   int rowBytes = 0;
   uint8_t paletteLum[256] = {};
@@ -100,4 +136,9 @@ class Bitmap {
 
   mutable AtkinsonDitherer* atkinsonDitherer = nullptr;
   mutable FloydSteinbergDitherer* fsDitherer = nullptr;
+  // One bounded row workspace, reused across repeated grayscale draw passes.
+  mutable std::unique_ptr<uint8_t[]> drawScratch;
+  mutable size_t drawScratchCapacity = 0;
+
+  bool ensureDrawScratch(size_t bytes) const;
 };

@@ -3,7 +3,7 @@
 The goal of ryOS CrossMux is to create an efficient, open-source reading experience for the Xteink X4. We believe a
 dedicated e-reader should do one thing exceptionally well: **facilitate focused reading.**
 
-## 1. Core Mission
+## What belongs here
 
 To provide a lightweight, high-performance firmware that maximizes the potential of the X4, prioritizing legibility and
 usability over "swiss-army-knife" functionality.

@@ -12,20 +12,39 @@ size_t utf8RemoveLastChar(std::string& str);
 // Truncate string by removing N UTF-8 codepoints from the end.
 void utf8TruncateChars(std::string& str, size_t numChars);
 
-// Canonical composition (NFC) for the Latin / Vietnamese range: precomposes a
-// base letter followed by combining diacritical mark(s) into a single codepoint.
-// Needed because the device fonts have no combining-mark positioning, so text
-// stored in NFD (e.g. some EPUB chapter titles) otherwise renders broken.
+// Canonical composition (NFC) for the Latin / Vietnamese range and Hangul:
+// precomposes a base letter followed by combining diacritical mark(s), and
+// conjoining Hangul jamo sequences (L+V[+T]), into single codepoints. Needed
+// because the device fonts have no combining-mark positioning and carry only
+// precomposed Hangul syllables, so NFD text (some EPUB chapter titles; every
+// filename written by macOS) otherwise renders broken or blank.
 std::string utf8ComposeNfc(const std::string& in);
+
+// Compose a null-terminated display buffer without allocating or growing it.
+// Uncomposed bytes (including malformed UTF-8) are preserved unchanged.
+void utf8ComposeNfcInPlace(char* buffer);
+
+// The base letter a precomposed codepoint decomposes to, or 0 when there is
+// none ("é" -> "e", but "ø" -> 0: it is a letter in its own right, not
+// o-with-stroke). Lives here rather than in a caller because the compose table
+// is a ~5 KB static array in the header: a second includer is a second copy in
+// flash.
+//
+// A linear scan, unlike utf8ComposePair's binary search above it: the table is
+// sorted by (base, mark), which this lookup searches against the grain. Adding
+// a second table sorted by composed would cost more flash than sharing this one
+// saves.
+uint32_t utf8DecomposedBase(uint32_t cp);
 
 // Truncate a raw char buffer to the last complete UTF-8 codepoint boundary.
 // Returns the new length (<= len). If the buffer ends mid-sequence, the
 // incomplete trailing bytes are excluded.
 int utf8SafeTruncateBuffer(const char* buf, int len);
 
-// Returns true for CJK characters that allow line breaks on either side without hyphenation.
-// Covers CJK Unified Ideographs, Hiragana, Katakana, Hangul Syllables, CJK punctuation,
-// and fullwidth forms — the ranges where word boundaries are implicit per character.
+// Returns true for CJK characters that break without hyphenation. Covers CJK Unified Ideographs,
+// Hiragana, Katakana, Hangul, CJK punctuation, and fullwidth forms. Han and Kana have implicit
+// word boundaries per character; Hangul is space-delimited, so layout keeps Hangul words whole
+// (see utf8IsHangul) and splits one without a hyphen only through the hyphenation path.
 inline bool utf8IsCjkBreakable(const uint32_t cp) {
   return (cp >= 0x1100 && cp <= 0x11FF)        // Hangul Jamo
          || (cp >= 0x3000 && cp <= 0x303F)     // CJK Symbols and Punctuation
@@ -45,37 +64,14 @@ inline bool utf8IsCjkBreakable(const uint32_t cp) {
          || (cp >= 0x2A700 && cp <= 0x2B73F);  // CJK Extension C
 }
 
-// Returns true for Hangul codepoints. Korean is the only CJK script written with
-// spaces between words, so a few layout rules treat it differently from the
-// no-space CJK scripts (CSS Text 4.1.2 segment-break transformation exempts Hangul).
+// Returns true for Hangul letters. Korean separates words with spaces, so a boundary touching
+// Hangul is never an implicit line-break opportunity (CSS word-break: keep-all).
 inline bool utf8IsHangul(const uint32_t cp) {
   return (cp >= 0x1100 && cp <= 0x11FF)      // Hangul Jamo
          || (cp >= 0x3130 && cp <= 0x318F)   // Hangul Compatibility Jamo
          || (cp >= 0xA960 && cp <= 0xA97F)   // Hangul Jamo Extended-A
-         || (cp >= 0xAC00 && cp <= 0xD7AF)   // Hangul Syllables
-         || (cp >= 0xD7B0 && cp <= 0xD7FF)   // Hangul Jamo Extended-B
+         || (cp >= 0xAC00 && cp <= 0xD7FF)   // Hangul Syllables, Hangul Jamo Extended-B
          || (cp >= 0xFFA0 && cp <= 0xFFDC);  // Halfwidth Hangul
-}
-
-// CSS Text §4.1 white-space collapsing for CJK source runs.
-// A whitespace run collapses to either one space or nothing:
-//   • If the run contains a segment break (\n/\r), apply the East Asian
-//     segment-break transform: remove between two no-space CJK neighbors
-//     (Han/Kana/etc.); Hangul or non-CJK on either side keeps a space.
-//     Indentation spaces/tabs around that break do NOT force a space — otherwise
-//     pretty-printed Chinese/Japanese HTML (`中\\n  文`) would sprout gaps.
-//   • If the run is only spaces/tabs (no segment break), always keep a space
-//     (Korean word spacing; intentional spaces in any CJK text).
-// leftCp==0 means no previous glyph (start of block); then only a real space
-// run yields a spaceBefore on the first word.
-inline bool utf8CjkWhitespaceBecomesSpace(const bool hadRealSpace, const bool hadSegmentBreak, const uint32_t leftCp,
-                                          const uint32_t rightCp) {
-  if (hadSegmentBreak && leftCp != 0) {
-    const bool leftNoSpaceCjk = utf8IsCjkBreakable(leftCp) && !utf8IsHangul(leftCp);
-    const bool rightNoSpaceCjk = utf8IsCjkBreakable(rightCp) && !utf8IsHangul(rightCp);
-    return !(leftNoSpaceCjk && rightNoSpaceCjk);
-  }
-  return hadRealSpace;
 }
 
 // Returns true for any codepoint in a CJK script block (Han, Kana, Hangul, Bopomofo,

@@ -4,6 +4,8 @@
 
 #include <algorithm>
 
+#include "MissingGlyph.h"
+
 #ifdef ENABLE_CHINESE_VERSION
 #ifdef CHINESE_UI_SIMPLIFIED
 #include "TcToScRemap.h"
@@ -49,33 +51,25 @@ void EpdFont::getTextBounds(const char* string, const int startX, const int star
   int32_t prevAdvanceFP = 0;  // 12.4 fixed-point: prev glyph's advance + next kern for snap
   uint32_t cp;
   uint32_t prevCp = 0;
+  bool prevMissing = false;
   while ((cp = utf8NextCodepoint(reinterpret_cast<const uint8_t**>(&string)))) {
-    const bool isCombining = utf8IsCombiningMark(cp);
+    const bool isCombining = missingGlyph::isCombining(cp);
 
     if (!isCombining) {
       cp = applyLigatures(cp, string);
     }
 
     const EpdGlyph* glyph = getGlyph(cp);
-    if (!glyph) {
-      // Keep cursor movement stable when a base glyph is missing, but don't attach subsequent
-      // combining marks to stale base metrics.
-      if (!isCombining) {
-        lastBaseX += fp4::toPixel(prevAdvanceFP);  // flush pending advance before resetting
-        prevCp = 0;
-        prevAdvanceFP = 0;
-        lastBaseLeft = 0;
-        lastBaseWidth = 0;
-        lastBaseTop = 0;
-      }
-      continue;
-    }
+    const bool missing = glyph == nullptr;
+    if (missing && isCombining) continue;
+    const EpdGlyph placeholder = missing ? missingGlyph::metrics(data->ascender, cp) : EpdGlyph{};
+    if (missing) glyph = &placeholder;
 
-    const auto anchor = isCombining ? combiningMark::anchorFor(cp) : combiningMark::Anchor::CenterRaised;
+    const combiningMark::Anchor anchor = combiningMark::anchorFor(cp);
     const int raiseBy = isCombining ? combiningMark::raiseAboveBase(anchor, glyph->top, glyph->height, lastBaseTop) : 0;
 
     if (!isCombining && prevCp != 0) {
-      const auto kernFP = getKerning(prevCp, cp);  // 4.4 fixed-point kern
+      const auto kernFP = missing || prevMissing ? 0 : getKerning(prevCp, cp);
       lastBaseX += fp4::toPixel(prevAdvanceFP + kernFP);
     }
 
@@ -95,6 +89,7 @@ void EpdFont::getTextBounds(const char* string, const int startX, const int star
       lastBaseTop = glyph->top;
       prevAdvanceFP = glyph->advanceX;  // 12.4 fixed-point
       prevCp = cp;
+      prevMissing = missing;
     }
   }
 }
@@ -106,6 +101,18 @@ void EpdFont::getTextDimensions(const char* string, int* w, int* h) const {
 
   *w = maxX - minX;
   *h = maxY - minY;
+}
+
+// Split form: the search touches only the codepoint array. See EpdFontData::kernLeftCodepoints.
+static uint8_t lookupKernClassSplit(const uint16_t* codepoints, const uint8_t* classIds, const uint16_t count,
+                                    const uint32_t cp) {
+  if (!codepoints || count == 0 || cp > 0xFFFF) {
+    return 0;
+  }
+  const auto target = static_cast<uint16_t>(cp);
+  const uint16_t* end = codepoints + count;
+  const auto it = std::lower_bound(codepoints, end, target);
+  return (it != end && *it == target) ? classIds[it - codepoints] : 0;
 }
 
 static uint8_t lookupKernClass(const EpdKernClassEntry* entries, const uint16_t count, const uint32_t cp) {
@@ -128,35 +135,75 @@ static uint8_t lookupKernClass(const EpdKernClassEntry* entries, const uint16_t 
   return 0;
 }
 
-int8_t EpdFont::getKerning(const uint32_t leftCp, const uint32_t rightCp) const {
-  const uint32_t left = resolveCnCodepoint(leftCp);
-  const uint32_t right = resolveCnCodepoint(rightCp);
-  if (utf8IsCjkBreakable(left) || utf8IsCjkBreakable(right)) {
+int8_t EpdFont::getKerning(const uint32_t leftIn, const uint32_t rightIn) const {
+  const uint32_t leftCp = resolveCnCodepoint(leftIn);
+  const uint32_t rightCp = resolveCnCodepoint(rightIn);
+  if (utf8IsCjkBreakable(leftCp) || utf8IsCjkBreakable(rightCp)) {
     return 0;
   }
-  if (!data->kernMatrix) {
+  if (data->kernHandler) {
+    return data->kernHandler(data->glyphMissCtx, leftCp, rightCp);
+  }
+  if (!data->kernMatrix && !data->kernRowOffsets) {
     return 0;
   }
-  const uint8_t lc = lookupKernClass(data->kernLeftClasses, data->kernLeftEntryCount, left);
+  if (!data->kernLeftClasses && !data->kernLeftCodepoints) {
+    return 0;
+  }
+  // Built-in fonts carry the split arrays, SD-card fonts the packed ones; never both.
+  const bool split = data->kernLeftCodepoints != nullptr;
+  const uint8_t lc =
+      split ? lookupKernClassSplit(data->kernLeftCodepoints, data->kernLeftClassIds, data->kernLeftEntryCount, leftCp)
+            : lookupKernClass(data->kernLeftClasses, data->kernLeftEntryCount, leftCp);
   if (lc == 0) return 0;
-  const uint8_t rc = lookupKernClass(data->kernRightClasses, data->kernRightEntryCount, right);
+  const uint8_t rc = split ? lookupKernClassSplit(data->kernRightCodepoints, data->kernRightClassIds,
+                                                  data->kernRightEntryCount, rightCp)
+                           : lookupKernClass(data->kernRightClasses, data->kernRightEntryCount, rightCp);
   if (rc == 0) return 0;
+
+  // Sparse (built-in fonts): scan the row. Linear rather than binary — rows hold ~15 entries on
+  // average, short enough that the scan measured faster (worst-case mix +11% over dense against
+  // +19% for std::lower_bound), and it should widen on hardware that reads these arrays through
+  // a flash cache, since the scan walks forwards through a cache line.
+  if (data->kernRowOffsets) {
+    const uint16_t begin = data->kernRowOffsets[lc - 1];
+    const uint16_t end = data->kernRowOffsets[lc];
+    const auto target = static_cast<uint8_t>(rc - 1);
+    const uint8_t* cols = data->kernSparseCols;
+    for (uint16_t i = begin; i < end; i++) {
+      if (cols[i] == target) return data->kernSparseValues[i];
+      if (cols[i] > target) break;  // sorted ascending, so past the target means absent
+    }
+    return 0;
+  }
+
+  // Dense (SD-card fonts, mapped straight out of the .cpfont).
   return data->kernMatrix[(lc - 1) * data->kernRightClassCount + (rc - 1)];
 }
 
-uint32_t EpdFont::getLigature(const uint32_t leftCp, const uint32_t rightCp) const {
+// Arabic contextual joining (including Lam-Alef) is resolved earlier by
+// do_shape() in MiniBidi, which emits presentation forms in visual order.
+// Font GSUB ligatures must not run a second pass over that output: a shaped
+// Alef+Lam ("…ال…") is FEDF+FE8E, which the font's Lam-Alef pairs would
+// wrongly re-collapse into FEFB/FEFC — transposing the letters (e.g. کسالت →
+// کسلات). Latin ligatures (ff/fi/fl) key off ASCII and are unaffected.
+static inline bool isArabicPresentationForm(const uint32_t cp) {
+  return (cp >= 0xFB50 && cp <= 0xFDFF) || (cp >= 0xFE70 && cp <= 0xFEFF);
+}
+
+uint32_t EpdFont::getLigature(const uint32_t leftIn, const uint32_t rightIn) const {
+  const uint32_t leftCp = resolveCnCodepoint(leftIn);
+  const uint32_t rightCp = resolveCnCodepoint(rightIn);
   const auto* pairs = data->ligaturePairs;
   const auto count = data->ligaturePairCount;
   if (!pairs || count == 0 || leftCp > 0xFFFF || rightCp > 0xFFFF) {
     return 0;
   }
-  const uint32_t left = resolveCnCodepoint(leftCp);
-  const uint32_t right = resolveCnCodepoint(rightCp);
-  if (left > 0xFFFF || right > 0xFFFF) {
+  if (isArabicPresentationForm(leftCp) || isArabicPresentationForm(rightCp)) {
     return 0;
   }
 
-  const uint32_t key = (left << 16) | right;
+  const uint32_t key = (leftCp << 16) | rightCp;
   const auto* end = pairs + count;
 
   // lower_bound: exact-key lookup. Finds the first entry with pair >= key,
@@ -189,16 +236,23 @@ uint32_t EpdFont::applyLigatures(uint32_t cp, const char*& text) const {
   return cp;
 }
 
-const EpdGlyph* EpdFont::getGlyphNoReplacement(const uint32_t cpIn) const {
-  const uint32_t cp = resolveCnCodepoint(cpIn);
-  const int count = data->intervalCount;
-  if (count == 0 && !data->glyphMissHandler) return nullptr;
+const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn) const { return getGlyph(cpIn, nullptr); }
 
+const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn, bool* const usedReplacement) const {
+  if (usedReplacement) *usedReplacement = false;
+  const uint32_t cp = resolveCnCodepoint(cpIn);
+
+  const int count = data->intervalCount;
   if (count > 0) {
     const EpdUnicodeInterval* intervals = data->intervals;
     const auto* end = intervals + count;
+
+    // upper_bound: range lookup. Finds the first interval with first > cp, so the
+    // interval just before it is the last one with first <= cp. That's the only
+    // candidate that could contain cp. Then we verify cp <= candidate.last.
     const auto it = std::upper_bound(
         intervals, end, cp, [](uint32_t value, const EpdUnicodeInterval& interval) { return value < interval.first; });
+
     if (it != intervals) {
       const auto& interval = *(it - 1);
       if (cp <= interval.last) {
@@ -207,25 +261,13 @@ const EpdGlyph* EpdFont::getGlyphNoReplacement(const uint32_t cpIn) const {
     }
   }
 
+  // Codepoint not in interval table — try on-demand loading (SD card fonts).
   if (data->glyphMissHandler) {
-    return data->glyphMissHandler(data->glyphMissCtx, cp);
+    const EpdGlyph* loaded = data->glyphMissHandler(data->glyphMissCtx, cp);
+    if (loaded) return loaded;
   }
-  return nullptr;
-}
-
-const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn) const { return getGlyph(cpIn, nullptr); }
-
-const EpdGlyph* EpdFont::getGlyph(const uint32_t cpIn, bool* const usedReplacement) const {
-  if (usedReplacement) *usedReplacement = false;
-
-  const EpdGlyph* glyph = getGlyphNoReplacement(cpIn);
-  if (glyph) return glyph;
 
   if (usedReplacement) *usedReplacement = true;
-  const uint32_t cp = resolveCnCodepoint(cpIn);
-  if (cp != REPLACEMENT_GLYPH) {
-    return getGlyphNoReplacement(REPLACEMENT_GLYPH);
-  }
   return nullptr;
 }
 
@@ -240,6 +282,8 @@ bool EpdFont::hasCodepoint(const uint32_t cpIn) const {
     if (it != intervals && cp <= (it - 1)->last) return true;
   }
 
+  // Interval table miss. SD card fonts only keep the current page's glyphs in
+  // their interval table — ask their full RAM-resident coverage index instead.
   if (data->coverageHandler) {
     return data->coverageHandler(data->glyphMissCtx, cp);
   }

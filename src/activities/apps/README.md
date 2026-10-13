@@ -48,21 +48,38 @@ if (mappedInput.wasReleased(MappedInputManager::Button::Back)) {
 }
 ```
 
-### 2. Add `goToMyApp()` in `ActivityManager.{h,cpp}`
+### 2. Add a navigation method to `ActivityManager`
+
+In `src/activities/ActivityManager.{h,cpp}`:
+
+```cpp
+// .h
+void goToMyApp();
+
+// .cpp
+#include "apps/myapp/MyAppActivity.h"
+void ActivityManager::goToMyApp() {
+  replaceActivityWith<MyAppActivity>();
+}
+```
+
+`replaceActivityWith<T>(...)` and `startActivityForResultWith<T>(handler, ...)`
+prepend `renderer` and `mappedInput` to the constructor arguments, allocate with
+`makeUniqueNoThrow`, log OOM, and leave the current Activity in place on
+failure. Do not construct Activities with `std::make_unique`.
 
 ### 3. Assign an ID and append one row to `kAppEntries`
 
-In `apps/AppsMenuActivity.cpp`:
+Append the ID in `src/AppVisibility.h` and the row in `apps/AppsMenuActivity.cpp`; this is an excerpt, not a replacement catalog:
 
 ```cpp
 enum class AppId : uint8_t {
-  ReadingStats = 0,
-  WeRead = 1,
-  // 2–7 reserved (upstream game IDs; not catalogued)
-  Standby = 8,
-  OpdsBrowser = 9,
-  MyApp = 10,  // new, never-reused bit ID
-  Count = 11,
+  Sudoku = 2,
+  Gomoku = 3,
+  Minesweeper = 5,
+  UglyAvatar = 7,
+  MyApp = 17,  // example: use the next unused bit ID in the current catalog
+  Count = 18,
 };
 
 constexpr AppEntry kAppEntries[] = {
@@ -76,30 +93,66 @@ constexpr AppEntry kAppEntries[] = {
 };
 ```
 
-The ID is the persisted bit position in `hiddenAppsMask`: allocate the next unused value, never reuse or change existing values, and keep conditional-app IDs outside their `#ifdef`. New bits default to visible. The menu, launcher, and App Visibility settings all read this same table.
+Define stable IDs and default visibility in `src/AppVisibility.h`; keep titles, icons, and launch actions in the menu table.
+
+The ID is the persisted bit position in `hiddenAppsMask`: allocate the next unused value, never reuse or change existing
+values, and keep conditional-app IDs outside their `#ifdef`. New bits default to visible. Fresh settings hide Chinese
+Chess, Minesweeper, 2048, Ugly Avatar, Buddy, Sokoban, Pixel Switch, and Woodfish.
+Existing masks are preserved except for the one-time Buddy migration from catalog version 0.
+The menu, launcher, and App Visibility settings all read this same table; no `switch` or `buildItems()` is needed.
+The visibility mask is 32-bit. `Calculator = 15` and `Woodfish = 16` are stable;
+IDs 17 through 31 remain available.
 
 ### 4. Add i18n key + `UIIcon` + Lyra `iconForName` case
 
-- **i18n**: add `STR_MYAPP_TITLE` to `lib/I18n/translations/english.yaml`, then regenerate i18n.
-- **Icon**: add `MyApp` to `UIIcon` in `src/components/themes/BaseTheme.h`, a 32×32 bitmap under `src/components/icons/`, and a `case UIIcon::MyApp:` in Lyra `iconForName`.
+- **i18n**: add `STR_MYAPP_TITLE: "My App"` to `lib/I18n/translations/english.yaml`. Other languages fall back to English; translate selectively. Then run `python scripts/gen_i18n.py lib/I18n/translations lib/I18n/` once locally (regenerated at build time too).
+- **Icon**: add `MyApp` to the `UIIcon` enum in `src/components/themes/BaseTheme.h` and add both 32×32 1-bit variants: the pre-rotated Lyra bitmap selected by `LyraTheme::iconForName(size==32)`, and the canonical-orientation bitmap selected by `InxAppIcons::get()`. No 24px bitmap is needed.
 
 ### 5. Conditional apps (e.g. WeRead)
 
 Use `#if defined(ENABLE_CHINESE_VERSION) && !defined(__EMSCRIPTEN__)` (or the appropriate flag) at every reference site, plus `build_src_filter` in `platformio.ini`:
 
-- base: `-<activities/apps/<app>/>`
-- gated env: `+<activities/apps/<app>/>`
+Some apps have no save state at all. Ugly Avatar is a single-screen generator that creates a new avatar on entry and exits cleanly. It skips both `GameSaveDebouncer` and any `*Store.{h,cpp}` layer, and its `Activity` is launched directly (no `*MenuActivity`). Use this pattern when the app has no "in-progress game" worth resuming; it cuts a few hundred lines and avoids persistent writes.
 
-Do not add inner ifdefs inside the app's own sources.
+### Reusable implementation patterns
+
+Choose the smallest pattern that fits:
+
+| App shape | Reference | Reuse |
+|---|---|---|
+| Stateless, single screen | `avatar/UglyAvatarActivity` | `Activity`, `GameUi` action geometry; no Store or menu Activity |
+| Stateful, single screen | `2048/Game2048Activity`, `woodfish/WoodfishActivity` | Board/state object plus `GameSaveDebouncer` or an app-specific idle checkpoint |
+| Board game with launcher | `sudoku/` | Separate Board, Store, MenuActivity, GameActivity; `OptionPopup` for in-game menus |
+
+Use `OptionPopup` for in-game action and difficulty menus. It owns touch hit
+testing, logical-button navigation, and the inherited-input barrier. Build its
+labels when the popup opens, not during rendering. Keep rules, win detection,
+AI, and persistence in the game: they are not framework concerns.
+
+---
+
+### 6. Language-independent visibility
+
+Chinese Chess and WeRead are compiled into the unified firmware. The existing
+`ENABLE_CHINESE_VERSION` compatibility guards remain enabled by the base and
+simulator profiles; do not add a separate Chinese build or source-filter split.
+
+The launcher applies `effectiveHiddenMask()` to combine user visibility and
+configured OPDS servers. The settings toggle reflects the user choice even when
+OPDS is temporarily absent from the menu because no server is configured. App visibility is independent of the UI language and
+content profile. WeRead is visible by default in every language; Chinese Chess
+is hidden by default. Language changes preserve the user's app visibility choices.
+See [Chinese support](../../../docs/engineering/chinese-build.md).
 
 ---
 
 ## UI conventions
 
-- **Renderer**: the Apps menu uses `GUI.drawButtonMenu`, not `GUI.drawList` (32px icons, UI_12, home-tile style). Inter-row gap is `metrics.menuSpacing / 2`.
-- **Pagination**: page slice via offset callbacks + `drawPaginationDots` above the button hints.
+- **Launcher layout**: `buildScreen()` uses the shared `UiScreen`/FreeInkUI list, or the existing icon-grid layout selected by `usesIconLayout()`. Reuse the list viewport and `InxGridGeometry` for navigation and touch geometry.
+- **Pagination**: the list viewport and icon grid manage their own visible slices. Use the shared navigation helpers and theme scrollbar rather than duplicating row counts or screen dimensions.
 - **Header**: each app draws its own header via `GUI.drawHeader(... tr(STR_<APP>_TITLE))`.
-- **Hints**: `STR_BACK / STR_SELECT / STR_DIR_UP / STR_DIR_DOWN` for menu rows.
+- **Result layouts**: center multi-line status/result blocks from measured font heights with `gameCenteredBlockY`; reserve the title bar and button-hint area instead of relying on fixed Y offsets.
+- **Back button labels**: the four button hints follow the project standard — `STR_BACK / STR_SELECT / STR_DIR_UP / STR_DIR_DOWN` for menu rows; app-specific actions for in-game screens.
 
 ## Navigation flow
 
@@ -109,8 +162,78 @@ Home  ──Confirm "Apps"──▶  AppsMenu  ──Confirm row──▶  <App>
   └──────Back──────────────────┘    ◀──Back──  <App>
 ```
 
-Every sub-app's Back button must call `activityManager.goToApps()`.
+Every sub-app's Back button must call `activityManager.goToApps()`. This mirrors how Sudoku, Gomoku, Ugly Avatar, and AirPage behave.
+
+Electronic Woodfish accepts Confirm and all four logical directions on button
+release. Touch devices add taps on the rendered wooden body; whitespace,
+mallet, ripples, drags, and the system Back gesture are not knocks. Its
+`uint32_t` counter saturates, has no reset action, and is checkpointed to SD
+after 60 seconds idle or on exit.
+
+## AirPage
+
+AirPage always enters on its QR page and stays offline until Refresh or live
+mode needs Wi-Fi. Network-dependent apps use the shared Wi-Fi picker on demand;
+cancelling it leaves the app on its current screen so the user can retry.
+Its mapped bottom actions are Back, Settings, Images, and Refresh; logical
+previous/next also map the side buttons to Images/Refresh in every orientation.
+Touch devices render those QR-page actions as a tappable footer, and tapping a
+full-screen image opens the same actions plus Set Cover in a modal menu.
+Connecting or reconnecting never downloads an image by itself; only Refresh or
+a live MQTT push starts a download.
+Settings uses the standard themed list for manual/live mode and the optional
+"set downloads as sleep screen" toggle. Images opens a newest-first list of the
+current image plus up to 19 archived deliveries; selecting one displays it
+full-screen, where Confirm offers the standard sleep-screen confirmation and
+Back returns to the QR page.
+
+Live mode runs only while AirPage is foregrounded, backs off failed
+connections, and allows normal auto-sleep again after the retry window expires.
+Manual mode keeps foreground Wi-Fi available but permits idle auto-sleep.
+Downloads are identified by signature and accept BMP or JPEG from the same
+endpoint. Exact duplicates reuse the current entry. Unique downloads are
+validated transactionally before the old image is archived. The QR uses physical
+height/width for portrait upload dimensions and `mode=gray4` or `mode=gray16`
+from `GfxRenderer::getGrayscaleLevels()`. Legacy boards and the simulator default
+to four levels; Read Pico explicitly advertises sixteen.
+
+Four-level JPEG output retains the EPUB aspect-fit, dithering and streamed pixel
+cache. Read Pico decodes BMP/JPEG once from the original file into the existing
+native 4bpp framebuffer, bypassing four-level quantization and the pixel cache.
+Gray8 brightness maps to `(gray + 8) / 17`; the renderer applies the existing
+orientation transform. A B/W proxy remains available for modal menus. Closing a
+menu, or selecting a historical original, re-renders the native image. Decode or
+refresh failure rejects the new image through the existing rollback transaction;
+a four-level substitute is never reported as native sixteen-level success.
+
+Set Cover copies BMP originals unchanged. JPEG converts to an 8-bit grayscale BMP
+on a sixteen-level board and the existing 2-bit BMP elsewhere, fit without
+cropping. Header, palette and row short writes fail conversion. Installation
+retains `/sleep.bmp.part` and `/sleep.bmp.bak`, validating the generated file and
+rolling back on replacement or settings-save failure. Custom sleep images use
+native output only on a sixteen-level board with No Filter; failure displays the
+default sleep screen. Book covers, text AA, alpha sleep overlays and filters keep
+their existing paths.
+
+The native BMP scratch is bounded to one Gray8 row plus one source row (at most
+10,240 bytes); it is fallible and released with the Bitmap. JPEG reuses its
+existing decoder and bounded row/MCU workspaces, without another full-screen
+buffer or a new cache format. `python3 scripts/tests/test_native_grayscale.py`
+compiles the production renderer, decoders and AirPage transactions with recording
+HAL seams and checks the sleep methods in isolation. Firmware builds and these
+host checks do not establish panel polarity, tone separation, ghosting, or physical
+sleep/wake acceptance; see `docs/engineering/read-pico.md`.
 
 ## Resource budget
 
-Same 380KB RAM ceiling as the reader: alloc in `onEnter()`, free in `onExit()`; no large stack buffers; debounce SPIFFS writes.
+Apps share the reader's resource budget: about 380KB usable RAM on ESP32-C3, with target-specific budgets on S3. Specifically:
+
+- **Heap**: allocate at `onEnter()`, free at `onExit()` (Activities are heap-allocated and `delete`d on exit). Don't hold buffers across navigation.
+- **Stack**: keep local function variables under 256 bytes; large buffers go on heap or `static`.
+- **Flash strings**: large constant tables must be `static constexpr` to stay in flash, not in DRAM.
+- **Storage writes**: never save on every user interaction. Debounce save-on-activity-exit, or use `GameSaveDebouncer` (1.5s window). Electronic Woodfish checkpoints its SD-backed counter only after 60 seconds idle or on exit.
+- **Single-buffer framebuffer**: 48KB framebuffer is shared. If an app needs to overlay (modal save UI etc.), use `renderer.storeBwBuffer()` / `restoreBwBuffer()` — see `UglyAvatarActivity::onSave()` for a worked example.
+
+See [AGENTS.md](../../../AGENTS.md) and the
+[resource protocol](../../../docs/engineering/hardware-constraints.md#the-resource-protocol);
+apps are not exempt.
