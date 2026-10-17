@@ -172,7 +172,16 @@ void selfTest() {}
   void Cls::render(RenderLock&&) {}
 
 #include "activities/network/WifiSelectionActivity.h"
-STUB_ACTIVITY_BASE(WifiSelectionActivity)
+void WifiSelectionActivity::onEnter() {
+  ActivityResult result;
+  result.isCancelled = false;
+  result.data = WifiResult{true, "SimulatedWiFi", "192.168.1.100"};
+  setResult(std::move(result));
+  finish();
+}
+void WifiSelectionActivity::onExit() {}
+void WifiSelectionActivity::loop() {}
+void WifiSelectionActivity::render(RenderLock&&) {}
 
 #include "activities/network/CrossPointWebServerActivity.h"
 STUB_ACTIVITY_BASE(CrossPointWebServerActivity)
@@ -196,19 +205,6 @@ bool SdFirmwareUpdateActivity::validateFirmware() { return false; }
 void SdFirmwareUpdateActivity::promptConfirmation() {}
 void SdFirmwareUpdateActivity::onConfirmationResult(const ActivityResult&) {}
 void SdFirmwareUpdateActivity::performUpdate() {}
-
-#include "SdCardFontSystem.h"
-#include "activities/settings/FontDownloadActivity.h"
-FontDownloadActivity::FontDownloadActivity(GfxRenderer& r, MappedInputManager& m, Purpose purpose,
-                                           bool resumedAfterDefrag)
-    : Activity("FontDownload", r, m),
-      purpose_(purpose),
-      fontInstaller_(sdFontSystem.registry()),
-      resumedAfterDefrag_(resumedAfterDefrag) {}
-#ifdef ENABLE_CHINESE_VERSION
-bool FontDownloadActivity::wasChineseFontPromptShownThisBoot() { return true; }
-#endif
-STUB_ACTIVITY_BASE(FontDownloadActivity)
 
 #include "activities/settings/KOReaderAuthActivity.h"
 STUB_ACTIVITY_BASE(KOReaderAuthActivity)

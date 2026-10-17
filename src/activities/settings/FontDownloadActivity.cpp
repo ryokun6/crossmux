@@ -23,10 +23,11 @@
 #include "network/HttpDownloader.h"
 
 namespace {
-// Download worker stack. 8KB left MaxAlloc ~36KB after spawn and
-// create_ssl_handle failed; 5KB is enough for TLS locals + SD write on this
-// path (WeRead uses 4KB) and keeps ~3KB more contiguous DRAM for mbedTLS.
-constexpr uint32_t kDownloadTaskStackBytes = 5120;
+// Download worker stack: 9216 bytes (9KB). Accommodates wolfSSL TLS 1.3
+// crypto frames (~3-3.5KB), SecureHttpClient's 2048-byte stack read buffer,
+// and FreeRTOS task context. The stack is allocated only while downloading
+// and freed immediately when the task completes.
+constexpr uint32_t kDownloadTaskStackBytes = 9216;
 constexpr UBaseType_t kDownloadTaskPriority = 1;
 // Contiguous DRAM a handshake needs (mbedTLS dynamic RX/TX + HTTP RX/TX).
 // Falling below it means the arena is fragmented, so defrag via silent-restart
