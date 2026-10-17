@@ -107,8 +107,7 @@ class FontDownloadActivity : public Activity {
   bool cancelRequested_ = false;
 
   // Download runs on a worker task so loop() can poll Cancel while HTTP is
-  // blocked. 8KB stack: TLS + HttpDownloader + SD write (same ballpark as
-  // other network fetch tasks; 4KB was too tight for github→CDN).
+  // blocked. 9KB stack: wolfSSL TLS 1.3 + HttpDownloader + SD write.
   TaskHandle_t downloadTask_ = nullptr;
   std::atomic<bool> downloadTaskRunning_{false};
   DownloadJob downloadJob_ = DownloadJob::None;

@@ -149,7 +149,6 @@ list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "src/activities/network/")
 # OPDS browser + KOReader sync pull host-unavailable deps; stub in missing_symbols.cpp.
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "OtaUpdateActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "SdFirmwareUpdateActivity")
-list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "FontDownloadActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderAuthActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "OpdsBookBrowserActivity")
 list(FILTER CROSSPOINT_SRC EXCLUDE REGEX "KOReaderSettingsActivity")
